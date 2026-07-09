@@ -106,6 +106,15 @@ function escapeHtml(str) {
   }[c]));
 }
 
+function etatVideHtml(icone, titre, sousTitre) {
+  return `
+    <li class="etat-vide">
+      <div class="etat-vide-icone">${icone}</div>
+      <p class="etat-vide-titre">${titre}</p>
+      ${sousTitre ? `<p class="etat-vide-sous-titre">${sousTitre}</p>` : ""}
+    </li>`;
+}
+
 async function rechercherChants(q, categorie) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
@@ -125,7 +134,22 @@ async function actualiserListeBibliotheque() {
   const categorie = document.getElementById("search-categorie").value;
   const chants = await rechercherChants(q, categorie);
   const list = document.getElementById("chant-list");
-  list.innerHTML = chants.map(chantCardHtml).join("") || "<li>Aucun chant trouvé.</li>";
+
+  if (chants.length === 0) {
+    if (q) {
+      list.innerHTML = etatVideHtml("🔍", `Aucun résultat pour « ${escapeHtml(q)} »`,
+        "Essaie un autre mot, vérifie l'orthographe, ou élargis la catégorie.");
+    } else if (categorie) {
+      list.innerHTML = etatVideHtml("📭", `Aucun chant dans « ${categorieLabel(categorie)} »`,
+        "Choisis une autre catégorie, ou importe/ajoute des chants pour celle-ci.");
+    } else {
+      list.innerHTML = etatVideHtml("🎵", "Ta bibliothèque est vide",
+        "Importe un carnet de chants ou ajoute un chant depuis l'Éditeur pour commencer.");
+    }
+    return;
+  }
+
+  list.innerHTML = chants.map(chantCardHtml).join("");
   list.querySelectorAll(".chant-item").forEach((el) => {
     el.addEventListener("click", () => ouvrirEditeurChant(Number(el.dataset.id)));
   });
@@ -242,7 +266,13 @@ async function actualiserPicker() {
   const categorie = document.getElementById("picker-categorie").value;
   const chants = await rechercherChants(q, categorie);
   const list = document.getElementById("picker-list");
-  list.innerHTML = chants.map(chantCardHtml).join("") || "<li>Aucun résultat.</li>";
+  if (chants.length === 0) {
+    const contexte = categorie ? ` dans « ${categorieLabel(categorie)} »` : "";
+    list.innerHTML = etatVideHtml("🔍", `Aucun chant${contexte}${q ? ` pour « ${escapeHtml(q)} »` : ""}`,
+      categorie ? "Choisis « Toutes catégories » pour élargir la recherche." : "Essaie un autre mot.");
+  } else {
+    list.innerHTML = chants.map(chantCardHtml).join("");
+  }
   list.querySelectorAll(".chant-item").forEach((el) => {
     el.addEventListener("click", () => {
       const id = Number(el.dataset.id);
@@ -492,7 +522,18 @@ async function actualiserEditeur() {
   params.set("limit", "200");
   const chants = await api(`/chants?${params.toString()}`);
   const list = document.getElementById("editeur-list");
-  list.innerHTML = chants.map(editeurItemHtml).join("") || "<li>Aucun chant.</li>";
+  if (chants.length === 0) {
+    if (q) {
+      list.innerHTML = etatVideHtml("🔍", `Aucun résultat pour « ${escapeHtml(q)} »`, "Essaie un autre mot.");
+    } else if (filtre === "a-verifier") {
+      list.innerHTML = etatVideHtml("✅", "Rien à vérifier !", "Tous les chants de ta bibliothèque sont validés.");
+    } else {
+      list.innerHTML = etatVideHtml("🎵", "Ta bibliothèque est vide",
+        "Importe un carnet de chants ou clique sur « + Ajouter un chant ».");
+    }
+  } else {
+    list.innerHTML = chants.map(editeurItemHtml).join("");
+  }
   idsAffichesEditeur = chants.map((c) => c.id);
 
   list.querySelectorAll(".chant-checkbox").forEach((cb) => {
@@ -780,7 +821,12 @@ function depliantCardHtml(feuillet) {
 async function actualiserDepliants() {
   const feuillets = await api("/feuillets");
   const list = document.getElementById("depliants-list");
-  list.innerHTML = feuillets.map(depliantCardHtml).join("") || "<li>Aucun feuillet créé pour l'instant.</li>";
+  if (feuillets.length === 0) {
+    list.innerHTML = etatVideHtml("📄", "Aucun feuillet créé pour l'instant",
+      "Clique sur « + Nouveau feuillet » pour composer ton premier feuillet de messe.");
+  } else {
+    list.innerHTML = feuillets.map(depliantCardHtml).join("");
+  }
 
   list.querySelectorAll(".depliant-card").forEach((el) => {
     const id = Number(el.dataset.id);
@@ -831,10 +877,15 @@ async function modifierDepliant(id) {
   afficherVue("composer");
 }
 
+function indiceComposerHtml() {
+  return `<p class="hint">💡 Renseigne la date, choisis au moins un chant, puis clique sur
+    « Créer le feuillet et générer le PDF ». L'aperçu s'affichera ici.</p>`;
+}
+
 document.getElementById("btn-nouveau-depliant").addEventListener("click", () => {
   feuilletCourantId = null;
   document.getElementById("feuillet-form").reset();
-  document.getElementById("composer-result").innerHTML = "";
+  document.getElementById("composer-result").innerHTML = indiceComposerHtml();
   Object.keys(momentsState).forEach((m) => { momentsState[m] = { type: "aucun" }; });
   document.querySelectorAll("#moments-container .moment-row").forEach((row) => {
     const moment = row.dataset.moment;
@@ -872,6 +923,7 @@ async function init() {
   document.getElementById("import-categorie").innerHTML = categorieOptions;
 
   initComposer();
+  document.getElementById("composer-result").innerHTML = indiceComposerHtml();
   await actualiserListeBibliotheque();
   await actualiserEditeur();
   const params = await api("/parametres");

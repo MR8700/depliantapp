@@ -167,6 +167,14 @@ button[type="submit"], #btn-generer {
 .chant-item { cursor: pointer; }
 .chant-item:active { transform: scale(0.99); box-shadow: none; }
 
+.etat-vide {
+  background: none !important; border: none !important; box-shadow: none !important;
+  text-align: center; padding: 40px 16px !important; color: var(--gris);
+}
+.etat-vide-icone { font-size: 2.2rem; margin-bottom: 8px; }
+.etat-vide-titre { font-weight: bold; color: #444; margin: 0 0 4px 0; font-size: 1rem; }
+.etat-vide-sous-titre { font-size: 0.85rem; margin: 0; max-width: 320px; margin-left: auto; margin-right: auto; }
+
 .chant-titre {
   font-weight: bold;
   font-size: 1.02rem;
