@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>DepliantApp</title>
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+<div id="splash" class="splash">
+  <div class="splash-symbole" aria-hidden="true">
+    <svg viewBox="0 0 100 100" width="88" height="88">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#ffffff" stroke-width="3" opacity="0.35"/>
+      <path d="M50 20 C 30 20, 22 35, 22 48 C 22 66, 38 76, 50 84 C 62 76, 78 66, 78 48 C 78 35, 70 20, 50 20 Z"
+            fill="none" stroke="#ffffff" stroke-width="3" opacity="0.85"/>
+      <path d="M38 50 q12 -18 24 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="38" cy="50" r="3" fill="#ffffff"/>
+      <circle cx="62" cy="50" r="3" fill="#ffffff"/>
+    </svg>
+  </div>
+  <p id="splash-titre" class="splash-titre">DepliantApp</p>
+  <p id="splash-message" class="splash-message">Chargement…</p>
+</div>
+
+<header>
+  <button id="btn-menu" class="btn-hamburger" aria-label="Ouvrir le menu">
+    <span></span><span></span><span></span>
+  </button>
+  <h1 id="app-title">DepliantApp</h1>
+</header>
+
+<div id="menu-overlay" class="menu-overlay hidden"></div>
+<nav id="menu-berger" class="menu-berger">
+  <button data-view="bibliotheque" class="nav-btn active">Bibliothèque</button>
+  <button data-view="composer" class="nav-btn">Composer</button>
+  <button data-view="depliants" class="nav-btn">Les dépliants</button>
+  <button data-view="editeur" class="nav-btn">Éditeur</button>
+  <button data-view="importer" class="nav-btn">Importer</button>
+  <button data-view="reglages" class="nav-btn">Réglages</button>
+</nav>
+
+<main>
+  <!-- Bibliothèque -->
+  <section id="view-bibliotheque" class="view active">
+    <div class="toolbar">
+      <input id="search-q" type="search" placeholder="Rechercher un chant, un mot des paroles…">
+      <select id="search-categorie"><option value="">Toutes catégories</option></select>
+    </div>
+    <ul id="chant-list" class="list"></ul>
+  </section>
+
+  <!-- Composer -->
+  <section id="view-composer" class="view">
+    <form id="feuillet-form">
+      <fieldset>
+        <legend>Informations générales</legend>
+        <label>Date <input id="f-date" type="text" placeholder="Samedi 12 Juillet 2026" required></label>
+        <label>Lieu <input id="f-lieu" type="text" placeholder="Cité, Rotonde…"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Lectures du jour</legend>
+        <label>1ère lecture <input id="f-lecture1" type="text"></label>
+        <label>Psaume <input id="f-psaume" type="text"></label>
+        <label>2ème lecture <input id="f-lecture2" type="text"></label>
+        <label>Évangile <input id="f-evangile" type="text"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Chants par moment liturgique</legend>
+        <div id="moments-container"></div>
+      </fieldset>
+
+      <button type="submit" id="btn-generer">Créer le feuillet et générer le PDF</button>
+    </form>
+    <div id="composer-result"></div>
+  </section>
+
+  <!-- Les dépliants -->
+  <section id="view-depliants" class="view">
+    <div class="toolbar">
+      <button type="button" id="btn-nouveau-depliant">+ Nouveau feuillet</button>
+    </div>
+    <ul id="depliants-list" class="list"></ul>
+  </section>
+
+  <!-- Éditeur -->
+  <section id="view-editeur" class="view">
+    <div class="toolbar">
+      <input id="edit-q" type="search" placeholder="Rechercher…">
+      <select id="edit-filtre">
+        <option value="tous">Tous les chants</option>
+        <option value="a-verifier" selected>À vérifier seulement</option>
+      </select>
+    </div>
+    <div class="toolbar">
+      <button type="button" id="btn-ajouter-chant">+ Ajouter un chant</button>
+    </div>
+    <div id="bulk-bar" class="bulk-bar hidden">
+      <span id="bulk-count"></span>
+      <select id="bulk-categorie"></select>
+      <button type="button" id="bulk-appliquer">Retaguer</button>
+      <button type="button" id="bulk-supprimer" class="btn-effacer">Supprimer</button>
+    </div>
+    <label class="select-all-row">
+      <input type="checkbox" id="editeur-select-all"> Tout sélectionner
+    </label>
+    <ul id="editeur-list" class="list"></ul>
+  </section>
+
+  <!-- Importer -->
+  <section id="view-importer" class="view">
+    <form id="import-form">
+      <fieldset>
+        <legend>Importer un carnet de chants</legend>
+        <label>Fichier (.doc, .docx ou .pdf) <input id="import-fichier" type="file" accept=".doc,.docx,.pdf" required></label>
+        <label>Catégorie par défaut <select id="import-categorie"></select></label>
+        <label>Occasions (séparées par des virgules) <input id="import-occasions" type="text" placeholder="Noël, Mariage…"></label>
+      </fieldset>
+      <button type="submit">Importer</button>
+    </form>
+    <div id="import-result"></div>
+  </section>
+
+  <!-- Réglages -->
+  <section id="view-reglages" class="view">
+    <form id="parametres-form">
+      <label>Nom de la chorale <input id="p-chorale" type="text"></label>
+      <label>Paroisse / CCB <input id="p-paroisse" type="text"></label>
+      <label>Contact (téléphone, affiché en pied de feuillet) <input id="p-contact" type="text"></label>
+      <button type="submit">Enregistrer</button>
+    </form>
+    <p id="parametres-status"></p>
+
+    <fieldset>
+      <legend>Images de l'en-tête / pied de page</legend>
+      <p class="hint">Reproduisent la mise en page réelle des dépliants : logo à gauche, logo à droite,
+      bannière décorative en bas de page. Utilisées sur toutes les compositions à venir.</p>
+      <div id="image-slots"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Modèle d'auto-catégorisation</legend>
+      <p class="hint">Le modèle apprend à partir des chants déjà validés (catégorie confirmée, hors « Autre »).
+      Ré-entraîne-le après avoir corrigé plusieurs chants dans l'Éditeur pour améliorer ses suggestions.</p>
+      <button type="button" id="btn-train">Ré-entraîner le modèle</button>
+      <p id="train-status"></p>
+    </fieldset>
+
+    <fieldset class="danger-zone">
+      <legend>Zone dangereuse</legend>
+      <p class="hint">Supprime définitivement TOUS les chants de la bibliothèque — utile pour repartir d'une
+      base propre avant un nouvel import mieux segmenté. Les feuillets déjà générés ne sont pas affectés.</p>
+      <label>Tape <code>SUPPRIMER</code> pour confirmer <input id="reset-confirmation" type="text"></label>
+      <button type="button" id="btn-reset-bibliotheque" class="btn-effacer">Vider la bibliothèque</button>
+      <p id="reset-status"></p>
+    </fieldset>
+  </section>
+</main>
+
+<div id="chant-editor" class="modal hidden">
+  <div class="modal-content">
+    <form id="chant-editor-form">
+      <input type="hidden" id="ce-id">
+      <label>Titre <input id="ce-titre" type="text" required></label>
+      <label>Catégorie <select id="ce-categorie"></select></label>
+      <div id="ce-suggestion" class="suggestion hidden"></div>
+      <label>Refrain <textarea id="ce-refrain" rows="2"></textarea></label>
+      <div class="couplets-field">
+        <span class="couplets-label">Couplets</span>
+        <div id="ce-couplets-container"></div>
+        <button type="button" id="ce-ajouter-couplet">+ Ajouter un couplet</button>
+      </div>
+      <label>Code de référence <input id="ce-code" type="text" placeholder="ex: D 6"></label>
+      <label>Occasions (séparées par des virgules) <input id="ce-occasions" type="text"></label>
+      <div id="ce-doublons" class="hidden"></div>
+      <div class="toolbar">
+        <button type="submit">Enregistrer</button>
+        <button type="button" id="ce-supprimer" class="btn-effacer">Supprimer</button>
+        <button type="button" id="ce-fermer">Annuler</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="chant-picker" class="modal hidden">
+  <div class="modal-content">
+    <p id="picker-suggestion-hint" class="hint"></p>
+    <div class="toolbar">
+      <input id="picker-q" type="search" placeholder="Chercher un chant…">
+      <select id="picker-categorie"></select>
+      <button type="button" id="picker-close">Fermer</button>
+    </div>
+    <ul id="picker-list" class="list"></ul>
+  </div>
+</div>
+
+<script src="/app.js"></script>
+</body>
+</html>

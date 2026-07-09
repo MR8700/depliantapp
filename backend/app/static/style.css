@@ -1,0 +1,316 @@
+:root {
+  --bleu: #1a3c6e;
+  --bleu-clair: #eaf0fa;
+  --gris: #666;
+  --bordure: #ddd;
+  --danger: #b23b3b;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+  background: #fafafa;
+  color: #222;
+}
+
+/* Empêche la page de derrière de défiler tant qu'une modale est ouverte
+   (détail/édition de chant, sélecteur de chant). Volontairement simple
+   (pas de position:fixed) pour ne jamais rester bloqué si une modale se
+   ferme par un chemin inhabituel — l'état est de toute façon resynchronisé
+   automatiquement (voir syncModalLock côté JS). */
+body.no-scroll {
+  overflow: hidden;
+}
+
+.splash {
+  position: fixed; inset: 0; z-index: 100;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px;
+  background: linear-gradient(160deg, #1a3c6e 0%, #2a5a9e 55%, #0f2547 100%);
+  color: white;
+  opacity: 1; transition: opacity 0.35s ease;
+}
+.splash.hidden { opacity: 0; pointer-events: none; }
+
+.splash-symbole { animation: splash-respire 1.8s ease-in-out infinite; }
+.splash-symbole svg circle:nth-child(2) { animation: splash-tour 6s linear infinite; transform-origin: 50% 50%; }
+
+@keyframes splash-respire {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.08); }
+}
+@keyframes splash-tour {
+  from { stroke-dashoffset: 0; }
+  to { stroke-dashoffset: -200; }
+}
+
+.splash-titre { font-size: 1.4rem; font-weight: bold; margin: 0; letter-spacing: 0.5px; }
+.splash-message { font-size: 0.9rem; margin: 0; opacity: 0.85; }
+
+header {
+  background: var(--bleu);
+  color: white;
+  padding: 12px 16px;
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.15rem;
+}
+
+.btn-hamburger {
+  background: none; border: none; padding: 6px; width: 34px; height: 34px;
+  display: flex; flex-direction: column; justify-content: center; gap: 5px; flex-shrink: 0;
+}
+.btn-hamburger span { display: block; height: 2.5px; background: white; border-radius: 2px; }
+
+.menu-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 29;
+}
+.menu-overlay.hidden { display: none; }
+
+.menu-berger {
+  position: fixed; top: 0; left: 0; bottom: 0; width: 78%; max-width: 280px;
+  background: white; z-index: 30; padding: 70px 14px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+  transform: translateX(-100%); transition: transform 0.2s ease-out;
+  box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+}
+.menu-berger.ouvert { transform: translateX(0); }
+
+.nav-btn {
+  text-align: left;
+  padding: 12px 14px;
+  border: none;
+  border-radius: 8px;
+  background: #f2f2f2;
+  color: #222;
+  font-size: 1rem;
+}
+
+.nav-btn.active { background: var(--bleu); color: white; font-weight: bold; }
+
+main { padding: 12px 16px 80px; max-width: 640px; margin: 0 auto; }
+
+.view { display: none; }
+.view.active { display: block; }
+
+.toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+.toolbar input[type="search"] { flex: 1 1 100%; min-width: 0; }
+.toolbar select { flex: 1 1 auto; width: auto; }
+.toolbar button { flex: 0 0 auto; }
+
+input, select, textarea {
+  width: 100%;
+  padding: 10px;
+  border: 1px solid var(--bordure);
+  border-radius: 6px;
+  font-size: 16px;
+  margin-top: 2px;
+}
+
+input[type="search"] {
+  font-size: 17px;
+  padding: 12px 10px;
+}
+
+label {
+  display: block;
+  margin-bottom: 10px;
+  font-size: 0.85rem;
+  color: var(--gris);
+}
+
+fieldset {
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+}
+
+legend { padding: 0 6px; font-weight: bold; color: var(--bleu); }
+
+button {
+  cursor: pointer;
+}
+
+button[type="submit"], #btn-generer {
+  background: var(--bleu);
+  color: white;
+  border: none;
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 1rem;
+  width: 100%;
+}
+
+.list { list-style: none; margin: 0; padding: 0; }
+
+.list li {
+  background: white;
+  border: 1px solid var(--bordure);
+  border-left: 4px solid var(--bleu);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.06);
+  transition: box-shadow 0.15s, transform 0.1s;
+}
+
+.chant-item { cursor: pointer; }
+.chant-item:active { transform: scale(0.99); box-shadow: none; }
+
+.chant-titre {
+  font-weight: bold;
+  font-size: 1.02rem;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+.chant-meta { font-size: 0.82rem; color: var(--gris); line-height: 1.4; }
+.chant-categorie-pill {
+  display: inline-block;
+  font-size: 0.72rem;
+  font-weight: normal;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: var(--bleu-clair);
+  color: var(--bleu);
+}
+.badge-confiance {
+  display: inline-block;
+  font-size: 0.7rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: #f0d060;
+  color: #5a4600;
+}
+
+.moment-row {
+  border: 1px solid var(--bordure);
+  border-radius: 8px;
+  padding: 8px 10px;
+  margin-bottom: 8px;
+}
+
+.moment-row .moment-label { font-weight: bold; color: var(--bleu); margin-bottom: 4px; display: block; }
+.moment-row .moment-type { margin-bottom: 6px; }
+.moment-row .chant-choisi { font-size: 0.85rem; background: var(--bleu-clair); padding: 6px 8px; border-radius: 6px; margin-top: 4px; }
+.moment-row .btn-choisir { background: var(--bleu-clair); color: var(--bleu); border: 1px solid var(--bleu); border-radius: 6px; padding: 6px 10px; font-size: 0.85rem; }
+.moment-row .btn-effacer { background: none; border: none; color: var(--danger); font-size: 0.8rem; }
+.moment-row .couplet-limite { margin: 8px 0 0 0; font-size: 0.78rem; }
+.moment-row .select-couplet-limite { margin-top: 2px; }
+
+.modal {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.4);
+  display: flex; align-items: flex-end; z-index: 20;
+}
+.modal.hidden { display: none; }
+.modal-content {
+  background: white; width: 100%; max-height: 80vh; overflow-y: auto;
+  border-radius: 12px 12px 0 0; padding: 12px 16px;
+}
+
+#composer-result { margin-top: 14px; }
+#composer-result .toolbar { margin-bottom: 10px; }
+#composer-result a, #composer-result button {
+  display: inline-block; background: var(--bleu); color: white;
+  padding: 10px 14px; border-radius: 6px; text-decoration: none; text-align: center;
+  border: none; font-size: 0.95rem; flex: 1;
+}
+#composer-result .btn-enregistrer { background: #2e7d32; }
+#composer-result .btn-partager { background: #6a4c93; }
+.pdf-preview {
+  display: block; width: 100%; height: 70vh; border: 1px solid var(--bordure); border-radius: 8px;
+}
+
+/* Barre fixée en bas de l'écran (comme dans Gmail) : reste toujours visible
+   sur mobile même avec une longue liste de chants au-dessus. */
+.bulk-bar {
+  position: fixed; left: 0; right: 0; bottom: 0; z-index: 15;
+  display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  background: white; border-top: 1px solid var(--bordure);
+  padding: 10px 16px; box-shadow: 0 -2px 8px rgba(0,0,0,0.12);
+}
+.bulk-bar.hidden { display: none; }
+#bulk-count { flex: 1 1 100%; font-size: 0.85rem; color: var(--gris); }
+.bulk-bar select { width: auto; flex: 1; }
+.bulk-bar button { white-space: nowrap; padding: 10px 12px; border: none; border-radius: 6px; background: var(--bleu); color: white; }
+.bulk-bar button.btn-effacer { background: var(--danger); }
+
+.hint { font-size: 0.8rem; color: var(--gris); }
+
+.suggestion {
+  background: #fff7e0; border: 1px solid #f0d060; border-radius: 6px;
+  padding: 6px 8px; margin: -6px 0 10px 0; font-size: 0.85rem;
+}
+.suggestion.hidden { display: none; }
+.suggestion button { margin-left: 8px; background: #f0d060; border: none; border-radius: 4px; padding: 3px 8px; }
+
+#ce-doublons { background: #fdeaea; border: 1px solid #e0a0a0; border-radius: 6px; padding: 6px 8px; margin-bottom: 10px; font-size: 0.85rem; }
+#ce-doublons.hidden { display: none; }
+
+.chant-checkbox { margin-right: 8px; }
+
+.select-all-row {
+  display: flex; align-items: center; gap: 8px; font-size: 0.9rem; color: var(--gris);
+  margin-bottom: 8px;
+}
+.select-all-row input { width: auto; margin-top: 0; }
+
+/* Marge basse généreuse pour que la barre d'actions fixée en bas ne cache
+   jamais les derniers chants de la liste. */
+#editeur-list { padding-bottom: 90px; }
+.editeur-row { display: flex; align-items: flex-start; gap: 6px; }
+.editeur-row .chant-item { flex: 1; }
+
+#import-result, #train-status { margin-top: 10px; font-size: 0.9rem; }
+
+.depliant-actions { margin-top: 10px; }
+.depliant-actions a, .depliant-actions button {
+  flex: 1 1 30%; text-align: center; text-decoration: none;
+  padding: 8px 6px; border-radius: 6px; font-size: 0.8rem; border: none; color: white; background: var(--bleu);
+}
+.depliant-actions .btn-enregistrer { background: #2e7d32; }
+.depliant-actions .btn-partager { background: #6a4c93; }
+.depliant-actions .btn-modifier { background: #b8860b; }
+.depliant-actions .btn-effacer { background: var(--danger); color: white; }
+
+.logo-preview {
+  display: block; max-width: 100%; max-height: 100px; margin: 8px 0;
+  border: 1px solid var(--bordure); border-radius: 6px; padding: 6px; background: white;
+}
+.logo-preview.hidden { display: none; }
+
+.image-slot { border-top: 1px solid var(--bordure); padding-top: 10px; margin-top: 10px; }
+.image-slot:first-child { border-top: none; margin-top: 0; padding-top: 0; }
+
+.danger-zone { border-color: var(--danger); }
+.danger-zone legend { color: var(--danger); }
+.danger-zone button { background: var(--danger); color: white; border: none; border-radius: 6px; padding: 10px 14px; width: 100%; }
+.danger-zone code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
+
+.couplets-field { margin-bottom: 12px; }
+.couplets-label { display: block; font-size: 0.85rem; color: var(--gris); margin-bottom: 4px; }
+.couplet-field-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
+.couplet-field-row .couplet-numero {
+  flex: 0 0 22px; height: 34px; display: flex; align-items: center; justify-content: center;
+  background: var(--bleu-clair); color: var(--bleu); border-radius: 6px; font-size: 0.8rem; font-weight: bold;
+}
+.couplet-field-row textarea { flex: 1; margin-top: 0; min-height: 44px; }
+.couplet-field-row .btn-supprimer-couplet {
+  flex: 0 0 auto; background: none; border: none; color: var(--danger); font-size: 1.1rem; padding: 4px 6px;
+}
+#ce-ajouter-couplet {
+  background: var(--bleu-clair); color: var(--bleu); border: 1px dashed var(--bleu);
+  border-radius: 6px; padding: 8px; width: 100%; font-size: 0.9rem;
+}

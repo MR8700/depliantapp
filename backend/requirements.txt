@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+jinja2
+pydantic
+reportlab
+pillow
+pymupdf
+python-multipart
+pywin32; sys_platform == "win32"

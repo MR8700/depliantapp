@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: depliantapp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+    # Pour rendre les données persistantes entre les redéploiements (recommandé
+    # dès que l'appli sert de vraies chorales), décommente ces lignes après avoir
+    # choisi un plan payant sur Render (les disques ne sont pas dispo sur "free") :
+    # disk:
+    #   name: depliantapp-data
+    #   mountPath: /var/data
+    #   sizeGB: 1
+    # et ajoute la variable d'environnement DEPLIANTAPP_DATA_DIR=/var/data
