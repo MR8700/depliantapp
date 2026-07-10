@@ -18,6 +18,8 @@ CARNET_CATEGORY_MAP = {
     "ACCLAMATION": "Acclamation",
     "CREDO": "Credo",
     "PRIERE UNIVERSELLE": "Priere_universelle",
+    "PU": "Priere_universelle",
+    "PRIERE": "Priere_universelle",
     "OFFERTOIRE": "Offertoire",
     "SANCTUS": "Sanctus",
     "ANAMNESE": "Anamnese",
@@ -26,14 +28,40 @@ CARNET_CATEGORY_MAP = {
     "AGNUS": "Agnus",
     "COMMUNION": "Communion",
     "ACTION DE GRACE": "Action_de_grace",
+    "ACTION DE GRÂCE": "Action_de_grace",
     "SORTIE": "Sortie",
 }
 
 
 def extract_text_pages(path: Path) -> list[str]:
     doc = fitz.open(path)
+    pages_text = []
     try:
-        return [page.get_text() for page in doc]
+        for page in doc:
+            rect = page.rect
+            width = rect.width
+            if width > 600:
+                # Diviser en 4 colonnes pour les livrets A4 paysage pliés
+                col_w = width / 4.0
+                columns = [[] for _ in range(4)]
+                
+                blocks = page.get_text("blocks")
+                for block in blocks:
+                    x0, y0, x1, y1, text, block_no, block_type = block
+                    center_x = (x0 + x1) / 2.0
+                    col_idx = int(center_x // col_w)
+                    col_idx = max(0, min(3, col_idx))
+                    columns[col_idx].append(block)
+                
+                page_lines = []
+                for col in columns:
+                    col.sort(key=lambda b: b[1]) # trier verticalement
+                    for block in col:
+                        page_lines.append(block[4])
+                pages_text.append("\n".join(page_lines))
+            else:
+                pages_text.append(page.get_text())
+        return pages_text
     finally:
         doc.close()
 
@@ -216,3 +244,101 @@ def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str,
         return results
     finally:
         doc.close()
+
+
+LITURGICAL_HEADER_RE = re.compile(
+    r"^\s*(SORTIE|PRI[EÈ]RE|ENTR[EÉ]E|KYRIE|GLORIA|PSAUME|ACCLAMATION|CREDO|PU|OFFERTOIRE|SANCTUS|PATER|AGNUS|COMMUNION|ACTION\s+DE\s+GR[AÂ]CE)\b\s*[:\-\s]?\s*(.*)$",
+    re.IGNORECASE
+)
+
+MOMENTS_WITH_COLON = {
+    "SORTIE", "ENTREE", "ENTRÉE", "KYRIE", "GLORIA", 
+    "PSAUME", "ACCLAMATION", "CREDO", "PU", "OFFERTOIRE", 
+    "SANCTUS", "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE"
+}
+
+def segment_booklet_layout(pages: list[str]) -> list[tuple[str, RawChant]]:
+    lines = [line.strip() for page in pages for line in page.split("\n") if line.strip()]
+    results: list[tuple[str, RawChant]] = []
+    current: Optional[RawChant] = None
+    current_categorie: str = "Autre"
+    active: Optional[str] = None
+    
+    def flush():
+        nonlocal current
+        if current is not None:
+            current.titre = current.titre.strip()
+            if not current.titre or current.titre == "(sans titre)":
+                if current.refrain:
+                    current.titre = current.refrain[:30] + "..."
+                elif current.couplets:
+                    current.titre = current.couplets[0][:30] + "..."
+                else:
+                    current.titre = f"Chant de {current_categorie}"
+            results.append((current_categorie, finalize(current)))
+        current = None
+
+    for line in lines:
+        header_m = LITURGICAL_HEADER_RE.match(line)
+        ref_m = REF_RE.match(line)
+        verse_m = VERSE_RE.match(line)
+        
+        if header_m:
+            keyword = header_m.group(1).upper()
+            if keyword in MOMENTS_WITH_COLON and ":" not in line:
+                header_m = None
+        
+        if header_m:
+            flush()
+            keyword = header_m.group(1).upper()
+            extra = header_m.group(2).strip()
+            
+            mapped_cat = CARNET_CATEGORY_MAP.get(keyword)
+            if not mapped_cat:
+                if "PRI" in keyword: mapped_cat = "Priere_universelle"
+                elif "ENTR" in keyword: mapped_cat = "Entree"
+                elif "GR" in keyword: mapped_cat = "Action_de_grace"
+                else: mapped_cat = "Autre"
+            
+            current_categorie = mapped_cat
+            title_text = extra.lstrip(":- ").strip()
+            if not title_text:
+                title_text = "(sans titre)"
+            current = RawChant(titre=title_text)
+            active = "titre"
+            continue
+            
+        if ref_m:
+            if current is None:
+                current = RawChant(titre="(sans titre)")
+            text = ref_m.group(2).strip()
+            current.refrain = f"{current.refrain} {text}".strip() if current.refrain else text
+            active = "refrain"
+            continue
+            
+        if verse_m:
+            if current is None:
+                current = RawChant(titre="(sans titre)")
+            current.couplets.extend(split_inline_verses(line))
+            active = "couplet"
+            continue
+            
+        if current is None:
+            continue
+            
+        if active == "titre":
+            if current.titre and current.titre != "(sans titre)":
+                current.couplets.append(line)
+                active = "couplet"
+            else:
+                current.titre = f"{current.titre} {line}".strip()
+        elif active == "refrain":
+            current.refrain = f"{current.refrain} {line}".strip()
+        elif active == "couplet":
+            if current.couplets:
+                current.couplets[-1] = f"{current.couplets[-1]} {line}".strip()
+            else:
+                current.couplets.append(line)
+                
+    flush()
+    return results

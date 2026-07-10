@@ -8,7 +8,7 @@ from typing import Optional
 from .common import RawChant, segment_paragraphs
 from .parse_doc import iter_paragraphs_doc
 from .parse_docx import iter_paragraphs_docx
-from .parse_pdf import extract_text_pages, segment_by_font, segment_carnet_pages, segment_freeform_pdf
+from .parse_pdf import extract_text_pages, segment_by_font, segment_carnet_pages, segment_freeform_pdf, segment_booklet_layout
 
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".pdf"}
 
@@ -43,6 +43,7 @@ def parse_and_segment(path: Path, categorie_defaut: str = "Autre", word=None) ->
         except Exception:
             pass
         candidats.append(segment_freeform_pdf(pages))
+        candidats.append(segment_booklet_layout(pages))
         meilleur = max(candidats, key=_qualite)
         return _appliquer_defaut(meilleur, categorie_defaut)
 

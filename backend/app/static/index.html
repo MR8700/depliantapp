@@ -75,6 +75,7 @@
       <button type="submit" id="btn-generer">Créer le feuillet et générer le PDF</button>
     </form>
     <div id="composer-result"></div>
+    <div id="composer-preview-canvas" class="composer-preview-canvas hidden"></div>
   </section>
 
   <!-- Les dépliants -->
@@ -163,7 +164,7 @@
   <div class="modal-content">
     <form id="chant-editor-form">
       <input type="hidden" id="ce-id">
-      <label>Titre <input id="ce-titre" type="text" required></label>
+      <label>Titre <input id="ce-titre" type="text" placeholder="(Optionnel)"></label>
       <label>Catégorie <select id="ce-categorie"></select></label>
       <div id="ce-suggestion" class="suggestion hidden"></div>
       <label>Refrain <textarea id="ce-refrain" rows="2"></textarea></label>
@@ -193,6 +194,18 @@
       <button type="button" id="picker-close">Fermer</button>
     </div>
     <ul id="picker-list" class="list"></ul>
+  </div>
+</div>
+
+<div id="import-workspace-modal" class="modal hidden">
+  <div class="modal-content large-modal">
+    <h2>Espace d'importation &amp; Gestion des doublons</h2>
+    <p class="hint">Modifiez les textes extraits et choisissez l'action appropriée pour chaque chant avant d'enregistrer.</p>
+    <div class="toolbar">
+      <button type="button" id="iw-btn-confirmer" class="btn-ouvrir">Valider l'importation</button>
+      <button type="button" id="iw-btn-annuler" class="btn-effacer">Annuler l'import</button>
+    </div>
+    <div id="import-workspace-container"></div>
   </div>
 </div>
 

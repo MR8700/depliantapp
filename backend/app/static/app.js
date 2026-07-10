@@ -18,13 +18,17 @@ const LABELS_MOMENTS = {
 
 let MOMENTS = [];
 let CATEGORIES = [];
-const momentsState = {}; // moment -> { type, chant_id, chant_titre, titre_libre, texte_libre, total_couplets, couplet_limit }
+const momentsState = {}; // moment -> { type, chant_id, chant_titre, titre_libre, texte_libre, total_couplets, couplet_limit, refrain, couplets }
 let pickerTargetMoment = null;
 let searchTimer = null;
 let feuilletCourantId = null;
 let apercuTimer = null;
+let importWorkspaceChants = [];
 
 // --- navigation / menu burger ---
+let vuePrecedente = "bibliotheque";
+let bloqueNavigation = false;
+
 function ouvrirMenu() {
   document.getElementById("menu-berger").classList.add("ouvert");
   document.getElementById("menu-overlay").classList.remove("hidden");
@@ -36,35 +40,78 @@ function fermerMenu() {
 document.getElementById("btn-menu").addEventListener("click", ouvrirMenu);
 document.getElementById("menu-overlay").addEventListener("click", fermerMenu);
 
-function afficherVue(nomVue) {
+function afficherVueDirect(nomVue) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
-  document.querySelector(`.nav-btn[data-view="${nomVue}"]`).classList.add("active");
-  document.getElementById(`view-${nomVue}`).classList.add("active");
+  const btn = document.querySelector(`.nav-btn[data-view="${nomVue}"]`);
+  if (btn) btn.classList.add("active");
+  const viewEl = document.getElementById(`view-${nomVue}`);
+  if (viewEl) viewEl.classList.add("active");
+  
   if (nomVue === "reglages") chargerParametres();
   if (nomVue === "editeur") actualiserEditeur();
   if (nomVue === "depliants") actualiserDepliants();
+  if (nomVue === "composer") {
+    dessinerApercuCanvas();
+  }
+}
+
+function changerVue(nomVue) {
+  window.location.hash = "#/" + nomVue;
 }
 
 document.querySelectorAll(".nav-btn").forEach((btn) => {
   btn.addEventListener("click", () => {
-    afficherVue(btn.dataset.view);
+    changerVue(btn.dataset.view);
     fermerMenu();
   });
 });
 
+function verifierModalesOuvertes() {
+  const ceOuvert = !document.getElementById("chant-editor").classList.contains("hidden");
+  const iwOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
+  return ceOuvert || iwOuvert;
+}
+
+function gererNavigationHash() {
+  if (bloqueNavigation) return;
+  const hash = window.location.hash || "#/bibliotheque";
+  const nomVue = hash.replace("#/", "");
+  
+  if (nomVue !== vuePrecedente && verifierModalesOuvertes()) {
+    if (!confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
+      bloqueNavigation = true;
+      window.location.hash = "#/" + vuePrecedente;
+      setTimeout(() => { bloqueNavigation = false; }, 50);
+      return;
+    } else {
+      fermerModale("chant-editor");
+      fermerModale("import-workspace-modal");
+    }
+  }
+  
+  vuePrecedente = nomVue;
+  afficherVueDirect(nomVue);
+}
+
+window.addEventListener("hashchange", gererNavigationHash);
+
+window.addEventListener("beforeunload", (e) => {
+  if (verifierModalesOuvertes()) {
+    e.preventDefault();
+    e.returnValue = "";
+  }
+});
+
 // Empêche la page principale de défiler pendant qu'une modale (détail/édition
-// de chant, sélecteur de chant) est ouverte par-dessus. L'état de blocage est
-// resynchronisé automatiquement via MutationObserver dès que l'une ou l'autre
-// modale change de visibilité — quel que soit le chemin par lequel elle se
-// ferme — plutôt que par un compteur manuel qui pourrait rester désynchronisé
-// et bloquer le défilement pour de bon.
+// de chant, sélecteur de chant) est ouverte par-dessus.
 function syncModalLock() {
   const editeurOuvert = !document.getElementById("chant-editor").classList.contains("hidden");
   const pickerOuvert = !document.getElementById("chant-picker").classList.contains("hidden");
-  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert);
+  const workspaceOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
+  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || workspaceOuvert);
 }
-["chant-editor", "chant-picker"].forEach((id) => {
+["chant-editor", "chant-picker", "import-workspace-modal"].forEach((id) => {
   new MutationObserver(syncModalLock).observe(document.getElementById(id), {
     attributes: true, attributeFilter: ["class"],
   });
@@ -82,7 +129,7 @@ async function api(path, options) {
   if (!res.ok) {
     const texte = await res.text();
     let detail = texte;
-    try { detail = JSON.parse(texte).detail; } catch (e) { /* pas du JSON, on garde le texte brut */ }
+    try { detail = JSON.parse(texte).detail; } catch (e) { /* pas du JSON */ }
     const message = typeof detail === "object" && detail !== null ? detail.message : detail;
     const erreur = new Error(message || `Erreur ${res.status}`);
     erreur.status = res.status;
@@ -100,7 +147,7 @@ function chantCardHtml(chant) {
     <li class="chant-item" data-id="${chant.id}">
       <div class="chant-titre">
         <span class="chant-categorie-pill">${categorieLabel(chant.categorie)}</span>
-        ${escapeHtml(chant.titre)}${badge}
+        ${escapeHtml(chant.titre || "(sans titre)")}${badge}
       </div>
       <div class="chant-meta">${escapeHtml(refrainApercu)}</div>
     </li>`;
@@ -181,10 +228,11 @@ function renderMomentBody(row, moment) {
   const body = row.querySelector(".moment-body");
   if (state.type === "chant") {
     const total = state.total_couplets || 0;
-    const limiteHtml = total > 1 ? `
+    const limiteHtml = total > 0 ? `
       <label class="couplet-limite">Couplets à afficher
         <select class="select-couplet-limite">
           <option value="">Tous (${total})</option>
+          <option value="0" ${state.couplet_limit === 0 ? "selected" : ""}>Aucun (0)</option>
           ${Array.from({ length: total }, (_, i) => i + 1).map((n) => `
             <option value="${n}" ${state.couplet_limit === n ? "selected" : ""}>${n}</option>
           `).join("")}
@@ -200,11 +248,16 @@ function renderMomentBody(row, moment) {
     if (btnEffacer) btnEffacer.addEventListener("click", () => {
       delete momentsState[moment].chant_id;
       delete momentsState[moment].chant_titre;
+      delete momentsState[moment].refrain;
+      delete momentsState[moment].couplets;
       renderMomentBody(row, moment);
+      dessinerApercuCanvas();
+      regenererApercuSiPossible();
     });
     const selectLimite = body.querySelector(".select-couplet-limite");
     if (selectLimite) selectLimite.addEventListener("change", () => {
       momentsState[moment].couplet_limit = selectLimite.value ? Number(selectLimite.value) : null;
+      dessinerApercuCanvas();
       regenererApercuSiPossible();
     });
   } else if (state.type === "texte_libre") {
@@ -212,8 +265,15 @@ function renderMomentBody(row, moment) {
       <input type="text" class="titre-libre" placeholder="Titre (optionnel)" value="${escapeHtml(state.titre_libre || "")}">
       <textarea class="texte-libre" rows="3" placeholder="Texte pour ce feuillet…">${escapeHtml(state.texte_libre || "")}</textarea>
     `;
-    body.querySelector(".titre-libre").addEventListener("input", (e) => { momentsState[moment].titre_libre = e.target.value; });
-    body.querySelector(".texte-libre").addEventListener("input", (e) => { momentsState[moment].texte_libre = e.target.value; });
+    body.querySelector(".titre-libre").addEventListener("input", (e) => { 
+      momentsState[moment].titre_libre = e.target.value; 
+      dessinerApercuCanvas();
+    });
+    body.querySelector(".texte-libre").addEventListener("input", (e) => { 
+      momentsState[moment].texte_libre = e.target.value; 
+      dessinerApercuCanvas();
+      regenererApercuSiPossible();
+    });
   } else {
     body.innerHTML = "";
   }
@@ -229,17 +289,25 @@ function initComposer() {
     select.addEventListener("change", () => {
       momentsState[moment] = { type: select.value };
       renderMomentBody(row, moment);
+      dessinerApercuCanvas();
+      regenererApercuSiPossible();
     });
   });
+  
+  // Bind inputs to dynamic canvas updating
+  ["f-date", "f-lieu", "f-lecture1", "f-psaume", "f-lecture2", "f-evangile"].forEach((id) => {
+    document.getElementById(id).addEventListener("input", () => {
+      dessinerApercuCanvas();
+    });
+  });
+  
+  dessinerApercuCanvas();
 }
 
 function ouvrirPicker(moment) {
   pickerTargetMoment = moment;
   ouvrirModale("chant-picker");
   document.getElementById("picker-q").value = "";
-  // Le picker suggère en priorité les chants de la catégorie qui correspond au
-  // moment liturgique choisi (ex: pour "Sortie", on propose d'abord les chants
-  // catégorisés "Sortie"). Modifiable ensuite via le sélecteur ou en tapant une recherche.
   const categorieSelect = document.getElementById("picker-categorie");
   if ([...categorieSelect.options].some((o) => o.value === moment)) {
     categorieSelect.value = moment;
@@ -286,9 +354,12 @@ async function actualiserPicker() {
       momentsState[pickerTargetMoment] = {
         type: "chant", chant_id: chant.id, chant_titre: chant.titre,
         total_couplets: (chant.couplets || []).length, couplet_limit: null,
+        refrain: chant.refrain, couplets: chant.couplets
       };
       const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
       renderMomentBody(row, pickerTargetMoment);
+      dessinerApercuCanvas();
+      regenererApercuSiPossible();
       fermerModale("chant-picker");
     });
   });
@@ -307,7 +378,7 @@ function construireFeuilletPayload() {
       chant_id: state.chant_id || null,
       titre_libre: state.titre_libre || null,
       texte_libre: state.texte_libre || null,
-      couplet_limit: state.couplet_limit || null,
+      couplet_limit: state.couplet_limit === 0 ? 0 : (state.couplet_limit || null),
     });
   }
   return {
@@ -330,11 +401,24 @@ function nettoyerMomentsEnCause() {
 function afficherErreurDepassement(detail, resultDiv) {
   const message = typeof detail === "object" && detail !== null ? detail.message : String(detail || "Erreur inconnue");
   const moments = (typeof detail === "object" && detail !== null && detail.moments_en_cause) || [];
-  resultDiv.innerHTML = etatVideHtml(
-    "⚠️",
-    "Le feuillet ne tient pas dans le format",
-    `${escapeHtml(message)}${moments.length ? " Réduis le nombre de couplets affichés sur le(s) moment(s) surligné(s) ci-dessus." : ""}`,
-  );
+  
+  let explications = "Certains moments débordent sur le feuillet imprimable (surlignés en rouge dans l'aperçu ci-dessous).<br/>" +
+    "Pour faire tenir le document sur 2 pages, vous devez :<br/>" +
+    "<ul>" +
+    "  <li>Réduire le nombre de couplets à afficher pour les chants en cause (ex: afficher 2 couplets au lieu de 4).</li>" +
+    "  <li>Ou raccourcir le texte libre / les paroles du chant.</li>" +
+    "</ul>";
+    
+  resultDiv.innerHTML = `
+    <div class="etat-vide" style="border: 2px solid var(--danger); background: #fdeaea; padding: 12px; border-radius: 8px;">
+      <div class="etat-vide-icone">⚠️</div>
+      <p class="etat-vide-titre" style="color: var(--danger); font-weight: bold; margin: 0 0 6px 0;">Le feuillet déborde du format</p>
+      <p class="hint" style="text-align: left; line-height: 1.4; color: #555;">${explications}</p>
+    </div>
+  `;
+  
+  dessinerApercuCanvas(moments);
+  
   moments.forEach((m) => {
     const row = document.querySelector(`.moment-row[data-moment="${m}"]`);
     if (row) row.classList.add("moment-en-cause");
@@ -353,15 +437,18 @@ async function afficherResultatFeuillet(feuilletId) {
     if (!res.ok) {
       const texte = await res.text();
       let detail = texte;
-      try { detail = JSON.parse(texte).detail; } catch (e) { /* texte brut, pas du JSON */ }
+      try { detail = JSON.parse(texte).detail; } catch (e) { /* non-JSON */ }
       afficherErreurDepassement(detail, resultDiv);
       return;
     }
+    
+    dessinerApercuCanvas([]); // clean error highlight
+    
     const blobUrl = URL.createObjectURL(await res.blob());
     resultDiv.innerHTML = `
       <div class="toolbar">
-        <a href="${blobUrl}" target="_blank" class="btn-ouvrir">Ouvrir</a>
-        <a href="${blobUrl}" download="feuillet-${feuilletId}.pdf" class="btn-enregistrer">Enregistrer</a>
+        <a href="${blobUrl}" target="_blank" class="btn-ouvrir">Ouvrir le PDF</a>
+        <a href="${blobUrl}" download="feuillet-${feuilletId}.pdf" class="btn-enregistrer">Enregistrer le PDF</a>
         <button type="button" id="btn-partager-composer" class="btn-partager">Partager</button>
       </div>
       <iframe class="pdf-preview" src="${blobUrl}" title="Aperçu du feuillet"></iframe>
@@ -384,7 +471,7 @@ async function partagerPdf(feuilletId) {
         return;
       }
     }
-  } catch (err) { /* bascule sur l'ouverture simple si le partage échoue/est annulé */ }
+  } catch (err) { }
   window.open(pdfUrl, "_blank");
 }
 
@@ -399,7 +486,7 @@ async function regenererApercuSiPossible() {
         body: JSON.stringify(construireFeuilletPayload()),
       });
       await afficherResultatFeuillet(feuilletCourantId);
-    } catch (err) { /* l'utilisateur reverra l'erreur au prochain clic sur Générer */ }
+    } catch (err) { }
   }, 400);
 }
 
@@ -429,6 +516,151 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
     masquerSplash();
   }
 });
+
+// --- Customized HTML Canvas Preview Box ---
+function dessinerApercuCanvas(momentsEnCause = []) {
+  const canvas = document.getElementById("composer-preview-canvas");
+  if (!canvas) return;
+  canvas.classList.remove("hidden");
+
+  const dateVal = document.getElementById("f-date").value || "Dimanche 12 Juillet 2026";
+  const lieuVal = document.getElementById("f-lieu").value || "Rotonde / Kossodo";
+  const chorale = document.getElementById("p-chorale").value || "Chorale Sainte Cécile";
+  const paroisse = document.getElementById("p-paroisse").value || "CCB St Thomas d'Aquin";
+  
+  const lect1 = document.getElementById("f-lecture1").value || "Jr 20, 10-13";
+  const ps = document.getElementById("f-psaume").value || "Ps 68(69)";
+  const lect2 = document.getElementById("f-lecture2").value || "Rm 5, 12-15";
+  const ev = document.getElementById("f-evangile").value || "Mt 10, 26-33";
+
+  function obtenirApercuMoment(m) {
+    const s = momentsState[m];
+    if (!s || s.type === "aucun") return `<div class="hint" style="font-size:0.45rem;">— Aucun contenu —</div>`;
+    if (s.type === "texte_libre") {
+      const tit = s.titre_libre ? `<b style="text-decoration:underline;">${escapeHtml(s.titre_libre.toUpperCase())}</b><br/>` : "";
+      return `<div class="mockup-col-content">${tit}${escapeHtml(s.texte_libre)}</div>`;
+    }
+    
+    // Chant
+    let limitCouplets = s.couplets || [];
+    if (s.couplet_limit !== null) {
+      limitCouplets = limitCouplets.slice(0, s.couplet_limit);
+    }
+    const tit = s.chant_titre ? `<b style="text-decoration:underline;">${escapeHtml(s.chant_titre.toUpperCase())}</b><br/>` : "";
+    const ref = s.refrain ? `<i style="font-weight:bold;">Réf: ${escapeHtml(s.refrain)}</i><br/>` : "";
+    const coup = limitCouplets.map((c, i) => `<b>${i+1}-</b> ${escapeHtml(c)}`).join("<br/>");
+    return `<div class="mockup-col-content">${tit}${ref}${coup}</div>`;
+  }
+
+  function getColClass(m, colWidthClass) {
+    const isError = momentsEnCause.includes(m);
+    return `mockup-col ${colWidthClass} ${isError ? "overflow" : ""}`;
+  }
+
+  const html = `
+    <h3 style="margin-bottom:2px;">Aperçu interactif (Simulé A4)</h3>
+    <p class="hint" style="margin-top:0; margin-bottom:10px;">Représentation de la mise en page imprimée réelle.</p>
+    <div class="mockup-booklet">
+      <!-- PAGE 1 -->
+      <div class="mockup-page">
+        <h3>Page 1 (Extérieur)</h3>
+        <div class="mockup-border">
+          <div class="mockup-row-1">
+            <div class="${getColClass("sortie", "col-30")}">
+              <div class="mockup-col-label">SORTIE (30%)</div>
+              ${obtenirApercuMoment("sortie")}
+            </div>
+            <div class="${getColClass("priere", "col-35")}">
+              <div class="mockup-col-label">PRIÈRE (35%)</div>
+              ${obtenirApercuMoment("priere")}
+            </div>
+            <div class="mockup-col col-35">
+              <div class="mockup-col-label">EN-TÊTE CHORALE</div>
+              <div class="mockup-col-content" style="font-size:0.5rem; text-align:center;">
+                <b style="color:var(--bleu);">${escapeHtml(paroisse.toUpperCase())}</b><br/>
+                <span style="font-size:0.45rem; color:#666;">${escapeHtml(dateVal)}<br/>
+                Lieu: ${escapeHtml(lieuVal)}</span><br/>
+                <hr style="border:none; border-top:0.5px solid #ddd; margin:4px 0;"/>
+                <b>LECTURES:</b><br/>
+                1L: ${escapeHtml(lect1)}<br/>
+                Ps: ${escapeHtml(ps)}<br/>
+                2L: ${escapeHtml(lect2)}<br/>
+                Ev: ${escapeHtml(ev)}
+              </div>
+            </div>
+          </div>
+          
+          <div class="mockup-row-2">
+            <div class="${getColClass("entree", "col-50")}">
+              <div class="mockup-col-label">COLONNE GAUCHE</div>
+              ${obtenirApercuMoment("entree")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("kyrie")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("gloria")} (Début)
+            </div>
+            <div class="${getColClass("graduel", "col-50")}">
+              <div class="mockup-col-label">COLONNE DROITE</div>
+              ${obtenirApercuMoment("gloria")} (Suite)<br/>
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("graduel")}
+            </div>
+          </div>
+          
+          <div class="mockup-footer">
+            <div class="mockup-footer-title">Bon Dimanche à toutes et à tous !!</div>
+            <div style="font-size:0.4rem; color:#666; margin-top:2px;">
+              Raisins 🍇 / Colombe 🕊️<br/>
+              Chorale: ${escapeHtml(chorale)} — Contacts: ${escapeHtml(chorale)} / ${escapeHtml(paroisse)}
+            </div>
+          </div>
+        </div>
+      </div>
+      
+      <!-- PAGE 2 -->
+      <div class="mockup-page">
+        <h3>Page 2 (Intérieur)</h3>
+        <div class="mockup-border">
+          <div class="mockup-row-page2">
+            <div class="${getColClass("psaume", "col-33")}">
+              <div class="mockup-col-label">PSAUME / ACCL.</div>
+              ${obtenirApercuMoment("psaume")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("acclamation")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("credo")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("pu")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("offertoire")} (Début)
+            </div>
+            
+            <div class="${getColClass("sanctus", "col-33")}">
+              <div class="mockup-col-label">OFFERTOIRE / CO.</div>
+              ${obtenirApercuMoment("offertoire")} (Suite)
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("sanctus")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("pater")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("agnus")}
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("communion")} (Début)
+            </div>
+            
+            <div class="${getColClass("action_grace", "col-33")}">
+              <div class="mockup-col-label">COMMUNION / ACTION</div>
+              ${obtenirApercuMoment("communion")} (Suite)
+              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
+              ${obtenirApercuMoment("action_grace")}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  `;
+  canvas.innerHTML = html;
+}
 
 // --- Réglages ---
 const IMAGE_SLOTS = {
@@ -523,6 +755,7 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
     });
     statusEl.textContent = "Enregistré.";
     document.getElementById("app-title").textContent = document.getElementById("p-chorale").value || "DepliantApp";
+    dessinerApercuCanvas();
   } catch (err) {
     statusEl.textContent = `Erreur : ${err.message}`;
   }
@@ -546,7 +779,7 @@ function editeurItemHtml(chant) {
         <div class="chant-item" data-id="${chant.id}">
           <div class="chant-titre">
             <span class="chant-categorie-pill">${categorieLabel(chant.categorie)}</span>
-            ${escapeHtml(chant.titre)}${badge}
+            ${escapeHtml(chant.titre || "(sans titre)")}${badge}
           </div>
           <div class="chant-meta">${escapeHtml(refrainApercu)}</div>
         </div>
@@ -692,7 +925,7 @@ document.getElementById("ce-ajouter-couplet").addEventListener("click", () => aj
 async function ouvrirEditeurChant(id) {
   const chant = await api(`/chants/${id}`);
   document.getElementById("ce-id").value = chant.id;
-  document.getElementById("ce-titre").value = chant.titre;
+  document.getElementById("ce-titre").value = chant.titre || "";
   document.getElementById("ce-categorie").value = chant.categorie;
   document.getElementById("ce-refrain").value = chant.refrain || "";
   renderCoupletsFields(chant.couplets);
@@ -713,7 +946,7 @@ async function ouvrirEditeurChant(id) {
         suggestionEl.classList.add("hidden");
       });
     }
-  } catch (e) { /* pas grave si la suggestion échoue */ }
+  } catch (e) { }
 
   const doublonsEl = document.getElementById("ce-doublons");
   doublonsEl.classList.add("hidden");
@@ -723,7 +956,7 @@ async function ouvrirEditeurChant(id) {
       doublonsEl.classList.remove("hidden");
       doublonsEl.innerHTML = "Doublons possibles : " + doublons.map((d) => escapeHtml(d.titre)).join(", ");
     }
-  } catch (e) { /* idem */ }
+  } catch (e) { }
 
   ouvrirModale("chant-editor");
 }
@@ -750,14 +983,29 @@ document.getElementById("ce-fermer").addEventListener("click", () => {
 document.getElementById("chant-editor-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const id = document.getElementById("ce-id").value;
+  let titre = document.getElementById("ce-titre").value.trim();
+  const refrain = document.getElementById("ce-refrain").value.trim();
+  const couplets = getCoupletsFromFields();
+
+  if (!titre) {
+    if (refrain) {
+      titre = refrain.slice(0, 30) + "...";
+    } else if (couplets.length > 0) {
+      titre = couplets[0].slice(0, 30) + "...";
+    } else {
+      titre = "Chant sans titre";
+    }
+  }
+
   const payload = {
-    titre: document.getElementById("ce-titre").value,
+    titre,
     categorie: document.getElementById("ce-categorie").value,
-    refrain: document.getElementById("ce-refrain").value || null,
-    couplets: getCoupletsFromFields(),
+    refrain: refrain || null,
+    couplets,
     code_reference: document.getElementById("ce-code").value || null,
     occasions: document.getElementById("ce-occasions").value.split(",").map((s) => s.trim()).filter(Boolean),
   };
+  
   if (id) {
     await api(`/chants/${id}`, {
       method: "PATCH",
@@ -784,7 +1032,7 @@ document.getElementById("ce-supprimer").addEventListener("click", async () => {
   await actualiserEditeur();
 });
 
-// --- Importer ---
+// --- Importer (Interactive Workspace) ---
 document.getElementById("import-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const resultDiv = document.getElementById("import-result");
@@ -796,17 +1044,148 @@ document.getElementById("import-form").addEventListener("submit", async (e) => {
   formData.append("categorie_defaut", document.getElementById("import-categorie").value);
   formData.append("occasions", document.getElementById("import-occasions").value);
 
-  resultDiv.textContent = "Import en cours…";
+  resultDiv.textContent = "Analyse et découpage du fichier en cours…";
   try {
     const res = await fetch("/import/upload", { method: "POST", body: formData });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    resultDiv.innerHTML = `
-      <p><b>${data.total_importes}</b> chant(s) importé(s) depuis ${escapeHtml(data.fichier)}.</p>
-      <p>${data.a_verifier.length} à vérifier dans l'Éditeur (confiance faible).</p>
-    `;
+    
+    resultDiv.textContent = "";
+    fichierInput.value = ""; // reset
+    
+    afficherImportWorkspace(data.chants);
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
+  }
+});
+
+function afficherImportWorkspace(chants) {
+  importWorkspaceChants = chants;
+  const container = document.getElementById("import-workspace-container");
+  
+  if (!chants || chants.length === 0) {
+    container.innerHTML = `<p class="hint">Aucun chant n'a été détecté dans ce document. Réessayez.</p>`;
+    ouvrirModale("import-workspace-modal");
+    return;
+  }
+  
+  container.innerHTML = chants.map((c, index) => {
+    const isDuplicate = c.doublons && c.doublons.length > 0;
+    const badge = isDuplicate ? `<span class="iw-badge-duplicate">Doublon Détecté (${Math.round(c.doublons[0].similarite * 100)}%)</span>` : "";
+    const defaultAction = isDuplicate ? "replace" : "save";
+    const replaceOptions = isDuplicate
+      ? c.doublons.map((d) => `<option value="${d.id}">Remplacer : ${escapeHtml(d.titre)} (sim. ${Math.round(d.similarite * 100)}%)</option>`).join("")
+      : "";
+      
+    return `
+      <div class="iw-card ${isDuplicate ? "duplicate-detected" : ""}" data-index="${index}">
+        <div class="iw-card-header">
+          <h4 style="margin:0; font-size:0.95rem; color:var(--bleu);">Chant #${index + 1}</h4>
+          ${badge}
+        </div>
+        <div class="iw-fields" style="margin-top:10px;">
+          <div>
+            <label>Titre</label>
+            <input type="text" class="iw-titre" value="${escapeHtml(c.titre)}">
+          </div>
+          <div style="margin-top:6px;">
+            <label>Refrain</label>
+            <textarea class="iw-refrain" rows="2">${escapeHtml(c.refrain)}</textarea>
+          </div>
+          <div style="margin-top:6px;">
+            <label>Couplets (séparez les couplets par des lignes vides)</label>
+            <textarea class="iw-couplets" rows="4">${escapeHtml(c.couplets.join("\n\n"))}</textarea>
+          </div>
+          <div style="margin-top:6px;">
+            <label>Catégorie</label>
+            <select class="iw-categorie">
+              ${CATEGORIES.map((cat) => `<option value="${cat}" ${cat === c.categorie ? "selected" : ""}>${categorieLabel(cat)}</option>`).join("")}
+            </select>
+          </div>
+        </div>
+        <div class="iw-action-selector" style="margin-top:10px;">
+          <p>Importer en tant que :</p>
+          <div class="iw-options">
+            <label class="iw-option-label">
+              <input type="radio" name="iw-action-${index}" value="save" ${defaultAction === "save" ? "checked" : ""}>
+              Nouveau chant
+            </label>
+            <label class="iw-option-label">
+              <input type="radio" name="iw-action-${index}" value="replace" ${defaultAction === "replace" ? "checked" : ""} ${!isDuplicate ? "disabled" : ""}>
+              Remplacer le doublon
+            </label>
+            <label class="iw-option-label">
+              <input type="radio" name="iw-action-${index}" value="ignore" ${defaultAction === "ignore" ? "checked" : ""}>
+              Ignorer
+            </label>
+          </div>
+          ${isDuplicate ? `
+            <select class="iw-replace-select">
+              ${replaceOptions}
+            </select>
+          ` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  // Bind inputs on change
+  container.querySelectorAll(".iw-card").forEach((card) => {
+    const idx = Number(card.dataset.index);
+    const item = importWorkspaceChants[idx];
+    
+    card.querySelector(".iw-titre").addEventListener("input", (e) => { item.titre = e.target.value; });
+    card.querySelector(".iw-refrain").addEventListener("input", (e) => { item.refrain = e.target.value; });
+    card.querySelector(".iw-couplets").addEventListener("input", (e) => {
+      item.couplets = e.target.value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+    });
+    card.querySelector(".iw-categorie").addEventListener("change", (e) => { item.categorie = e.target.value; });
+  });
+
+  ouvrirModale("import-workspace-modal");
+}
+
+document.getElementById("iw-btn-annuler").addEventListener("click", () => {
+  if (confirm("Abandonner l'importation ? Toutes les modifications non enregistrées seront perdues.")) {
+    fermerModale("import-workspace-modal");
+  }
+});
+
+document.getElementById("iw-btn-confirmer").addEventListener("click", async () => {
+  const container = document.getElementById("import-workspace-container");
+  const cards = container.querySelectorAll(".iw-card");
+  
+  const payloadChants = importWorkspaceChants.map((item, index) => {
+    const card = cards[index];
+    const action = card.querySelector(`input[name="iw-action-${index}"]:checked`).value;
+    const replaceSelect = card.querySelector(`.iw-replace-select`);
+    const replace_id = replaceSelect ? Number(replaceSelect.value) : null;
+    
+    return {
+      action,
+      replace_id,
+      titre: item.titre,
+      refrain: item.refrain || null,
+      couplets: item.couplets,
+      code_reference: item.code_reference || null,
+      categorie: item.categorie,
+      occasions: item.occasions || [],
+      confiance: item.confiance || 1.0
+    };
+  });
+  
+  try {
+    const res = await api("/import/finalize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ chants: payloadChants }),
+    });
+    alert(`Importation finalisée : ${res.saved} ajoutés, ${res.replaced} remplacés, ${res.ignored} ignorés.`);
+    fermerModale("import-workspace-modal");
+    await actualiserListeBibliotheque();
+    await actualiserEditeur();
+  } catch (err) {
+    alert("Erreur lors de la finalisation: " + err.message);
   }
 });
 
@@ -898,7 +1277,8 @@ async function modifierDepliant(id) {
         const chant = await api(`/chants/${m.chant_id}`);
         momentsState[m.moment] = {
           type: "chant", chant_id: chant.id, chant_titre: chant.titre,
-          total_couplets: (chant.couplets || []).length, couplet_limit: m.couplet_limit || null,
+          total_couplets: (chant.couplets || []).length, couplet_limit: m.couplet_limit === 0 ? 0 : (m.couplet_limit || null),
+          refrain: chant.refrain, couplets: chant.couplets
         };
       } catch (e) {
         momentsState[m.moment] = { type: "aucun" };
@@ -914,6 +1294,7 @@ async function modifierDepliant(id) {
     renderMomentBody(row, moment);
   });
 
+  dessinerApercuCanvas();
   afficherResultatFeuillet(feuillet.id);
   afficherVue("composer");
 }
@@ -933,6 +1314,7 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
     row.querySelector(".moment-type").value = "aucun";
     renderMomentBody(row, moment);
   });
+  dessinerApercuCanvas();
   afficherVue("composer");
 });
 
@@ -971,7 +1353,9 @@ async function init() {
   document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
   document.getElementById("splash-titre").textContent = params.chorale || "DepliantApp";
 
-  // écran de démarrage affiché au moins 700ms pour rester visible et non "flashé"
+  // Initialisation à partir du hash courant ou de la bibliothèque par défaut
+  gererNavigationHash();
+
   const tempsRestant = 700 - (Date.now() - debutChargement);
   setTimeout(masquerSplash, Math.max(0, tempsRestant));
 }
