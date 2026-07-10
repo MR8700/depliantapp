@@ -57,12 +57,19 @@ def _x_colonne(i: int) -> float:
     return MARGE_EXTERIEURE + i * (LARGEUR_COLONNE + ENTRE_PANNEAUX)
 
 
-def _construire_frames(y_bas: float, hauteur: float, prefix: str) -> list[Frame]:
+def _construire_frames(y_bas: float, hauteurs: list[float], prefix: str) -> list[Frame]:
     return [
-        Frame(_x_colonne(i), y_bas, LARGEUR_COLONNE, hauteur, leftPadding=2, rightPadding=2,
+        Frame(_x_colonne(i), y_bas, LARGEUR_COLONNE, hauteurs[i], leftPadding=2, rightPadding=2,
               topPadding=2, bottomPadding=2, id=f"{prefix}{i}", showBoundary=0)
         for i in range(N_COLONNES)
     ]
+
+
+def _x_panneau(premiere_colonne: int) -> tuple[float, float]:
+    """Bornes horizontales d'un panneau de 2 colonnes (0 = gauche, 2 = droite)."""
+    x0 = _x_colonne(premiere_colonne)
+    x1 = _x_colonne(premiere_colonne + 1) + LARGEUR_COLONNE
+    return x0, x1
 
 
 def _image_ajustee(chemin: Optional[Path], hauteur_max: float) -> Optional[Image]:
@@ -78,22 +85,26 @@ def _image_ajustee(chemin: Optional[Path], hauteur_max: float) -> Optional[Image
 
 
 def _dessiner_entete(canvas, config: dict, images: dict, feuillet: schemas.Feuillet):
+    """L'en-tête n'occupe que le panneau de droite (colonnes 3-4), pas toute la
+    largeur de la page — le panneau de gauche démarre tout en haut, sans
+    en-tête au-dessus, comme sur le dépliant de référence."""
     canvas.saveState()
+    x_gauche_panneau, x_droite_panneau = _x_panneau(2)
     y_haut = PAGE_H - MARGE_HAUTE
     y_bas = y_haut - HAUTEUR_ENTETE
 
     logo_g = images.get("logo_gauche")
     logo_d = images.get("logo_droit")
     if logo_g:
-        canvas.drawImage(str(logo_g), MARGE_EXTERIEURE, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
+        canvas.drawImage(str(logo_g), x_gauche_panneau, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
                           height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
     if logo_d:
-        canvas.drawImage(str(logo_d), PAGE_W - MARGE_EXTERIEURE - HAUTEUR_LOGO,
+        canvas.drawImage(str(logo_d), x_droite_panneau - HAUTEUR_LOGO,
                           y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
                           height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
 
-    centre_x = PAGE_W / 2
-    largeur_bloc = 100 * mm
+    centre_x = (x_gauche_panneau + x_droite_panneau) / 2
+    largeur_bloc = (x_droite_panneau - x_gauche_panneau) - 2 * HAUTEUR_LOGO - 8
     canvas.setFont("Times-Bold", 14)
     canvas.setFillColor(colors.HexColor("#8a6d1a"))
     canvas.drawCentredString(centre_x, y_haut - 14, config.get("paroisse", ""))
@@ -141,16 +152,17 @@ def _dessiner_entete(canvas, config: dict, images: dict, feuillet: schemas.Feuil
     canvas.restoreState()
 
 
-def _dessiner_encadres_panneaux(canvas, y_bas: float, hauteur: float) -> None:
+def _dessiner_encadres_panneaux(canvas, y_bas: float, hauteur_gauche: float, hauteur_droite: float) -> None:
     """Un seul encadré par panneau de 2 colonnes (gauche = colonnes 0+1, droite
     = colonnes 2+3), sur toute la hauteur disponible — comme sur le dépliant de
-    référence, où l'encadré n'entoure pas chaque chant mais tout le panneau."""
+    référence, où l'encadré n'entoure pas chaque chant mais tout le panneau.
+    Les deux panneaux peuvent avoir des hauteurs différentes (page 1 : le
+    panneau droit est plus bas car l'en-tête occupe le dessus)."""
     canvas.saveState()
     canvas.setStrokeColor(colors.black)
     canvas.setLineWidth(1.0)
-    for premiere_colonne in (0, 2):
-        x0 = _x_colonne(premiere_colonne)
-        x1 = _x_colonne(premiere_colonne + 1) + LARGEUR_COLONNE
+    for premiere_colonne, hauteur in ((0, hauteur_gauche), (2, hauteur_droite)):
+        x0, x1 = _x_panneau(premiere_colonne)
         canvas.rect(x0, y_bas, x1 - x0, hauteur, fill=0, stroke=1)
     canvas.restoreState()
 
@@ -189,7 +201,13 @@ def _tenter_typographie(sections: list[Section], typo) -> tuple[list[list], int,
     ]
 
     def hauteur_pour_colonne(i: int) -> float:
-        return HAUTEUR_COLONNE_P1 if i < N_COLONNES else HAUTEUR_COLONNE_SUITE
+        # Page 1 : colonnes 0-1 (panneau gauche) pleine hauteur, colonnes 2-3
+        # (panneau droit) réduites par l'en-tête. Pages suivantes : pleine hauteur.
+        if i < 2:
+            return HAUTEUR_COLONNE_SUITE
+        if i < N_COLONNES:
+            return HAUTEUR_COLONNE_P1
+        return HAUTEUR_COLONNE_SUITE
 
     colonnes = assigner_colonnes(sections_mesurees, hauteur_pour_colonne)
     pages_necessaires = max(1, math.ceil(len(colonnes) / N_COLONNES))
@@ -202,18 +220,20 @@ def _rendre_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, colonnes
 
     def on_page1(canvas, doc_):
         _dessiner_entete(canvas, config, images, feuillet)
-        _dessiner_encadres_panneaux(canvas, Y_BAS_COLONNES, HAUTEUR_COLONNE_P1)
+        _dessiner_encadres_panneaux(canvas, Y_BAS_COLONNES, HAUTEUR_COLONNE_SUITE, HAUTEUR_COLONNE_P1)
         if doc_.page == pages_necessaires:
             _dessiner_pied(canvas, config, images)
 
     def on_autre_page(canvas, doc_):
-        _dessiner_encadres_panneaux(canvas, Y_BAS_COLONNES, HAUTEUR_COLONNE_SUITE)
+        _dessiner_encadres_panneaux(canvas, Y_BAS_COLONNES, HAUTEUR_COLONNE_SUITE, HAUTEUR_COLONNE_SUITE)
         if doc_.page == pages_necessaires:
             _dessiner_pied(canvas, config, images)
 
+    hauteurs_page1 = [HAUTEUR_COLONNE_SUITE, HAUTEUR_COLONNE_SUITE, HAUTEUR_COLONNE_P1, HAUTEUR_COLONNE_P1]
+    hauteurs_suite = [HAUTEUR_COLONNE_SUITE] * N_COLONNES
     doc.addPageTemplates([
-        PageTemplate(id="Page1", frames=_construire_frames(Y_BAS_COLONNES, HAUTEUR_COLONNE_P1, "p1c"), onPage=on_page1),
-        PageTemplate(id="AutresPages", frames=_construire_frames(Y_BAS_COLONNES, HAUTEUR_COLONNE_SUITE, "pnc"), onPage=on_autre_page),
+        PageTemplate(id="Page1", frames=_construire_frames(Y_BAS_COLONNES, hauteurs_page1, "p1c"), onPage=on_page1),
+        PageTemplate(id="AutresPages", frames=_construire_frames(Y_BAS_COLONNES, hauteurs_suite, "pnc"), onPage=on_autre_page),
     ])
 
     story = [NextPageTemplate("AutresPages")]
