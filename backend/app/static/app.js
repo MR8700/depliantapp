@@ -80,8 +80,14 @@ function fermerModale(id) {
 async function api(path, options) {
   const res = await fetch(path, options);
   if (!res.ok) {
-    const detail = await res.text();
-    throw new Error(`${res.status}: ${detail}`);
+    const texte = await res.text();
+    let detail = texte;
+    try { detail = JSON.parse(texte).detail; } catch (e) { /* pas du JSON, on garde le texte brut */ }
+    const message = typeof detail === "object" && detail !== null ? detail.message : detail;
+    const erreur = new Error(message || `Erreur ${res.status}`);
+    erreur.status = res.status;
+    erreur.detail = detail;
+    throw erreur;
   }
   return res.status === 204 ? null : res.json();
 }
@@ -317,18 +323,53 @@ function construireFeuilletPayload() {
   };
 }
 
-function afficherResultatFeuillet(feuilletId) {
-  const pdfUrl = `/feuillets/${feuilletId}/pdf?t=${Date.now()}`;
+function nettoyerMomentsEnCause() {
+  document.querySelectorAll(".moment-row.moment-en-cause").forEach((row) => row.classList.remove("moment-en-cause"));
+}
+
+function afficherErreurDepassement(detail, resultDiv) {
+  const message = typeof detail === "object" && detail !== null ? detail.message : String(detail || "Erreur inconnue");
+  const moments = (typeof detail === "object" && detail !== null && detail.moments_en_cause) || [];
+  resultDiv.innerHTML = etatVideHtml(
+    "⚠️",
+    "Le feuillet ne tient pas dans le format",
+    `${escapeHtml(message)}${moments.length ? " Réduis le nombre de couplets affichés sur le(s) moment(s) surligné(s) ci-dessus." : ""}`,
+  );
+  moments.forEach((m) => {
+    const row = document.querySelector(`.moment-row[data-moment="${m}"]`);
+    if (row) row.classList.add("moment-en-cause");
+  });
+  const premiereRow = document.querySelector(".moment-row.moment-en-cause");
+  if (premiereRow) premiereRow.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+async function afficherResultatFeuillet(feuilletId) {
   const resultDiv = document.getElementById("composer-result");
-  resultDiv.innerHTML = `
-    <div class="toolbar">
-      <a href="${pdfUrl}" target="_blank" class="btn-ouvrir">Ouvrir</a>
-      <a href="${pdfUrl}" download="feuillet.pdf" class="btn-enregistrer">Enregistrer</a>
-      <button type="button" id="btn-partager-composer" class="btn-partager">Partager</button>
-    </div>
-    <iframe class="pdf-preview" src="${pdfUrl}" title="Aperçu du feuillet"></iframe>
-  `;
-  document.getElementById("btn-partager-composer").addEventListener("click", () => partagerPdf(feuilletId));
+  nettoyerMomentsEnCause();
+  resultDiv.innerHTML = `<p class="hint">Génération du PDF…</p>`;
+  const pdfUrl = `/feuillets/${feuilletId}/pdf?t=${Date.now()}`;
+  try {
+    const res = await fetch(pdfUrl);
+    if (!res.ok) {
+      const texte = await res.text();
+      let detail = texte;
+      try { detail = JSON.parse(texte).detail; } catch (e) { /* texte brut, pas du JSON */ }
+      afficherErreurDepassement(detail, resultDiv);
+      return;
+    }
+    const blobUrl = URL.createObjectURL(await res.blob());
+    resultDiv.innerHTML = `
+      <div class="toolbar">
+        <a href="${blobUrl}" target="_blank" class="btn-ouvrir">Ouvrir</a>
+        <a href="${blobUrl}" download="feuillet-${feuilletId}.pdf" class="btn-enregistrer">Enregistrer</a>
+        <button type="button" id="btn-partager-composer" class="btn-partager">Partager</button>
+      </div>
+      <iframe class="pdf-preview" src="${blobUrl}" title="Aperçu du feuillet"></iframe>
+    `;
+    document.getElementById("btn-partager-composer").addEventListener("click", () => partagerPdf(feuilletId));
+  } catch (err) {
+    resultDiv.innerHTML = `<p class="hint">Erreur : ${escapeHtml(err.message)}</p>`;
+  }
 }
 
 async function partagerPdf(feuilletId) {
@@ -357,7 +398,7 @@ async function regenererApercuSiPossible() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(construireFeuilletPayload()),
       });
-      afficherResultatFeuillet(feuilletCourantId);
+      await afficherResultatFeuillet(feuilletCourantId);
     } catch (err) { /* l'utilisateur reverra l'erreur au prochain clic sur Générer */ }
   }, 400);
 }
@@ -381,7 +422,7 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
           body: JSON.stringify(payload),
         });
     feuilletCourantId = feuillet.id;
-    afficherResultatFeuillet(feuillet.id);
+    await afficherResultatFeuillet(feuillet.id);
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
   } finally {

@@ -2,7 +2,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
 from .. import config, crud, schemas
-from ..render.pdf import render_feuillet_pdf_auto
+from ..render.pdf import DepassementImpossible, render_feuillet_pdf_auto
 
 router = APIRouter(prefix="/feuillets", tags=["feuillets"])
 
@@ -46,7 +46,13 @@ def get_feuillet_pdf(feuillet_id: int):
     if not feuillet:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
     images = {slot: config.get_image_path(slot) for slot in config.IMAGE_SLOTS}
-    pdf_bytes = render_feuillet_pdf_auto(feuillet, config.get_config(), images=images)
+    try:
+        pdf_bytes = render_feuillet_pdf_auto(feuillet, config.get_config(), images=images)
+    except DepassementImpossible as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "moments_en_cause": exc.moments_en_cause},
+        ) from exc
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

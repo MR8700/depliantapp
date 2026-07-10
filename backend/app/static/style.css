@@ -218,6 +218,16 @@ button[type="submit"], #btn-generer {
 .moment-row .couplet-limite { margin: 8px 0 0 0; font-size: 0.78rem; }
 .moment-row .select-couplet-limite { margin-top: 2px; }
 
+.moment-row.moment-en-cause {
+  border: 2px solid var(--danger);
+  background: #fdeaea;
+  animation: pulse-en-cause 1.4s ease-in-out 2;
+}
+@keyframes pulse-en-cause {
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 0 0 4px rgba(178, 59, 59, 0.25); }
+}
+
 .modal {
   position: fixed; inset: 0; background: rgba(0,0,0,0.4);
   display: flex; align-items: flex-end; z-index: 20;

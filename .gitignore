@@ -1,6 +1,6 @@
 backend/data/
-backend/uvicorn_out.log
-backend/uvicorn_err.log
+backend/uvicorn_out*.log
+backend/uvicorn_err*.log
 **/__pycache__/
 *.pyc
 .venv/
