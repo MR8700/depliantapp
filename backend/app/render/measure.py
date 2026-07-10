@@ -11,6 +11,17 @@ from .model import Section
 HAUTEUR_INFINIE = 10_000 * 72  # bien plus grand que n'importe quelle colonne
 
 _NUMERO_DEJA_PRESENT = re.compile(r"^\s*\d+\s*[.\-–]")
+_MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)
+_MARQUEUR_R = re.compile(r"(^|\s)(R\s*:)")
+
+
+def _gras_marqueurs_refrain(texte_echappe: str) -> str:
+    """Met en gras les rappels de refrain intégrés au milieu d'un couplet
+    (ex: « R: kyrie eleison » dans un Kyrie alterné) — le texte est déjà
+    échappé XML, donc sans risque d'injecter de balise indésirable."""
+    texte_echappe = _MARQUEUR_REF.sub(r"<b>\1</b>", texte_echappe)
+    texte_echappe = _MARQUEUR_R.sub(r"\1<b>\2</b>", texte_echappe)
+    return texte_echappe
 
 
 def construire_flowables_section(section: Section, styles: dict) -> list:
@@ -26,7 +37,8 @@ def construire_flowables_section(section: Section, styles: dict) -> list:
     for i, couplet in enumerate(song.couplets, start=1):
         deja_numerote = bool(_NUMERO_DEJA_PRESENT.match(couplet))
         prefixe = f"{i}. " if (song.refrain or plusieurs) and not deja_numerote else ""
-        flowables.append(Paragraph(f"{prefixe}{escape(couplet)}", styles["couplet"]))
+        texte = _gras_marqueurs_refrain(escape(couplet))
+        flowables.append(Paragraph(f"{prefixe}{texte}", styles["couplet"]))
 
     return flowables
 
