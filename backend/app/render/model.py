@@ -1,6 +1,8 @@
 """Modèle de composition partagé : résout un feuillet en une liste de sections
-(un moment liturgique = un chant/texte résolu), indépendamment du moteur de
-rendu (PDF aujourd'hui ; DOCX/HTML pourront réutiliser ces mêmes objets)."""
+ordonnées (chaque section = un chant/texte résolu), indépendamment du moteur de
+rendu. Le moteur ne connaît aucun nom de moment liturgique fixe : il reçoit une
+liste triée de sections et compose. Un chant spécial ajouté par l'utilisateur
+se place exactement comme les autres, selon son "ordre"."""
 from dataclasses import dataclass, field
 from typing import Optional
 
@@ -20,6 +22,7 @@ class Section:
     moment: str
     label: str
     song: Song
+    ordre: int = 0
 
 
 def _resolve_song(moment: schemas.MomentContenu) -> Song:
@@ -43,7 +46,11 @@ def _resolve_song(moment: schemas.MomentContenu) -> Song:
 
 
 def build_sections(feuillet: schemas.Feuillet) -> list[Section]:
+    """Trie les moments par `ordre` explicite (drag&drop / saisie numérique) ;
+    à défaut, l'ordre de la liste `moments` fait foi (index stable)."""
+    indexed = list(enumerate(feuillet.moments))
+    indexed.sort(key=lambda pair: pair[1].ordre if pair[1].ordre is not None else pair[0])
     return [
-        Section(moment=m.moment, label=label_for(m.moment), song=_resolve_song(m))
-        for m in feuillet.moments
+        Section(moment=m.moment, label=label_for(m.moment), song=_resolve_song(m), ordre=i)
+        for i, (_, m) in enumerate(indexed)
     ]

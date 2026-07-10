@@ -203,18 +203,23 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
         lieu=row["lieu"],
         lectures=schemas.Lectures(**json.loads(row["lectures"])),
         moments=[schemas.MomentContenu(**m) for m in json.loads(row["moments"])],
+        priere_active=bool(row["priere_active"]),
+        priere_texte=row["priere_texte"],
     )
 
 
 def create_feuillet(feuillet: schemas.FeuilletCreate) -> schemas.Feuillet:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO feuillets (date, lieu, lectures, moments) VALUES (?, ?, ?, ?)",
+            "INSERT INTO feuillets (date, lieu, lectures, moments, priere_active, priere_texte) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 feuillet.date,
                 feuillet.lieu,
                 feuillet.lectures.model_dump_json(),
                 json.dumps([m.model_dump() for m in feuillet.moments], ensure_ascii=False),
+                int(feuillet.priere_active),
+                feuillet.priere_texte,
             ),
         )
         row = conn.execute("SELECT * FROM feuillets WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -233,7 +238,8 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate) -> Optio
     with get_connection() as conn:
         conn.execute(
             """
-            UPDATE feuillets SET date=?, lieu=?, lectures=?, moments=?, updated_at=datetime('now')
+            UPDATE feuillets SET date=?, lieu=?, lectures=?, moments=?, priere_active=?, priere_texte=?,
+                updated_at=datetime('now')
             WHERE id=?
             """,
             (
@@ -241,6 +247,8 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate) -> Optio
                 feuillet.lieu,
                 feuillet.lectures.model_dump_json(),
                 json.dumps([m.model_dump() for m in feuillet.moments], ensure_ascii=False),
+                int(feuillet.priere_active),
+                feuillet.priere_texte,
                 feuillet_id,
             ),
         )

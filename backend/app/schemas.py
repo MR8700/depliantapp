@@ -73,6 +73,10 @@ class MomentContenu(BaseModel):
     couplet_limit: Optional[int] = None
     """Limite le nombre de couplets affichés pour ce chant dans ce feuillet
     (sans modifier le chant dans la bibliothèque) — utile pour tenir sur 2 pages."""
+    ordre: Optional[int] = None
+    """Position explicite dans le flux de composition (drag&drop ou saisie
+    numérique côté client). Si absent, l'ordre de la liste `moments` fait foi —
+    permet d'insérer un chant spécial n'importe où sans toucher au moteur."""
 
 
 class Lectures(BaseModel):
@@ -87,6 +91,12 @@ class FeuilletBase(BaseModel):
     lieu: Optional[str] = None
     lectures: Lectures = Field(default_factory=Lectures)
     moments: list[MomentContenu] = Field(default_factory=list)
+    priere_active: bool = False
+    """Widget facultatif « Prière pour le Burkina Faso » : occupe toute la
+    zone G2 de la page 1 quand actif ; sinon G2 rejoint le flux des chants."""
+    priere_texte: Optional[str] = None
+    """Texte de la prière ; si vide et priere_active=True, le texte par
+    défaut (prière pour le Burkina Faso) est utilisé."""
 
 
 class FeuilletCreate(FeuilletBase):

@@ -16,6 +16,7 @@ DEFAULTS = {
     "chorale": "Chorale Sainte Cécile",
     "paroisse": "CCB St Thomas d'Aquin de la Cité Universitaire de Kossodo",
     "contact": "",
+    "annonce": "",
     **{f"{slot}_filename": None for slot in IMAGE_SLOTS},
 }
 

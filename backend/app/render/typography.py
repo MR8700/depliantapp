@@ -1,74 +1,78 @@
-"""Cascade typographique : la plus grande taille de police (parmi une échelle
-fine, 11pt → 8pt par pas de 0.2) permettant à tout le contenu de tenir ; si
-même 8pt ne suffit pas, réduction de l'interligne ; si ça ne suffit toujours
-pas, réduction de l'espacement entre couplets — jamais l'inverse, et jamais de
-police sous 8pt. Police Times (standard PDF, aucun fichier à embarquer) pour un
-rendu "carnet imprimé" plutôt que le sans-serif d'un brouillon HTML."""
+"""Typographie fixe et invariable — jamais de cascade, jamais de réduction
+de police pour faire tenir le texte. Si le contenu ne tient pas dans les
+zones disponibles, le moteur le signale (DepassementImpossible) plutôt que
+de trahir la maquette."""
+import re
 from dataclasses import dataclass
 
+from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
 
 _styles = getSampleStyleSheet()
 
-ECHELLE_POLICE_CORPS = [11.0, 10.8, 10.5, 10.2, 10.0, 9.8, 9.6, 9.4, 9.2, 9.0, 8.8, 8.6, 8.4, 8.2, 8.0]
-FACTEURS_INTERLIGNE = [1.02, 0.98, 0.95]
-ESPACEMENTS_COUPLET_MM = [3.0, 2.2, 1.5]
+POLICE = "Times-Roman"
+POLICE_GRAS = "Times-Bold"
+POLICE_ITALIQUE = "Times-Italic"
+
+TAILLE_TEXTE = 8.0
+TAILLE_TITRE = 9.0
+FACTEUR_INTERLIGNE = 0.95
+
+INTERLIGNE_TEXTE = round(TAILLE_TEXTE * FACTEUR_INTERLIGNE, 2)
+INTERLIGNE_TITRE = round(TAILLE_TITRE * FACTEUR_INTERLIGNE, 2)
+
+_NUMERO_DEJA_PRESENT = re.compile(r"^\s*(\d+)\s*([.\-–&]+)\s*")
+_MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)
+_MARQUEUR_R = re.compile(r"(^|\s)(R\s*:)")
 
 
-@dataclass(frozen=True)
-class Typographie:
-    police_corps: float
-    facteur_interligne: float
-    espacement_couplet_mm: float
-
-    @property
-    def police_titre(self) -> float:
-        return round(self.police_corps * 1.05, 1)
-
-    @property
-    def interligne(self) -> float:
-        return round(self.police_corps * self.facteur_interligne, 2)
+def mettre_en_gras_numero(texte_echappe: str, numero: int) -> str:
+    """Met le numéro de couplet en gras (« 1. » etc.), qu'il soit déjà
+    présent dans le texte source ou ajouté par le moteur."""
+    m = _NUMERO_DEJA_PRESENT.match(texte_echappe)
+    if m:
+        prefixe = texte_echappe[: m.end()]
+        reste = texte_echappe[m.end():]
+        return f"<b>{prefixe.strip()}</b> {reste}"
+    return f"<b>{numero}.</b> {texte_echappe}"
 
 
-def cascade_typographies():
-    """Ordre exact demandé : d'abord toute l'échelle de police à interligne et
-    espacement normaux, puis (seulement si 8pt ne suffit toujours pas) réduction
-    de l'interligne à police minimale, puis réduction de l'espacement."""
-    for police in ECHELLE_POLICE_CORPS:
-        yield Typographie(police, FACTEURS_INTERLIGNE[0], ESPACEMENTS_COUPLET_MM[0])
-    police_min = ECHELLE_POLICE_CORPS[-1]
-    for facteur in FACTEURS_INTERLIGNE[1:]:
-        yield Typographie(police_min, facteur, ESPACEMENTS_COUPLET_MM[0])
-    for espacement in ESPACEMENTS_COUPLET_MM[1:]:
-        yield Typographie(police_min, FACTEURS_INTERLIGNE[-1], espacement)
+def mettre_en_gras_refrain(texte_echappe: str) -> str:
+    """Met en gras le préfixe « Réf : » et les rappels de refrain intégrés
+    au milieu d'un couplet (ex : Kyrie alterné avec « R: »)."""
+    if not _MARQUEUR_REF.search(texte_echappe) and not _MARQUEUR_R.search(texte_echappe):
+        texte_echappe = f"<b>Réf :</b> {texte_echappe}"
+    else:
+        texte_echappe = _MARQUEUR_REF.sub(r"<b>\1</b>", texte_echappe)
+        texte_echappe = _MARQUEUR_R.sub(r"\1<b>\2</b>", texte_echappe)
+    return texte_echappe
 
 
-def construire_styles(typo: Typographie) -> dict:
-    espacement_pt = typo.espacement_couplet_mm * 2.8346
+def construire_styles() -> dict:
     return {
         "titre_section": ParagraphStyle(
-            f"TitreSection{id(typo)}", parent=_styles["Normal"],
-            fontName="Times-Bold", fontSize=typo.police_titre, leading=typo.police_titre * 1.15,
-            alignment=0, spaceAfter=espacement_pt, spaceBefore=espacement_pt * 1.3,
+            "TitreSection", parent=_styles["Normal"],
+            fontName=POLICE_GRAS, fontSize=TAILLE_TITRE, leading=INTERLIGNE_TITRE,
+            alignment=TA_LEFT, spaceAfter=2.5, spaceBefore=4,
         ),
         "titre_chant": ParagraphStyle(
-            f"TitreChant{id(typo)}", parent=_styles["Normal"],
-            fontName="Times-Bold", fontSize=typo.police_corps, leading=typo.interligne,
-            spaceAfter=espacement_pt * 0.6,
+            "TitreChant", parent=_styles["Normal"],
+            fontName=POLICE_GRAS, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
+            alignment=TA_LEFT, spaceAfter=1.5,
         ),
         "refrain": ParagraphStyle(
-            f"Refrain{id(typo)}", parent=_styles["Normal"],
-            fontName="Times-BoldItalic", fontSize=typo.police_corps, leading=typo.interligne,
-            alignment=0, spaceAfter=espacement_pt,
+            "Refrain", parent=_styles["Normal"],
+            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
+            alignment=TA_LEFT, spaceAfter=2.0,
         ),
         "couplet": ParagraphStyle(
-            f"Couplet{id(typo)}", parent=_styles["Normal"],
-            fontName="Times-Roman", fontSize=typo.police_corps, leading=typo.interligne,
-            alignment=0, spaceAfter=espacement_pt,
+            "Couplet", parent=_styles["Normal"],
+            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
+            alignment=TA_LEFT, spaceAfter=2.0,
         ),
-        "contact": ParagraphStyle(
-            f"Contact{id(typo)}", parent=_styles["Normal"],
-            fontName="Times-Italic", fontSize=max(typo.police_corps - 1, 7), alignment=1,
+        "priere_corps": ParagraphStyle(
+            "PriereCorps", parent=_styles["Normal"],
+            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
+            alignment=TA_LEFT, spaceAfter=2.0,
         ),
-        "espacement_pt": espacement_pt,
     }

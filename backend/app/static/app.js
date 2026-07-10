@@ -1296,7 +1296,7 @@ async function modifierDepliant(id) {
 
   dessinerApercuCanvas();
   afficherResultatFeuillet(feuillet.id);
-  afficherVue("composer");
+  changerVue("composer");
 }
 
 function indiceComposerHtml() {
@@ -1315,7 +1315,7 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
     renderMomentBody(row, moment);
   });
   dessinerApercuCanvas();
-  afficherVue("composer");
+  changerVue("composer");
 });
 
 // --- Splash ---

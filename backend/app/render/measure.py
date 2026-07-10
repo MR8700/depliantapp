@@ -1,59 +1,55 @@
-"""Mesure la hauteur réelle qu'occupera une section (titre + refrain + couplets)
-avant de décider dans quelle colonne la placer — en demandant à ReportLab de
-calculer lui-même (`Flowable.wrap()`) plutôt qu'en estimant au pixel près."""
-import re
+"""Construit les unités atomiques d'une section (titre, refrain, chaque
+couplet) et mesure leur hauteur réelle via ReportLab (`Flowable.wrap()`).
+Chaque unité est indivisible : le LayoutEngine ne coupe jamais un couplet,
+il déplace l'unité entière vers la zone suivante si elle ne rentre pas."""
+from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
-from reportlab.platypus import KeepTogether, Paragraph
+from reportlab.platypus import Paragraph
 
 from .model import Section
+from .typography import mettre_en_gras_numero, mettre_en_gras_refrain
 
-HAUTEUR_INFINIE = 10_000 * 72  # bien plus grand que n'importe quelle colonne
-
-_NUMERO_DEJA_PRESENT = re.compile(r"^\s*\d+\s*[.\-–]")
-_MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)
-_MARQUEUR_R = re.compile(r"(^|\s)(R\s*:)")
+HAUTEUR_INFINIE = 10_000 * 72
 
 
-def _gras_marqueurs_refrain(texte_echappe: str) -> str:
-    """Met en gras les rappels de refrain intégrés au milieu d'un couplet
-    (ex: « R: kyrie eleison » dans un Kyrie alterné) — le texte est déjà
-    échappé XML, donc sans risque d'injecter de balise indésirable."""
-    texte_echappe = _MARQUEUR_REF.sub(r"<b>\1</b>", texte_echappe)
-    texte_echappe = _MARQUEUR_R.sub(r"\1<b>\2</b>", texte_echappe)
-    return texte_echappe
+@dataclass
+class Unite:
+    flowable: Paragraph
+    hauteur: float
+    section_ordre: int
+    nature: str  # "titre" | "refrain" | "couplet"
 
 
-def construire_flowables_section(section: Section, styles: dict) -> list:
-    flowables = [Paragraph(f"<u>{escape(section.label)}</u>", styles["titre_section"])]
+def construire_unites_section(section: Section, styles: dict, largeur: float) -> list[Unite]:
+    unites: list[Unite] = []
+
+    def ajouter(flowable: Paragraph, nature: str) -> None:
+        _, h = flowable.wrap(largeur, HAUTEUR_INFINIE)
+        unites.append(Unite(flowable=flowable, hauteur=h, section_ordre=section.ordre, nature=nature))
+
+    titre_texte = f"<u>{escape(section.label).upper()}</u>"
+    ajouter(Paragraph(titre_texte, styles["titre_section"]), "titre")
 
     song = section.song
     if song.titre:
-        flowables.append(Paragraph(escape(song.titre), styles["titre_chant"]))
+        ajouter(Paragraph(escape(song.titre), styles["titre_chant"]), "titre")
+
     if song.refrain:
-        flowables.append(Paragraph(f"Réf : {escape(song.refrain)}", styles["refrain"]))
+        texte = mettre_en_gras_refrain(escape(song.refrain))
+        ajouter(Paragraph(texte, styles["refrain"]), "refrain")
 
-    plusieurs = len(song.couplets) > 1
     for i, couplet in enumerate(song.couplets, start=1):
-        deja_numerote = bool(_NUMERO_DEJA_PRESENT.match(couplet))
-        prefixe = f"{i}. " if (song.refrain or plusieurs) and not deja_numerote else ""
-        texte = _gras_marqueurs_refrain(escape(couplet))
-        flowables.append(Paragraph(f"{prefixe}{texte}", styles["couplet"]))
+        texte = mettre_en_gras_numero(escape(couplet), i)
+        ajouter(Paragraph(texte, styles["couplet"]), "couplet")
 
-    return flowables
+    return unites
 
 
-def mesurer_hauteur(flowables: list, largeur: float) -> float:
-    """Somme des hauteurs individuelles (mesure ReportLab réelle via wrap()),
-    équivalent à la hauteur qu'occupera le groupe une fois rendu à la suite."""
-    total = 0.0
-    for f in flowables:
-        _, h = f.wrap(largeur, HAUTEUR_INFINIE)
-        total += h
-    return total
-
-
-def construire_section_mesuree(section: Section, styles: dict, largeur: float) -> tuple[float, list]:
-    flowables = construire_flowables_section(section, styles)
-    hauteur = mesurer_hauteur(flowables, largeur)
-    return hauteur, [KeepTogether(flowables)]
+def construire_unites(sections: list[Section], styles: dict, largeur: float) -> list[Unite]:
+    """Concatène les unités de toutes les sections, déjà triées par ordre —
+    c'est cette liste plate que le LayoutEngine distribue zone par zone."""
+    unites: list[Unite] = []
+    for section in sections:
+        unites.extend(construire_unites_section(section, styles, largeur))
+    return unites

@@ -56,6 +56,8 @@ CREATE TABLE IF NOT EXISTS feuillets (
     lieu TEXT,
     lectures TEXT NOT NULL DEFAULT '{}',
     moments TEXT NOT NULL DEFAULT '[]',
+    priere_active INTEGER NOT NULL DEFAULT 0,
+    priere_texte TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -76,6 +78,15 @@ def init_db() -> None:
             conn.execute("ALTER TABLE chants ADD COLUMN slug TEXT")
 
         conn.executescript(SCHEMA)
+
+        # migration : ajoute les colonnes du widget Prière si la base existait
+        # avant son introduction (le CREATE TABLE IF NOT EXISTS ci-dessus ne
+        # touche pas une table déjà créée).
+        colonnes_feuillets = {row["name"] for row in conn.execute("PRAGMA table_info(feuillets)").fetchall()}
+        if "priere_active" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN priere_active INTEGER NOT NULL DEFAULT 0")
+        if "priere_texte" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN priere_texte TEXT")
 
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
