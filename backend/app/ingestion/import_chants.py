@@ -12,7 +12,7 @@ from .. import crud, schemas
 from ..db import init_db
 from .parse_doc import iter_paragraphs_doc
 from .parse_docx import iter_paragraphs_docx
-from .parse_pdf import extract_text_pages, segment_by_font, segment_pdf_auto
+from .parse_pdf import segment_by_font, segment_pdf_paragraphs
 from .common import segment_paragraphs, RawChant
 
 DEFAULT_CHANTS_DIR = Path(r"C:\dev\Projet_IA\CHANTS")
@@ -52,7 +52,7 @@ CATEGORY_FILE_MAP = {
 
 SKIP_FILES = {"Cliparts.docx"}
 
-# Carnets structurés en "CATEGORIE N : Titre" (segment_pdf_auto s'en sort bien).
+# Carnets structurés en "CATEGORIE N : Titre" (segment_pdf_paragraphs s'en sort bien).
 STRUCTURED_CARNETS = {
     "CARNET DE CHANT-1(1)(2).pdf",
     "CARNET NEW VERSION-2-1.pdf",
@@ -113,8 +113,7 @@ def import_all(chants_dir: Path = DEFAULT_CHANTS_DIR) -> list[dict]:
                 continue
 
             if name in STRUCTURED_CARNETS:
-                pages = extract_text_pages(path)
-                for categorie, raw in segment_pdf_auto(pages):
+                for categorie, raw in segment_pdf_paragraphs(path):
                     _store(raw, categorie, [], name, report)
                 continue
 

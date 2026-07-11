@@ -23,24 +23,33 @@ from typing import Optional
 # --- Marqueurs structurels ---------------------------------------------
 
 REF_RE = re.compile(r"^\s*(R[ée]f(?:rain)?\.?\s*\d*|R)\s*[:;]\s*(.*)$", re.IGNORECASE)
-# Numérotation : "1.", "1-", "1)", "1:", "1&3-", "1&2&3.", chiffres romains.
-VERSE_RE = re.compile(r"^\s*(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[\.\-\):]\s*(.+)$")
+# Numérotation : "1.", "1-", "1)", "1:", "1&3-", "1&2&3.", chiffres romains —
+# le séparateur inclut le tiret cadratin/demi-cadratin ("1 — Texte..."),
+# très fréquent en PDF (mise en page Word qui convertit "-" en "—").
+VERSE_RE = re.compile(r"^\s*(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[\.\-\)–—:]\s*(.+)$")
 BULLET_RE = re.compile(r"^\s*[•●▪◦►\-\*]\s+(.+)$")
 # Lignes dialoguées (chant à plusieurs voix) : ne créent jamais de nouveau
-# couplet, prolongent seulement le bloc en cours (cas "Soliste:"/"Chœur:").
+# couplet, prolongent seulement le bloc en cours (cas "Soliste:"/"Chœur:",
+# mais aussi les abréviations à une lettre très fréquentes dans les carnets
+# scannés/PDF : "S/", "S/A :", "T/A:", "Ts:", "Ts :").
 DIALOGUE_RE = re.compile(
-    r"^\s*(Soliste|Solo|Ch[oœ]ur|Tous|Assembl[ée]e|Sop(?:rano)?|Alt(?:o)?|T[ée]nor|Basse|Cantor|H|F)\s*[:;]",
+    r"^\s*(Soliste|Solo|Ch[oœ]ur|Tous|Assembl[ée]e|Sop(?:rano)?|Alt(?:o)?|T[ée]nor|Basse|Cantor"
+    r"|Ts|[SATBH](?:\s*/\s*[SATBH])*)\s*[:/;]",
     re.IGNORECASE,
 )
 BIS_TER_RE = re.compile(r"\(\s*(bis|ter|x\s*\d)\s*\)\s*$", re.IGNORECASE)
 
-INLINE_VERSE_SPLIT_RE = re.compile(r"(?=\b\d+(?:\s*&\s*\d+)*\s*[\.\-\):]\s)")
+INLINE_VERSE_SPLIT_RE = re.compile(r"(?=\b\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s)")
 # Repère un marqueur (Réf/numéro) même au MILIEU d'un paragraphe (deux
 # couplets tapés à la suite sans saut de ligne, très fréquent dans les
 # carnets sources) pour l'éclater en plusieurs lignes avant classification.
+# Le numéro peut être collé au mot suivant sans espace ("1-Venez mes
+# enfants", fréquent en PDF) : on n'exige donc qu'une majuscule juste après
+# le séparateur plutôt qu'une espace obligatoire.
 _INLINE_MARKER_SPLIT_RE = re.compile(
     r"(?<=\S)(?<!\(Ref)(?<!\(R[ée]f)\s+"
-    r"(?=(?:R[ée]f(?:rain)?\.?\s*\d*\s*[:;])|(?:\d+(?:\s*&\s*\d+)*\s*[\.\-\):]\s))",
+    r"(?=(?:R[ée]f(?:rain)?\.?\s*\d*\s*[:;])"
+    r"|(?:\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s*(?=[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ])))",
     re.IGNORECASE,
 )
 
@@ -54,6 +63,82 @@ SECTION_KEYWORDS = {
     "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE",
     "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE",
 }
+
+# Gros carnets multi-catégories (souvent des PDF) qui préfixent chaque chant
+# d'un code "CATEGORIE[numéro] : Titre" (ex. "ENTREE2 : DANS LA PAIX...",
+# "NOEL24: Un enfant est venu") — chaque chant a un code DIFFÉRENT, donc
+# _detect_consistent_prefix (qui exige un préfixe unique et répété) ne peut
+# pas le voir : ce marqueur est reconnu indépendamment, pour n'importe quel
+# mot-clé de SECTION_KEYWORDS, avec ou sans numéro.
+CODED_TITLE_RE = re.compile(r"^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{3,25})\s*(\d{0,3})\s*[:.\-]\s*(.+)$")
+# Clés déjà passées par normaliser()+upper() (sans accents) puisque la
+# recherche ci-dessous normalise systématiquement le mot capté.
+_CODED_TITLE_CATEGORIES = {
+    "ENTREE": "Entree",
+    "KYRIE": "Kyrie",
+    "GLORIA": "Gloria",
+    "PSAUME": "Psaume",
+    "ACCLAMATION": "Acclamation",
+    "ALLELUIA": "Acclamation",
+    "CREDO": "Credo",
+    "PRIERE UNIVERSELLE": "Priere_universelle",
+    "PU": "Priere_universelle", "PRIERE": "Priere_universelle",
+    "OFFERTOIRE": "Offertoire",
+    "SANCTUS": "Sanctus",
+    "ANAMNESE": "Anamnese",
+    "NOTRE PERE": "Notre_Pere", "PATER": "Notre_Pere",
+    "AGNUS": "Agnus",
+    "COMMUNION": "Communion",
+    "ACTION DE GRACE": "Action_de_grace",
+    "SORTIE": "Sortie",
+    "NOEL": "Noel",
+    "CAREME": "Careme",
+    "AVENT": "Avent",
+    "PAQUES": "Paques",
+    "MARIAGE": "Mariage",
+    "DEFUNTS": "Defunts",
+    "BAPTEME": "Bapteme_Confirmation",
+}
+
+
+# Éclate aussi un titre codé apparaissant en PLEIN MILIEU d'un paragraphe
+# reconstruit (ex. fin d'un couplet collée au titre du chant suivant faute
+# d'un espacement suffisant dans le PDF source pour que l'extraction les
+# sépare). Le mot-clé capté est validé après coup via _CODED_TITLE_CATEGORIES
+# (normalisé, donc insensible aux accents — "CARÊME2 :" doit être reconnu
+# aussi bien que "CAREME2 :") plutôt que comparé littéralement à une liste
+# ASCII figée, qui manquerait toute variante accentuée.
+_CODED_TITLE_INLINE_RE = re.compile(
+    r"(?<=\S)(\s+)(?=([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{3,25})\s*\d{0,3}\s*[:.\-]\s*\S)"
+)
+
+
+def _split_titres_codes(texte: str) -> list[str]:
+    morceaux: list[str] = []
+    dernier = 0
+    for m in _CODED_TITLE_INLINE_RE.finditer(texte):
+        if normaliser(m.group(2)).upper() not in _CODED_TITLE_CATEGORIES:
+            continue
+        morceaux.append(texte[dernier:m.start()])
+        dernier = m.end()
+    morceaux.append(texte[dernier:])
+    return morceaux
+
+
+def _match_coded_title(ligne: str) -> Optional[tuple[str, str]]:
+    """Reconnaît un titre codé 'CATEGORIE[N] : Titre'. Rejette les lignes de
+    sommaire à points de suite ('ENTREE.......... 3') qui matcheraient sinon
+    le même motif sans être un vrai titre de chant."""
+    m = CODED_TITLE_RE.match(ligne.strip())
+    if not m:
+        return None
+    categorie = _CODED_TITLE_CATEGORIES.get(normaliser(m.group(1)).upper())
+    if categorie is None:
+        return None
+    reste = m.group(3).strip()
+    if ".." in reste or "…" in reste or len(re.sub(r"[.\s\d]", "", reste)) < 2:
+        return None
+    return categorie, reste
 
 TITRE_LONGUEUR_SUSPECTE = 60
 # Une ligne libre plus longue que ça, après qu'un Réf/verset a déjà été vu
@@ -74,6 +159,10 @@ class RawChant:
     code_reference: Optional[str] = None
     confiance: float = 1.0
     avertissements: list[str] = field(default_factory=list)
+    # Catégorie déduite d'un titre codé ("ENTREE2 : ...") quand la source en
+    # fournit un — None si la catégorie doit venir du choix par défaut de
+    # l'utilisateur à l'import.
+    categorie_detectee: Optional[str] = None
 
 
 def normaliser(texte: str) -> str:
@@ -109,9 +198,10 @@ def _eclater_marqueurs_internes(paragraphs: list[str]) -> list[str]:
     lignes: list[str] = []
     for p in paragraphs:
         for morceau in _INLINE_MARKER_SPLIT_RE.split(p):
-            morceau = morceau.strip()
-            if morceau:
-                lignes.append(morceau)
+            for sous_morceau in _split_titres_codes(morceau):
+                sous_morceau = sous_morceau.strip()
+                if sous_morceau:
+                    lignes.append(sous_morceau)
     return lignes
 
 
@@ -176,9 +266,18 @@ def _detecter_refrain_implicite(blocs_avant_versets: list[str], tous_les_blocs: 
     hypothèses et retient la plus fiable (texte, confiance) :
     - un bloc revient à l'identique (ou quasi) au moins deux fois -> fort
     - le tout premier bloc (avant le premier couplet numéroté) est court
-      -> plausible mais plus faible (cas 4 du cahier des charges)."""
+      -> plausible mais plus faible (cas 4 du cahier des charges).
+
+    Le CANDIDAT élu ne peut venir que de blocs_avant_versets (texte non
+    numéroté) — jamais d'un couplet déjà numéroté dans blocs_versets, sans
+    quoi ce couplet se retrouverait promu refrain tout en restant listé
+    comme couplet (ou pire, disparaîtrait des couplets si son texte
+    coïncidait par ailleurs avec une entrée de blocs_avant_versets, la
+    suppression ci-dessous ne visant que cette liste). tous_les_blocs ne sert
+    qu'à VÉRIFIER qu'un candidat se répète ailleurs (y compris dans un
+    couplet, ex. un rappel de refrain intégré à un couplet)."""
     if len(tous_les_blocs) >= 2:
-        for i, a in enumerate(tous_les_blocs):
+        for a in blocs_avant_versets:
             if len(normaliser(a)) < 3:
                 continue
             repetitions = sum(1 for b in tous_les_blocs if b is not a and _similarite(a, b) >= 0.85)
@@ -237,6 +336,7 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
     blocs_versets: list[tuple[str, str]] = []  # (marqueur, texte)
     blocs_pre_versets: list[str] = []  # texte libre vu avant le 1er couplet
     titre_courant: Optional[str] = None
+    categorie_courante: Optional[str] = None
     dernier_type: Optional[str] = None
     # Vrai dès qu'un Réf/verset/puce a été vu pour le chant en cours — une
     # ligne libre qui suit signale alors presque toujours le titre du chant
@@ -247,10 +347,10 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
         return bool(blocs_refrain_explicite or blocs_versets or blocs_pre_versets)
 
     def flush():
-        nonlocal titre_courant, blocs_refrain_explicite, blocs_versets, blocs_pre_versets, dernier_type, a_vu_marqueur
+        nonlocal titre_courant, categorie_courante, blocs_refrain_explicite, blocs_versets, blocs_pre_versets, dernier_type, a_vu_marqueur
         if titre_courant is None and not a_du_contenu():
             return
-        chant = RawChant(titre=titre_courant or "(sans titre)")
+        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=categorie_courante)
         refrain_confiance = 1.0
         if blocs_refrain_explicite:
             chant.refrain = " / ".join(blocs_refrain_explicite)
@@ -275,6 +375,7 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
         chants.append(_finalize(chant))
 
         titre_courant = None
+        categorie_courante = None
         blocs_refrain_explicite = []
         blocs_versets = []
         blocs_pre_versets = []
@@ -282,6 +383,13 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
         a_vu_marqueur = False
 
     for ligne in lignes:
+        coded = _match_coded_title(ligne.texte)
+        if coded:
+            flush()
+            categorie_courante, titre_courant = coded
+            dernier_type = "titre"
+            continue
+
         prefix_m = CATEGORY_PREFIX_RE.match(ligne.texte) if prefix else None
         is_boundary_title = bool(prefix_m and prefix_m.group(1).strip().upper() == prefix)
 

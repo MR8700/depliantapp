@@ -12,7 +12,7 @@ from .common import RawChant, segment_paragraphs
 from .parse_doc import iter_paragraphs_doc
 from .parse_docx import iter_paragraphs_docx
 from .parse_notre_modele import segment_notre_modele
-from .parse_pdf import extract_text_pages, segment_by_font, segment_carnet_pages, segment_freeform_pdf, segment_booklet_layout
+from .parse_pdf import segment_by_font, segment_pdf_paragraphs
 
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".pdf"}
 
@@ -34,10 +34,31 @@ def _detect_real_format(path: Path) -> str:
     return path.suffix.lower()
 
 
-def _qualite(resultats: list[tuple[str, RawChant]]) -> int:
+_TAILLE_CARNET_IMPLAUSIBLE = 500
+
+
+def _qualite(resultats: list[tuple[str, RawChant]]) -> float:
     """Nombre d'entrées jugées fiables (confiance >= 0.7) — sert à comparer
-    plusieurs stratégies de segmentation PDF et choisir la meilleure automatiquement."""
-    return sum(1 for _, raw in resultats if raw.confiance >= 0.7)
+    plusieurs stratégies de segmentation PDF et choisir la meilleure
+    automatiquement.
+
+    Ni un compte brut, ni une simple moyenne ne suffisent seuls : un compte
+    brut est gagné à tort par une stratégie qui fragmente le document en
+    centaines de mini-entrées (aucun carnet réel n'atteint plusieurs
+    centaines de chants) — même une faible fraction de faux positifs parmi
+    un très grand nombre d'entrées peut alors dépasser en compte absolu une
+    segmentation bien plus juste mais moins nombreuse. À l'inverse, une
+    simple moyenne favorise à tort une stratégie qui n'extrait presque rien
+    (quelques chants bien reconnus, tout le reste silencieusement perdu) au
+    détriment d'une segmentation qui couvre effectivement tout le document.
+    On garde donc le compte brut tant que la taille du résultat reste
+    plausible pour un carnet réel, et on ne pénalise QUE le cas clairement
+    aberrant (fragmentation massive)."""
+    n = len(resultats)
+    confiants = sum(1 for _, raw in resultats if raw.confiance >= 0.7)
+    if n > _TAILLE_CARNET_IMPLAUSIBLE:
+        return confiants / n
+    return float(confiants)
 
 
 def _appliquer_defaut(resultats: list[tuple[str, RawChant]], categorie_defaut: str) -> list[tuple[str, RawChant]]:
@@ -70,26 +91,23 @@ def parse_and_segment(path: Path, categorie_defaut: str = "Autre", word=None) ->
     if suffix == ".docx":
         with _chemin_avec_bonne_extension(path, ".docx") as chemin:
             paragraphs = iter_paragraphs_docx(chemin)
-        return [(categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
+        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
 
     if suffix == ".doc":
         with _chemin_avec_bonne_extension(path, ".doc") as chemin:
             paragraphs = iter_paragraphs_doc(chemin, word=word)
-        return [(categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
+        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
 
     if suffix == ".pdf":
         notre_modele = segment_notre_modele(path)
         if notre_modele:
             return _appliquer_defaut(notre_modele, categorie_defaut)
 
-        pages = extract_text_pages(path)
-        candidats = [segment_carnet_pages(pages)]
+        candidats = [segment_pdf_paragraphs(path)]
         try:
             candidats.append(segment_by_font(path))
         except Exception:
             pass
-        candidats.append(segment_freeform_pdf(pages))
-        candidats.append(segment_booklet_layout(pages))
         meilleur = max(candidats, key=_qualite)
         return _appliquer_defaut(meilleur, categorie_defaut)
 

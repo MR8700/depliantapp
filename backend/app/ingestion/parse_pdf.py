@@ -1,196 +1,186 @@
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Optional
 
 import fitz
 
-from .common import REF_RE, VERSE_RE, TITRE_LONGUEUR_SUSPECTE, RawChant, finalize, split_inline_verses
+from .common import RawChant, VERSE_RE, finalize, normaliser, segment_paragraphs, split_inline_verses
 
-CARNET_TITLE_RE = re.compile(r"^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{3,20})\s*(\d{1,3})\s*[:.\-]\s*(.+)$")
-SECTION_HEADER_RE = re.compile(r"^[A-Z]\.\s*([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ ]{3,30})$")
+_NUMERO_PAGE_RE = re.compile(r"^\d{1,4}$")
+# Ligne de sommaire à points de suite ("ENTREE.......................... 02")
+# — jamais du contenu de chant, à exclure entièrement plutôt que de risquer
+# qu'elle se glisse dans un couplet/refrain.
+_LIGNE_SOMMAIRE_RE = re.compile(r"\.{3,}\s*\d*\s*$")
 
-# Mot-clé de section (tel qu'il apparaît dans les carnets, sans accent) -> catégorie interne
-CARNET_CATEGORY_MAP = {
-    "ENTREE": "Entree",
-    "KYRIE": "Kyrie",
-    "GLORIA": "Gloria",
-    "PSAUME": "Psaume",
-    "ACCLAMATION": "Acclamation",
-    "CREDO": "Credo",
-    "PRIERE UNIVERSELLE": "Priere_universelle",
-    "PU": "Priere_universelle",
-    "PRIERE": "Priere_universelle",
-    "OFFERTOIRE": "Offertoire",
-    "SANCTUS": "Sanctus",
-    "ANAMNESE": "Anamnese",
-    "NOTRE PERE": "Notre_Pere",
-    "PATER": "Notre_Pere",
-    "AGNUS": "Agnus",
-    "COMMUNION": "Communion",
-    "ACTION DE GRACE": "Action_de_grace",
-    "ACTION DE GRÂCE": "Action_de_grace",
-    "SORTIE": "Sortie",
-}
+# Fraction de la largeur de page en dessous de laquelle une ligne est
+# considérée "étroite" (donc représentative d'une vraie colonne) plutôt
+# qu'un en-tête/pied de page pleine largeur (ex. "CHORALE SAINT AUGUSTIN"
+# répété sur chaque page) qui fausserait sinon la détection des colonnes.
+_LARGEUR_ETROITE_RATIO = 0.55
+# Écart minimal (fraction de la largeur de page) entre deux bords gauches
+# consécutifs pour le considérer comme une vraie séparation de colonnes,
+# plutôt qu'une simple variation d'indentation à l'intérieur d'une colonne.
+_SEUIL_COLONNE_RATIO = 0.08
+# Un saut vertical supérieur à ce multiple de la hauteur de ligne courante
+# marque une vraie coupure de paragraphe (ligne suivante = nouveau chant/
+# nouveau bloc) plutôt qu'un simple retour à la ligne d'une phrase qui continue.
+_SEUIL_SAUT_PARAGRAPHE = 1.6
 
 
-def extract_text_pages(path: Path) -> list[str]:
+def _colonnes_frontieres(lignes: list[tuple[float, float, float, float, str]], largeur_page: float) -> list[float]:
+    """Déduit les frontières verticales séparant les colonnes réelles d'une
+    page en regroupant les bords GAUCHES des lignes ÉTROITES (un bloc pleine
+    largeur comme un en-tête ne doit pas fausser la détection). On ne se fie
+    volontairement qu'aux bords gauches, pas à un intervalle [x0, x1] fusionné
+    de proche en proche : une seule ligne un peu plus longue que la normale
+    suffirait sinon à faire fusionner en chaîne deux colonnes pourtant bien
+    distinctes. De nombreux carnets sont en A4/Lettre PORTRAIT à 2 colonnes,
+    pas systématiquement 4 comme le supposait l'ancienne heuristique
+    'largeur > 600 => 4 colonnes', qui découpait alors arbitrairement au
+    milieu de paragraphes normaux sur n'importe quelle page assez large (dont
+    une simple page Lettre US, déjà large de 612pt à elle seule)."""
+    etroites = [l for l in lignes if (l[2] - l[0]) < largeur_page * _LARGEUR_ETROITE_RATIO]
+    if len(etroites) < 3:
+        return []
+    x0s = sorted(l[0] for l in etroites)
+    seuil = largeur_page * _SEUIL_COLONNE_RATIO
+    return [(x0s[i - 1] + x0s[i]) / 2 for i in range(1, len(x0s)) if x0s[i] - x0s[i - 1] > seuil]
+
+
+def _assigner_colonnes(lignes: list[tuple[float, float, float, float, str]], largeur_page: float) -> list[list]:
+    """Affecte chaque ligne à une colonne d'après son bord GAUCHE (x0), pas
+    son centre : dans du texte aligné à gauche, deux lignes d'une même
+    colonne partagent le même x0 mais peuvent avoir une largeur très
+    différente (un court dernier mot de couplet vs. une ligne pleine), donc
+    des CENTRES très différents — les classer par centre les éclaterait à
+    tort dans des colonnes différentes alors qu'elles partagent le même x0
+    que _colonnes_frontieres a utilisé pour définir ces frontières."""
+    frontieres = _colonnes_frontieres(lignes, largeur_page)
+    colonnes: list[list] = [[] for _ in range(len(frontieres) + 1)]
+    for ligne in lignes:
+        x0 = ligne[0]
+        idx = sum(1 for f in frontieres if x0 > f)
+        colonnes[idx].append(ligne)
+    return colonnes
+
+
+def _lignes_page(page: fitz.Page) -> list[tuple[float, float, float, float, str]]:
+    """Une entrée par ligne visuelle (niveau le plus fin de get_text('dict')),
+    pas par bloc PyMuPDF : sur un même document, PyMuPDF regroupe tantôt tout
+    un chant en un seul bloc, tantôt une seule ligne par bloc, selon
+    l'espacement — trop irrégulier pour s'y fier. On reconstruit nous-mêmes
+    les paragraphes ensuite à partir des coordonnées (voir _regrouper)."""
+    lignes = []
+    for block in page.get_text("dict")["blocks"]:
+        for line in block.get("lines", []):
+            spans = line.get("spans", [])
+            texte = "".join(s["text"] for s in spans).strip()
+            if not texte:
+                continue
+            x0, y0, x1, y1 = line["bbox"]
+            lignes.append((x0, y0, x1, y1, texte))
+    return lignes
+
+
+def _regrouper(lignes_colonne: list[tuple[float, float, float, float, str]]) -> list[str]:
+    """Reconstruit des paragraphes à partir de lignes visuelles triées
+    verticalement : un petit saut vertical (retour à la ligne d'une phrase
+    qui continue) rejoint le paragraphe courant, un grand saut (ligne vide
+    dans le PDF d'origine) en démarre un nouveau."""
+    paragraphes: list[str] = []
+    courant: list[str] = []
+    dernier_y1: Optional[float] = None
+    dernier_h: float = 0.0
+    for x0, y0, x1, y1, texte in lignes_colonne:
+        hauteur = max(y1 - y0, 1.0)
+        if dernier_y1 is not None and (y0 - dernier_y1) > max(dernier_h, hauteur) * _SEUIL_SAUT_PARAGRAPHE:
+            if courant:
+                paragraphes.append(" ".join(courant))
+            courant = []
+        courant.append(texte)
+        dernier_y1 = y1
+        dernier_h = hauteur
+    if courant:
+        paragraphes.append(" ".join(courant))
+    return paragraphes
+
+
+# Fraction de la hauteur de page, depuis le haut/le bas, où un en-tête/pied
+# de page peut physiquement se trouver. Restreindre la DÉTECTION à cette
+# marge (plutôt que chercher un texte répété n'importe où sur la page) évite
+# qu'un mot ou une courte formule qui revient par coïncidence dans plusieurs
+# chants du carnet (ex. un mot de refrain fréquent) ne soit pris à tort pour
+# un en-tête et supprimé partout dans le document.
+_MARGE_ENTETE_PIED_RATIO = 0.1
+
+
+def _entetes_pieds_de_page(
+    pages: list[tuple[float, float, list[tuple[float, float, float, float, str]]]]
+) -> set[str]:
+    """Détecte les en-têtes/pieds de page répétés sur (presque) chaque page
+    d'un carnet (ex. 'CHORALE SAINT AUGUSTIN ... PAROISSE DE POUYTENGA')
+    pour les exclure : sinon ce texte, réinjecté à chaque page au milieu du
+    flux d'une colonne, se glisse comme un faux couplet/refrain en plein
+    milieu d'un chant. Seules les lignes situées dans la marge haute/basse de
+    la page sont candidates (voir _MARGE_ENTETE_PIED_RATIO)."""
+    n_pages = len(pages)
+    if n_pages < 3:
+        return set()
+    compteur: Counter[str] = Counter()
+    for _largeur, hauteur, lignes in pages:
+        marge = hauteur * _MARGE_ENTETE_PIED_RATIO
+        vus = set()
+        for _x0, y0, _x1, y1, texte in lignes:
+            if y0 > marge and y1 < hauteur - marge:
+                continue
+            cle = normaliser(texte)
+            if cle and cle not in vus:
+                compteur[cle] += 1
+                vus.add(cle)
+    seuil_repetition = max(4, int(n_pages * 0.2))
+    return {cle for cle, n in compteur.items() if n >= seuil_repetition and len(cle) < 80}
+
+
+def extract_paragraphs_pdf(path: Path) -> list[str]:
+    """Extrait les paragraphes d'un PDF dans l'ordre de lecture réel, colonne
+    par colonne (nombre de colonnes détecté dynamiquement page par page, pas
+    figé à 4) puis page par page — reproduit ainsi l'ordre 'colonne 1 de haut
+    en bas, puis colonne 2, puis page suivante colonne 1...' des livrets
+    pliés, quel que soit leur nombre réel de colonnes (1, 2 ou 4)."""
     doc = fitz.open(path)
-    pages_text = []
     try:
-        for page in doc:
-            rect = page.rect
-            width = rect.width
-            if width > 600:
-                # Diviser en 4 colonnes pour les livrets A4 paysage pliés
-                col_w = width / 4.0
-                columns = [[] for _ in range(4)]
-                
-                blocks = page.get_text("blocks")
-                for block in blocks:
-                    x0, y0, x1, y1, text, block_no, block_type = block
-                    center_x = (x0 + x1) / 2.0
-                    col_idx = int(center_x // col_w)
-                    col_idx = max(0, min(3, col_idx))
-                    columns[col_idx].append(block)
-                
-                page_lines = []
-                for col in columns:
-                    col.sort(key=lambda b: b[1]) # trier verticalement
-                    for block in col:
-                        page_lines.append(block[4])
-                pages_text.append("\n".join(page_lines))
-            else:
-                pages_text.append(page.get_text())
-        return pages_text
+        pages = [(page.rect.width, page.rect.height, _lignes_page(page)) for page in doc]
     finally:
         doc.close()
 
+    entetes_pieds = _entetes_pieds_de_page(pages)
 
-def segment_carnet_pages(pages: list[str]) -> list[tuple[str, RawChant]]:
-    lines = [line.strip() for page in pages for line in page.split("\n") if line.strip()]
-
-    results: list[tuple[str, RawChant]] = []
-    current: Optional[RawChant] = None
-    current_categorie: Optional[str] = None
-    active: Optional[str] = None
-
-    def flush():
-        nonlocal current
-        if current is not None:
-            results.append((current_categorie or "Autre", finalize(current)))
-        current = None
-
-    for line in lines:
-        section_m = SECTION_HEADER_RE.match(line)
-        title_m = CARNET_TITLE_RE.match(line)
-        ref_m = REF_RE.match(line)
-        verse_m = VERSE_RE.match(line)
-
-        if section_m:
-            current_categorie = CARNET_CATEGORY_MAP.get(section_m.group(1).strip()) or current_categorie
-            active = None
+    paragraphes: list[str] = []
+    for largeur_page, _hauteur, lignes in pages:
+        lignes_utiles = [
+            l for l in lignes
+            if normaliser(l[4]) not in entetes_pieds
+            and not _NUMERO_PAGE_RE.match(l[4].strip())
+            and not _LIGNE_SOMMAIRE_RE.search(l[4].strip())
+        ]
+        if not lignes_utiles:
             continue
-
-        if title_m:
-            flush()
-            cat_word = title_m.group(1).strip()
-            current_categorie = CARNET_CATEGORY_MAP.get(cat_word, current_categorie)
-            current = RawChant(titre=title_m.group(3).strip())
-            active = "titre"
-            continue
-
-        if ref_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            text = ref_m.group(2).strip()
-            current.refrain = f"{current.refrain} {text}".strip() if current.refrain else text
-            active = "refrain"
-            continue
-
-        if verse_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            current.couplets.extend(split_inline_verses(line))
-            active = "couplet"
-            continue
-
-        if current is None or active is None:
-            continue
-        if active == "titre":
-            current.titre = f"{current.titre} {line}".strip()
-        elif active == "refrain":
-            current.refrain = f"{current.refrain} {line}".strip()
-        elif active == "couplet" and current.couplets:
-            current.couplets[-1] = f"{current.couplets[-1]} {line}".strip()
-
-    flush()
-    return results
+        for colonne in _assigner_colonnes(lignes_utiles, largeur_page):
+            colonne.sort(key=lambda l: l[1])
+            paragraphes.extend(_regrouper(colonne))
+    return paragraphes
 
 
-def segment_freeform_pdf(pages: list[str]) -> list[tuple[str, RawChant]]:
-    """Repli pour les carnets qui n'utilisent pas l'en-tête 'CATEGORIE N : Titre'
-    (ex. CHANT CHORALE.pdf) : mêmes règles que segment_carnet_pages, mais la limite
-    entre deux chants est détectée génériquement (ligne non-ref/non-couplet qui suit
-    un chant déjà rempli), comme pour les fichiers .doc/.docx sans préfixe."""
-    lines = [line.strip() for page in pages for line in page.split("\n") if line.strip()]
-
-    results: list[tuple[str, RawChant]] = []
-    current: Optional[RawChant] = None
-    active: Optional[str] = None
-
-    def flush():
-        nonlocal current
-        if current is not None:
-            results.append(("Autre", finalize(current)))
-        current = None
-
-    for line in lines:
-        ref_m = REF_RE.match(line)
-        verse_m = VERSE_RE.match(line)
-
-        if not ref_m and not verse_m and current is not None and (
-            current.refrain or current.couplets or len(current.titre) > TITRE_LONGUEUR_SUSPECTE
-        ):
-            flush()
-
-        if ref_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            text = ref_m.group(2).strip()
-            current.refrain = f"{current.refrain} {text}".strip() if current.refrain else text
-            active = "refrain"
-            continue
-
-        if verse_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            current.couplets.extend(split_inline_verses(line))
-            active = "couplet"
-            continue
-
-        if current is None:
-            current = RawChant(titre=line)
-            active = "titre"
-            continue
-
-        if active == "titre":
-            current.titre = f"{current.titre} {line}".strip()
-        elif active == "refrain":
-            current.refrain = f"{current.refrain} {line}".strip()
-        elif active == "couplet" and current.couplets:
-            current.couplets[-1] = f"{current.couplets[-1]} {line}".strip()
-
-    flush()
-    return results
-
-
-def segment_pdf_auto(pages: list[str]) -> list[tuple[str, RawChant]]:
-    """Essaie d'abord le format 'CATEGORIE N : Titre' (gros carnets structurés) ;
-    si trop peu de chants en ressortent, retombe sur la segmentation générique."""
-    structured = segment_carnet_pages(pages)
-    if len(structured) >= 10:
-        return structured
-    return segment_freeform_pdf(pages)
+def segment_pdf_paragraphs(path: Path) -> list[tuple[str, RawChant]]:
+    """Segmentation générique d'un PDF quelconque : extraction en paragraphes
+    dans le bon ordre de lecture, puis même moteur multi-indices à score de
+    confiance que les carnets .doc/.docx (common.segment_paragraphs)."""
+    paragraphes = extract_paragraphs_pdf(path)
+    return [
+        (chant.categorie_detectee or "Autre", chant)
+        for chant in segment_paragraphs(paragraphes)
+    ]
 
 
 def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str, RawChant]]:
@@ -246,99 +236,3 @@ def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str,
         doc.close()
 
 
-LITURGICAL_HEADER_RE = re.compile(
-    r"^\s*(SORTIE|PRI[EÈ]RE|ENTR[EÉ]E|KYRIE|GLORIA|PSAUME|ACCLAMATION|CREDO|PU|OFFERTOIRE|SANCTUS|PATER|AGNUS|COMMUNION|ACTION\s+DE\s+GR[AÂ]CE)\b\s*[:\-\s]?\s*(.*)$",
-    re.IGNORECASE
-)
-
-MOMENTS_WITH_COLON = {
-    "SORTIE", "ENTREE", "ENTRÉE", "KYRIE", "GLORIA", 
-    "PSAUME", "ACCLAMATION", "CREDO", "PU", "OFFERTOIRE", 
-    "SANCTUS", "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE"
-}
-
-def segment_booklet_layout(pages: list[str]) -> list[tuple[str, RawChant]]:
-    lines = [line.strip() for page in pages for line in page.split("\n") if line.strip()]
-    results: list[tuple[str, RawChant]] = []
-    current: Optional[RawChant] = None
-    current_categorie: str = "Autre"
-    active: Optional[str] = None
-    
-    def flush():
-        nonlocal current
-        if current is not None:
-            current.titre = current.titre.strip()
-            if not current.titre or current.titre == "(sans titre)":
-                if current.refrain:
-                    current.titre = current.refrain[:30] + "..."
-                elif current.couplets:
-                    current.titre = current.couplets[0][:30] + "..."
-                else:
-                    current.titre = f"Chant de {current_categorie}"
-            results.append((current_categorie, finalize(current)))
-        current = None
-
-    for line in lines:
-        header_m = LITURGICAL_HEADER_RE.match(line)
-        ref_m = REF_RE.match(line)
-        verse_m = VERSE_RE.match(line)
-        
-        if header_m:
-            keyword = header_m.group(1).upper()
-            if keyword in MOMENTS_WITH_COLON and ":" not in line:
-                header_m = None
-        
-        if header_m:
-            flush()
-            keyword = header_m.group(1).upper()
-            extra = header_m.group(2).strip()
-            
-            mapped_cat = CARNET_CATEGORY_MAP.get(keyword)
-            if not mapped_cat:
-                if "PRI" in keyword: mapped_cat = "Priere_universelle"
-                elif "ENTR" in keyword: mapped_cat = "Entree"
-                elif "GR" in keyword: mapped_cat = "Action_de_grace"
-                else: mapped_cat = "Autre"
-            
-            current_categorie = mapped_cat
-            title_text = extra.lstrip(":- ").strip()
-            if not title_text:
-                title_text = "(sans titre)"
-            current = RawChant(titre=title_text)
-            active = "titre"
-            continue
-            
-        if ref_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            text = ref_m.group(2).strip()
-            current.refrain = f"{current.refrain} {text}".strip() if current.refrain else text
-            active = "refrain"
-            continue
-            
-        if verse_m:
-            if current is None:
-                current = RawChant(titre="(sans titre)")
-            current.couplets.extend(split_inline_verses(line))
-            active = "couplet"
-            continue
-            
-        if current is None:
-            continue
-            
-        if active == "titre":
-            if current.titre and current.titre != "(sans titre)":
-                current.couplets.append(line)
-                active = "couplet"
-            else:
-                current.titre = f"{current.titre} {line}".strip()
-        elif active == "refrain":
-            current.refrain = f"{current.refrain} {line}".strip()
-        elif active == "couplet":
-            if current.couplets:
-                current.couplets[-1] = f"{current.couplets[-1]} {line}".strip()
-            else:
-                current.couplets.append(line)
-                
-    flush()
-    return results
