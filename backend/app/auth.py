@@ -9,6 +9,7 @@ import hmac
 import os
 import secrets
 import time
+from datetime import datetime, timezone
 from typing import Optional
 
 from .db import get_connection
@@ -55,29 +56,57 @@ def verify_password(mot_de_passe: str, hash_stocke: str) -> bool:
     return hmac.compare_digest(empreinte.hex(), empreinte_hex)
 
 
+def _mot_de_passe_mensuel() -> str:
+    """Mot de passe par défaut dérivé de la clé secrète + du mois calendaire
+    courant (AAAA-MM). Tant qu'on reste dans le même mois, ce mot de passe
+    est TOUJOURS LE MÊME, même après un redéploiement Render qui repart
+    d'une base vide — inutile d'aller consulter les logs à chaque
+    redémarrage. Il change automatiquement au mois suivant (sans jamais
+    revenir à un mot de passe déjà utilisé). Reste imprévisible pour qui
+    n'a pas la clé secrète.
+
+    ATTENTION : ceci ne fonctionne que si _secret_key() est stable elle
+    aussi, c'est-à-dire si DEPLIANTAPP_SECRET_KEY est définie comme
+    variable d'environnement Render (pas seulement le fichier local,
+    lui-même effacé à chaque redéploiement sur le plan gratuit)."""
+    bucket = datetime.now(timezone.utc).strftime("%Y-%m")
+    empreinte = hmac.new(_secret_key(), bucket.encode("utf-8"), hashlib.sha256).digest()
+    return base64.urlsafe_b64encode(empreinte).decode("ascii").rstrip("=")[:16]
+
+
 def ensure_default_account() -> None:
     """Crée le compte unique s'il n'existe pas encore — appelé au démarrage
     (init_db). Le mot de passe initial n'est JAMAIS codé en dur dans le
     dépôt (visible publiquement dans git sinon) : il vient de la variable
     d'environnement DEPLIANTAPP_DEFAULT_PASSWORD si définie, sinon il est
-    généré aléatoirement et affiché une seule fois dans les logs de
-    démarrage + écrit dans DATA_DIR/mot_de_passe_initial.txt, à consulter
-    juste après le tout premier déploiement puis à changer immédiatement."""
+    dérivé de manière déterministe (voir _mot_de_passe_mensuel) pour rester
+    stable tout le mois plutôt que de changer à chaque redéploiement — il
+    est malgré tout affiché une seule fois dans les logs de démarrage et
+    écrit dans DATA_DIR/mot_de_passe_initial.txt, à changer dès que possible."""
     with get_connection() as conn:
         existe = conn.execute("SELECT 1 FROM auth WHERE id = 1").fetchone()
         if existe:
             return
-        mot_de_passe = os.environ.get("DEPLIANTAPP_DEFAULT_PASSWORD") or secrets.token_urlsafe(12)
+        mot_de_passe = os.environ.get("DEPLIANTAPP_DEFAULT_PASSWORD") or _mot_de_passe_mensuel()
         conn.execute(
             "INSERT INTO auth (id, username, password_hash, must_change_password) VALUES (1, ?, ?, 1)",
             (DEFAULT_USERNAME, hash_password(mot_de_passe)),
         )
         _MOT_DE_PASSE_INITIAL_PATH.parent.mkdir(parents=True, exist_ok=True)
         _MOT_DE_PASSE_INITIAL_PATH.write_text(mot_de_passe, encoding="utf-8")
+        stable = "DEPLIANTAPP_DEFAULT_PASSWORD" not in os.environ and "DEPLIANTAPP_SECRET_KEY" in os.environ
+        note = (
+            "(stable ce mois-ci : identique à chaque redémarrage tant qu'on ne change pas de mois)"
+            if stable else
+            "(ATTENTION : DEPLIANTAPP_SECRET_KEY n'est pas définie comme variable d'environnement "
+            "Render -- ce mot de passe va donc changer à CHAQUE redémarrage, pas seulement chaque "
+            "mois. Définis DEPLIANTAPP_SECRET_KEY dans les réglages du service Render pour le stabiliser.)"
+        )
         print(
             "\n" + "=" * 60 +
             f"\nCompte DepliantApp créé — identifiant : {DEFAULT_USERNAME}"
             f"\nMot de passe initial (à changer immédiatement) : {mot_de_passe}"
+            f"\n{note}"
             f"\n(aussi écrit dans {_MOT_DE_PASSE_INITIAL_PATH})"
             "\n" + "=" * 60 + "\n"
         )
