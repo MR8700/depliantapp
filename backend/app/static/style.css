@@ -450,6 +450,20 @@ button[type="submit"], #btn-generer {
   gap: 16px;
   margin-top: 14px;
 }
+.import-progression { padding: 16px 4px; text-align: center; }
+.import-progression-barre {
+  height: 8px; border-radius: 4px; background: var(--bleu-clair);
+  overflow: hidden; position: relative; margin-bottom: 10px;
+}
+.import-progression-remplissage {
+  position: absolute; top: 0; bottom: 0; width: 40%; border-radius: 4px;
+  background: var(--bleu); animation: import-progression-glisse 1.1s ease-in-out infinite;
+}
+@keyframes import-progression-glisse {
+  0% { left: -40%; }
+  100% { left: 100%; }
+}
+
 .iw-card {
   background: white;
   border: 1px solid var(--bordure);
@@ -457,6 +471,21 @@ button[type="submit"], #btn-generer {
   padding: 14px;
   box-shadow: 0 2px 6px rgba(0,0,0,0.04);
 }
+.iw-card.faible-confiance {
+  border-left: 5px solid var(--danger);
+  background: #fdf6f6;
+}
+.iw-badge-confiance {
+  font-size: 0.72rem; font-weight: bold; padding: 2px 8px; border-radius: 10px;
+}
+.iw-badge-confiance.haute { background: #dff0d8; color: #2e7d32; }
+.iw-badge-confiance.moyenne { background: #fff3cd; color: #8a6d00; }
+.iw-badge-confiance.basse { background: #fdeaea; color: var(--danger); }
+.iw-avertissements {
+  margin-top: 8px; padding: 6px 10px; background: #fdeaea; border-radius: 6px;
+  font-size: 0.78rem; color: #7a2e2e;
+}
+.iw-avertissements ul { margin: 2px 0 0 18px; padding: 0; }
 .iw-card.duplicate-detected {
   border-left: 5px solid #f0d060;
   background: #fffdf6;

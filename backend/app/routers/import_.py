@@ -61,7 +61,8 @@ async def upload_carnet(
             "confiance": raw.confiance,
             "categorie": categorie,
             "occasions": occasions_list,
-            "doublons": doublons
+            "doublons": doublons,
+            "avertissements": raw.avertissements,
         })
 
     return {

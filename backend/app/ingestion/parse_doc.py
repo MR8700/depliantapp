@@ -25,9 +25,17 @@ def iter_paragraphs_doc(path: Path, word=None) -> list[str]:
             count = doc.Paragraphs.Count
             for i in range(1, count + 1):
                 text = doc.Paragraphs.Item(i).Range.Text
-                text = text.replace("\r", "").replace("\x07", "").strip()
-                if text:
-                    paragraphs.append(text)
+                text = text.replace("\r", "").replace("\x07", "")
+                # Un saut de ligne manuel (Maj+Entrée) reste À L'INTÉRIEUR du
+                # même paragraphe Word (pas de nouveau w:p) mais Word le
+                # restitue ici comme un caractère \x0b (tabulation verticale)
+                # — sans le scinder, plusieurs couplets/refrain finissent
+                # collés dans un seul « paragraphe » et la segmentation en
+                # aval n'y voit qu'un unique bloc de texte.
+                for sous_ligne in text.split("\x0b"):
+                    sous_ligne = sous_ligne.strip()
+                    if sous_ligne:
+                        paragraphs.append(sous_ligne)
             return paragraphs
         finally:
             doc.Close(False)

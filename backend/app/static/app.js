@@ -1178,15 +1178,20 @@ document.getElementById("import-form").addEventListener("submit", async (e) => {
   formData.append("categorie_defaut", document.getElementById("import-categorie").value);
   formData.append("occasions", document.getElementById("import-occasions").value);
 
-  resultDiv.textContent = "Analyse et découpage du fichier en cours…";
+  resultDiv.innerHTML = `
+    <div class="import-progression">
+      <div class="import-progression-barre"><div class="import-progression-remplissage"></div></div>
+      <p class="hint">Analyse et découpage du fichier en cours…</p>
+    </div>
+  `;
   try {
     const res = await fetch("/import/upload", { method: "POST", body: formData });
     if (!res.ok) throw new Error(await res.text());
     const data = await res.json();
-    
+
     resultDiv.textContent = "";
     fichierInput.value = ""; // reset
-    
+
     afficherImportWorkspace(data.chants);
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
@@ -1210,13 +1215,21 @@ function afficherImportWorkspace(chants) {
     const replaceOptions = isDuplicate
       ? c.doublons.map((d) => `<option value="${d.id}">Remplacer : ${escapeHtml(d.titre)} (sim. ${Math.round(d.similarite * 100)}%)</option>`).join("")
       : "";
-      
+
+    const confiance = typeof c.confiance === "number" ? c.confiance : 1;
+    const niveauConfiance = confiance >= 0.7 ? "haute" : confiance >= 0.5 ? "moyenne" : "basse";
+    const badgeConfiance = `<span class="iw-badge-confiance ${niveauConfiance}">Confiance ${Math.round(confiance * 100)}%</span>`;
+    const avertissements = c.avertissements && c.avertissements.length
+      ? `<div class="iw-avertissements">⚠️ À vérifier :<ul>${c.avertissements.map((a) => `<li>${escapeHtml(a)}</li>`).join("")}</ul></div>`
+      : "";
+
     return `
-      <div class="iw-card ${isDuplicate ? "duplicate-detected" : ""}" data-index="${index}">
+      <div class="iw-card ${isDuplicate ? "duplicate-detected" : ""} ${niveauConfiance === "basse" ? "faible-confiance" : ""}" data-index="${index}">
         <div class="iw-card-header">
           <h4 style="margin:0; font-size:0.95rem; color:var(--bleu);">Chant #${index + 1}</h4>
-          ${badge}
+          <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">${badgeConfiance}${badge}</div>
         </div>
+        ${avertissements}
         <div class="iw-fields" style="margin-top:10px;">
           <div>
             <label>Titre</label>
