@@ -67,7 +67,7 @@ def _remplir_zone(c, zone, flowables: list) -> None:
         )
 
 
-def _tester_taille(feuillet: schemas.Feuillet, sections: list, grille, taille_texte: float):
+def _tester_taille(feuillet: schemas.Feuillet, config: dict, sections: list, grille, taille_texte: float):
     """Vérification bon marché (pure mesure ReportLab, sans dessiner de PDF) :
     retourne (styles, assignation) si cette taille remplit toutes les zones
     sans déborder, sinon lève DepassementImpossible. Utilisée pour balayer
@@ -79,7 +79,7 @@ def _tester_taille(feuillet: schemas.Feuillet, sections: list, grille, taille_te
     engine = LayoutEngine(grille.flow_order)
     assignation = engine.distribuer(unites, sections)
     if feuillet.priere_active:
-        assignation[grille.toutes["G2"].nom] = construire_flowables_priere(feuillet, styles)
+        assignation[grille.toutes["G2"].nom] = construire_flowables_priere(feuillet, styles, config)
     return styles, assignation
 
 
@@ -127,13 +127,13 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
 
     if feuillet.taille_texte_manuelle is not None:
         taille = max(TAILLE_TEXTE, min(TAILLE_TEXTE_PLAFOND, feuillet.taille_texte_manuelle))
-        styles, assignation = _tester_taille(feuillet, sections, grille, taille)
+        styles, assignation = _tester_taille(feuillet, config, sections, grille, taille)
         return _dessiner_pdf(feuillet, config, images, grille, assignation), taille
 
     derniere_erreur: Optional[DepassementImpossible] = None
     for taille_texte in ECHELLES_CORPS:
         try:
-            styles, assignation = _tester_taille(feuillet, sections, grille, taille_texte)
+            styles, assignation = _tester_taille(feuillet, config, sections, grille, taille_texte)
         except DepassementImpossible as exc:
             derniere_erreur = exc
             continue

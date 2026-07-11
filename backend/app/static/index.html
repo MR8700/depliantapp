@@ -150,6 +150,19 @@
     <form id="parametres-form">
       <label>Nom de la chorale <input id="p-chorale" type="text"></label>
       <label>Paroisse / CCB <input id="p-paroisse" type="text"></label>
+
+      <div class="reglages-apercu" id="apercu-entete">
+        <span class="reglages-apercu-label">Aperçu de l'en-tête</span>
+        <div class="reglages-apercu-boite reglages-apercu-entete">
+          <img id="apercu-logo-gauche" class="apercu-logo hidden" alt="">
+          <div class="apercu-entete-texte">
+            <div class="apercu-paroisse" id="apercu-paroisse"></div>
+            <div class="apercu-chorale" id="apercu-chorale"></div>
+          </div>
+          <img id="apercu-logo-droit" class="apercu-logo hidden" alt="">
+        </div>
+      </div>
+
       <label>Contact (téléphone, affiché en pied de feuillet) <input id="p-contact" type="text"></label>
       <label>Annonce (bannière, bas de page gauche) <input id="p-annonce" type="text"></label>
       <button type="submit">Enregistrer</button>
@@ -161,6 +174,31 @@
       <p class="hint">Reproduisent la mise en page réelle des dépliants : logo à gauche, logo à droite,
       bannière décorative en bas de page. Utilisées sur toutes les compositions à venir.</p>
       <div id="image-slots"></div>
+
+      <div class="reglages-apercu" id="apercu-banniere-bloc">
+        <span class="reglages-apercu-label">Aperçu de la bannière de bas de page</span>
+        <div class="reglages-apercu-boite reglages-apercu-banniere">
+          <div class="apercu-annonce" id="apercu-annonce"></div>
+          <img id="apercu-banniere-img" class="apercu-banniere-img hidden" alt="">
+          <div class="apercu-contact" id="apercu-contact"></div>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Prière pour le Burkina Faso (texte par défaut)</legend>
+      <p class="hint">Utilisé quand un feuillet active le widget « Prière » sans texte personnalisé.
+      Un feuillet peut toujours définir son propre texte dans le Composer, qui prime sur celui-ci.</p>
+      <label>Texte par défaut <textarea id="p-priere-defaut" form="parametres-form" rows="5" placeholder="Laisser vide pour utiliser le texte standard."></textarea></label>
+      <button type="submit" form="parametres-form">Enregistrer</button>
+
+      <div class="reglages-apercu" id="apercu-priere-bloc">
+        <span class="reglages-apercu-label">Aperçu de la prière</span>
+        <div class="reglages-apercu-boite reglages-apercu-priere">
+          <div class="apercu-priere-titre">PRIÈRE POUR LE BURKINA FASO</div>
+          <div class="apercu-priere-texte" id="apercu-priere-texte"></div>
+        </div>
+      </div>
     </fieldset>
 
     <fieldset>

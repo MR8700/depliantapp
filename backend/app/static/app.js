@@ -729,8 +729,54 @@ async function chargerParametres() {
   document.getElementById("p-paroisse").value = params.paroisse || "";
   document.getElementById("p-contact").value = params.contact || "";
   document.getElementById("p-annonce").value = params.annonce || "";
+  document.getElementById("p-priere-defaut").value = params.priere_texte_defaut || "";
   initImageSlots(params);
+  actualiserApercuEntete();
+  actualiserApercuBanniere();
+  actualiserApercuPriere();
 }
+
+// --- Aperçus en direct (Réglages) : reflètent le rendu réel du PDF pour les
+// blocs simples et fixes (en-tête, bannière, prière) — pas de risque de
+// dérive comme l'ancienne maquette globale du feuillet (qui, elle, tentait
+// de simuler le flux complexe des chants et ne correspondait jamais au vrai
+// PDF ; voir suppression de dessinerApercuCanvas).
+const PRIERE_TEXTE_STANDARD =
+  "Dieu notre père ce qu'il y a de meilleur dans ta création c'est l'homme…";
+
+function actualiserApercuEntete() {
+  document.getElementById("apercu-paroisse").textContent =
+    document.getElementById("p-paroisse").value || "Paroisse / CCB";
+  document.getElementById("apercu-chorale").textContent =
+    document.getElementById("p-chorale").value || "Nom de la chorale";
+}
+
+function actualiserApercuBanniere() {
+  const annonce = document.getElementById("p-annonce").value;
+  const contact = document.getElementById("p-contact").value;
+  const annonceEl = document.getElementById("apercu-annonce");
+  annonceEl.textContent = annonce;
+  annonceEl.classList.toggle("apercu-vide", !annonce);
+  if (!annonce) annonceEl.textContent = "(aucune annonce)";
+  const contactEl = document.getElementById("apercu-contact");
+  contactEl.textContent = contact
+    ? `Pour de plus amples informations sur votre chorale, veuillez nous contacter au : ${contact}`
+    : "(aucun contact)";
+  contactEl.classList.toggle("apercu-vide", !contact);
+}
+
+function actualiserApercuPriere() {
+  const texte = document.getElementById("p-priere-defaut").value;
+  document.getElementById("apercu-priere-texte").textContent = texte || PRIERE_TEXTE_STANDARD;
+}
+
+["p-chorale", "p-paroisse"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", actualiserApercuEntete);
+});
+["p-annonce", "p-contact"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", actualiserApercuBanniere);
+});
+document.getElementById("p-priere-defaut").addEventListener("input", actualiserApercuPriere);
 
 function initImageSlots(params) {
   const container = document.getElementById("image-slots");
@@ -780,18 +826,25 @@ function initImageSlots(params) {
   Object.keys(IMAGE_SLOTS).forEach((slot) => afficherImageSlot(slot, params[`${slot}_filename`]));
 }
 
+const APERCU_IMG_PAR_SLOT = {
+  logo_gauche: "apercu-logo-gauche", logo_droit: "apercu-logo-droit", banniere_bas: "apercu-banniere-img",
+};
+
 function afficherImageSlot(slot, filename) {
   const el = document.querySelector(`.image-slot[data-slot="${slot}"]`);
   if (!el) return;
   const img = el.querySelector(".logo-preview");
   const statusEl = el.querySelector(".slot-status");
+  const apercuImg = document.getElementById(APERCU_IMG_PAR_SLOT[slot]);
   if (filename) {
     img.src = `/parametres/image/${slot}?t=${Date.now()}`;
     img.classList.remove("hidden");
     statusEl.textContent = "Utilisée sur tous les prochains feuillets.";
+    if (apercuImg) { apercuImg.src = img.src; apercuImg.classList.remove("hidden"); }
   } else {
     img.classList.add("hidden");
     statusEl.textContent = "Aucune image définie.";
+    if (apercuImg) apercuImg.classList.add("hidden");
   }
 }
 
@@ -807,6 +860,7 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
         paroisse: document.getElementById("p-paroisse").value,
         contact: document.getElementById("p-contact").value,
         annonce: document.getElementById("p-annonce").value,
+        priere_texte_defaut: document.getElementById("p-priere-defaut").value,
       }),
     });
     statusEl.textContent = "Enregistré.";

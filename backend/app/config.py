@@ -12,11 +12,16 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 # en-tête + une bannière décorative en bas de page).
 IMAGE_SLOTS = ["logo_gauche", "logo_droit", "banniere_bas"]
 
+# priere_texte_defaut : texte par défaut du widget « Prière pour le Burkina
+# Faso », utilisé quand un feuillet a priere_active=True sans texte
+# personnalisé. Vide ici signifie : retomber sur le texte figé de
+# widgets.py::DEFAULT_PRIERE_TEXTE.
 DEFAULTS = {
     "chorale": "Chorale Sainte Cécile",
     "paroisse": "CCB St Thomas d'Aquin de la Cité Universitaire de Kossodo",
     "contact": "",
     "annonce": "",
+    "priere_texte_defaut": "",
     **{f"{slot}_filename": None for slot in IMAGE_SLOTS},
 }
 

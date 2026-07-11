@@ -184,12 +184,14 @@ def dessiner_banniere(canvas, config: dict, images: dict) -> None:
     canvas.restoreState()
 
 
-def construire_flowables_priere(feuillet: schemas.Feuillet, styles: dict) -> list:
+def construire_flowables_priere(feuillet: schemas.Feuillet, styles: dict, config: Optional[dict] = None) -> list:
     """Construit le contenu de la Prière comme des flowables Platypus
     classiques, pour qu'elle soit injectée directement dans la zone G2
-    comme n'importe quel bloc de la grille."""
+    comme n'importe quel bloc de la grille. Priorité au texte propre au
+    feuillet ; à défaut, au texte par défaut configuré dans Réglages
+    (config.priere_texte_defaut) ; à défaut, au texte figé ci-dessus."""
     titre = escape(DEFAULT_PRIERE_TITRE)
-    texte = feuillet.priere_texte or DEFAULT_PRIERE_TEXTE
+    texte = feuillet.priere_texte or (config or {}).get("priere_texte_defaut") or DEFAULT_PRIERE_TEXTE
     flowables = [Paragraph(f"<u>{titre.upper()}</u>", styles["titre_section"])]
     for paragraphe in texte.split("\n\n"):
         paragraphe = paragraphe.strip()

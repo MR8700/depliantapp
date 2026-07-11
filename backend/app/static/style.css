@@ -399,6 +399,34 @@ button[type="submit"], #btn-generer {
 .danger-zone button { background: var(--danger); color: white; border: none; border-radius: 6px; padding: 10px 14px; width: 100%; }
 .danger-zone code { background: #f0f0f0; padding: 1px 5px; border-radius: 4px; }
 
+/* --- Aperçus en direct (Réglages) --- */
+.reglages-apercu { margin: 4px 0 14px 0; }
+.reglages-apercu-label {
+  display: block; font-size: 0.75rem; font-weight: 600; color: var(--gris);
+  text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 6px;
+}
+.reglages-apercu-boite {
+  background: white; border: 1px solid var(--bordure); border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0,0,0,0.06); padding: 14px;
+  font-family: "Times New Roman", Times, serif; color: #111;
+}
+
+.reglages-apercu-entete { display: flex; align-items: center; justify-content: center; gap: 14px; text-align: center; }
+.apercu-logo { width: 44px; height: 44px; object-fit: contain; border-radius: 50%; flex: none; }
+.apercu-logo.hidden, .apercu-banniere-img.hidden { display: none; }
+.apercu-paroisse { font-size: 0.8rem; font-weight: bold; color: var(--bleu); }
+.apercu-chorale { font-size: 0.95rem; font-weight: bold; text-decoration: underline; margin-top: 3px; }
+
+.reglages-apercu-banniere { text-align: center; }
+.apercu-annonce { font-weight: bold; color: #4a4a4a; font-size: 0.95rem; }
+.apercu-banniere-img { max-width: 100%; max-height: 70px; margin: 8px auto; display: block; }
+.apercu-contact { font-style: italic; font-size: 0.8rem; margin-top: 6px; }
+.apercu-vide { color: #aaa; font-style: italic; }
+
+.reglages-apercu-priere { text-align: left; }
+.apercu-priere-titre { font-weight: bold; text-decoration: underline; margin-bottom: 6px; }
+.apercu-priere-texte { font-size: 0.88rem; line-height: 1.5; white-space: pre-wrap; }
+
 .couplets-field { margin-bottom: 12px; }
 .couplets-label { display: block; font-size: 0.85rem; color: var(--gris); margin-bottom: 4px; }
 .couplet-field-row { display: flex; gap: 6px; align-items: flex-start; margin-bottom: 6px; }
