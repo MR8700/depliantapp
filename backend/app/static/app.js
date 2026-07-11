@@ -51,9 +51,6 @@ function afficherVueDirect(nomVue) {
   if (nomVue === "reglages") chargerParametres();
   if (nomVue === "editeur") actualiserEditeur();
   if (nomVue === "depliants") actualiserDepliants();
-  if (nomVue === "composer") {
-    dessinerApercuCanvas();
-  }
 }
 
 function changerVue(nomVue) {
@@ -261,7 +258,6 @@ function bindSpecialRow(row, id) {
   select.addEventListener("change", () => {
     momentsState[id] = { ...momentsState[id], type: select.value };
     renderMomentBody(row, id);
-    dessinerApercuCanvas();
     regenererApercuSiPossible();
   });
   row.querySelector(".moment-ordre-input").addEventListener("input", (e) => {
@@ -314,13 +310,11 @@ function renderMomentBody(row, moment) {
       delete momentsState[moment].refrain;
       delete momentsState[moment].couplets;
       renderMomentBody(row, moment);
-      dessinerApercuCanvas();
       regenererApercuSiPossible();
     });
     const selectLimite = body.querySelector(".select-couplet-limite");
     if (selectLimite) selectLimite.addEventListener("change", () => {
       momentsState[moment].couplet_limit = selectLimite.value ? Number(selectLimite.value) : null;
-      dessinerApercuCanvas();
       regenererApercuSiPossible();
     });
   } else if (state.type === "texte_libre") {
@@ -328,13 +322,12 @@ function renderMomentBody(row, moment) {
       <input type="text" class="titre-libre" placeholder="Titre (optionnel)" value="${escapeHtml(state.titre_libre || "")}">
       <textarea class="texte-libre" rows="3" placeholder="Texte pour ce feuillet…">${escapeHtml(state.texte_libre || "")}</textarea>
     `;
-    body.querySelector(".titre-libre").addEventListener("input", (e) => { 
-      momentsState[moment].titre_libre = e.target.value; 
-      dessinerApercuCanvas();
+    body.querySelector(".titre-libre").addEventListener("input", (e) => {
+      momentsState[moment].titre_libre = e.target.value;
+      regenererApercuSiPossible();
     });
-    body.querySelector(".texte-libre").addEventListener("input", (e) => { 
-      momentsState[moment].texte_libre = e.target.value; 
-      dessinerApercuCanvas();
+    body.querySelector(".texte-libre").addEventListener("input", (e) => {
+      momentsState[moment].texte_libre = e.target.value;
       regenererApercuSiPossible();
     });
   } else {
@@ -352,7 +345,6 @@ function initComposer() {
     select.addEventListener("change", () => {
       momentsState[moment] = { ...momentsState[moment], type: select.value };
       renderMomentBody(row, moment);
-      dessinerApercuCanvas();
       regenererApercuSiPossible();
     });
     row.querySelector(".moment-ordre-input").addEventListener("input", (e) => {
@@ -360,22 +352,18 @@ function initComposer() {
       regenererApercuSiPossible();
     });
   });
-  
-  // Bind inputs to dynamic canvas updating
+
   ["f-date", "f-lieu", "f-lecture1", "f-psaume", "f-lecture2", "f-evangile"].forEach((id) => {
     document.getElementById(id).addEventListener("input", () => {
-      dessinerApercuCanvas();
+      regenererApercuSiPossible();
     });
   });
   document.getElementById("f-priere-active").addEventListener("change", () => {
-    dessinerApercuCanvas();
     regenererApercuSiPossible();
   });
   document.getElementById("f-priere-texte").addEventListener("input", () => {
     regenererApercuSiPossible();
   });
-  
-  dessinerApercuCanvas();
 }
 
 function ouvrirPicker(moment) {
@@ -433,7 +421,6 @@ async function actualiserPicker() {
       };
       const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
       renderMomentBody(row, pickerTargetMoment);
-      dessinerApercuCanvas();
       regenererApercuSiPossible();
       fermerModale("chant-picker");
     });
@@ -511,8 +498,6 @@ function afficherErreurDepassement(detail, resultDiv) {
     </div>
   `;
   
-  dessinerApercuCanvas(moments);
-  
   moments.forEach((m) => {
     const row = document.querySelector(`.moment-row[data-moment="${m}"]`);
     if (row) row.classList.add("moment-en-cause");
@@ -535,8 +520,6 @@ async function afficherResultatFeuillet(feuilletId) {
       afficherErreurDepassement(detail, resultDiv);
       return;
     }
-    
-    dessinerApercuCanvas([]); // clean error highlight
     
     const blobUrl = URL.createObjectURL(await res.blob());
     resultDiv.innerHTML = `
@@ -610,151 +593,6 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
     masquerSplash();
   }
 });
-
-// --- Customized HTML Canvas Preview Box ---
-function dessinerApercuCanvas(momentsEnCause = []) {
-  const canvas = document.getElementById("composer-preview-canvas");
-  if (!canvas) return;
-  canvas.classList.remove("hidden");
-
-  const dateVal = document.getElementById("f-date").value || "Dimanche 12 Juillet 2026";
-  const lieuVal = document.getElementById("f-lieu").value || "Rotonde / Kossodo";
-  const chorale = document.getElementById("p-chorale").value || "Chorale Sainte Cécile";
-  const paroisse = document.getElementById("p-paroisse").value || "CCB St Thomas d'Aquin";
-  
-  const lect1 = document.getElementById("f-lecture1").value || "Jr 20, 10-13";
-  const ps = document.getElementById("f-psaume").value || "Ps 68(69)";
-  const lect2 = document.getElementById("f-lecture2").value || "Rm 5, 12-15";
-  const ev = document.getElementById("f-evangile").value || "Mt 10, 26-33";
-
-  function obtenirApercuMoment(m) {
-    const s = momentsState[m];
-    if (!s || s.type === "aucun") return `<div class="hint" style="font-size:0.45rem;">— Aucun contenu —</div>`;
-    if (s.type === "texte_libre") {
-      const tit = s.titre_libre ? `<b style="text-decoration:underline;">${escapeHtml(s.titre_libre.toUpperCase())}</b><br/>` : "";
-      return `<div class="mockup-col-content">${tit}${escapeHtml(s.texte_libre)}</div>`;
-    }
-    
-    // Chant
-    let limitCouplets = s.couplets || [];
-    if (s.couplet_limit !== null) {
-      limitCouplets = limitCouplets.slice(0, s.couplet_limit);
-    }
-    const tit = s.chant_titre ? `<b style="text-decoration:underline;">${escapeHtml(s.chant_titre.toUpperCase())}</b><br/>` : "";
-    const ref = s.refrain ? `<i style="font-weight:bold;">Réf: ${escapeHtml(s.refrain)}</i><br/>` : "";
-    const coup = limitCouplets.map((c, i) => `<b>${i+1}-</b> ${escapeHtml(c)}`).join("<br/>");
-    return `<div class="mockup-col-content">${tit}${ref}${coup}</div>`;
-  }
-
-  function getColClass(m, colWidthClass) {
-    const isError = momentsEnCause.includes(m);
-    return `mockup-col ${colWidthClass} ${isError ? "overflow" : ""}`;
-  }
-
-  const html = `
-    <h3 style="margin-bottom:2px;">Aperçu interactif (Simulé A4)</h3>
-    <p class="hint" style="margin-top:0; margin-bottom:10px;">Représentation de la mise en page imprimée réelle.</p>
-    <div class="mockup-booklet">
-      <!-- PAGE 1 -->
-      <div class="mockup-page">
-        <h3>Page 1 (Extérieur)</h3>
-        <div class="mockup-border">
-          <div class="mockup-row-1">
-            <div class="${getColClass("sortie", "col-30")}">
-              <div class="mockup-col-label">SORTIE (30%)</div>
-              ${obtenirApercuMoment("sortie")}
-            </div>
-            <div class="${getColClass("priere", "col-35")}">
-              <div class="mockup-col-label">PRIÈRE (35%)</div>
-              ${obtenirApercuMoment("priere")}
-            </div>
-            <div class="mockup-col col-35">
-              <div class="mockup-col-label">EN-TÊTE CHORALE</div>
-              <div class="mockup-col-content" style="font-size:0.5rem; text-align:center;">
-                <b style="color:var(--bleu);">${escapeHtml(paroisse.toUpperCase())}</b><br/>
-                <span style="font-size:0.45rem; color:#666;">${escapeHtml(dateVal)}<br/>
-                Lieu: ${escapeHtml(lieuVal)}</span><br/>
-                <hr style="border:none; border-top:0.5px solid #ddd; margin:4px 0;"/>
-                <b>LECTURES:</b><br/>
-                1L: ${escapeHtml(lect1)}<br/>
-                Ps: ${escapeHtml(ps)}<br/>
-                2L: ${escapeHtml(lect2)}<br/>
-                Ev: ${escapeHtml(ev)}
-              </div>
-            </div>
-          </div>
-          
-          <div class="mockup-row-2">
-            <div class="${getColClass("entree", "col-50")}">
-              <div class="mockup-col-label">COLONNE GAUCHE</div>
-              ${obtenirApercuMoment("entree")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("kyrie")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("gloria")} (Début)
-            </div>
-            <div class="${getColClass("graduel", "col-50")}">
-              <div class="mockup-col-label">COLONNE DROITE</div>
-              ${obtenirApercuMoment("gloria")} (Suite)<br/>
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("graduel")}
-            </div>
-          </div>
-          
-          <div class="mockup-footer">
-            <div class="mockup-footer-title">Bon Dimanche à toutes et à tous !!</div>
-            <div style="font-size:0.4rem; color:#666; margin-top:2px;">
-              Raisins 🍇 / Colombe 🕊️<br/>
-              Chorale: ${escapeHtml(chorale)} — Contacts: ${escapeHtml(chorale)} / ${escapeHtml(paroisse)}
-            </div>
-          </div>
-        </div>
-      </div>
-      
-      <!-- PAGE 2 -->
-      <div class="mockup-page">
-        <h3>Page 2 (Intérieur)</h3>
-        <div class="mockup-border">
-          <div class="mockup-row-page2">
-            <div class="${getColClass("psaume", "col-33")}">
-              <div class="mockup-col-label">PSAUME / ACCL.</div>
-              ${obtenirApercuMoment("psaume")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("acclamation")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("credo")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("pu")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("offertoire")} (Début)
-            </div>
-            
-            <div class="${getColClass("sanctus", "col-33")}">
-              <div class="mockup-col-label">OFFERTOIRE / CO.</div>
-              ${obtenirApercuMoment("offertoire")} (Suite)
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("sanctus")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("pater")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("agnus")}
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("communion")} (Début)
-            </div>
-            
-            <div class="${getColClass("action_grace", "col-33")}">
-              <div class="mockup-col-label">COMMUNION / ACTION</div>
-              ${obtenirApercuMoment("communion")} (Suite)
-              <hr style="border: none; border-top:0.5px dashed #bbb; margin:6px 0;"/>
-              ${obtenirApercuMoment("action_grace")}
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  `;
-  canvas.innerHTML = html;
-}
 
 // --- Réglages ---
 const IMAGE_SLOTS = {
@@ -851,7 +689,6 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
     });
     statusEl.textContent = "Enregistré.";
     document.getElementById("app-title").textContent = document.getElementById("p-chorale").value || "DepliantApp";
-    dessinerApercuCanvas();
   } catch (err) {
     statusEl.textContent = `Erreur : ${err.message}`;
   }
@@ -1405,7 +1242,6 @@ async function modifierDepliant(id) {
     renderMomentBody(row, moment);
   });
 
-  dessinerApercuCanvas();
   afficherResultatFeuillet(feuillet.id);
   changerVue("composer");
 }
@@ -1427,7 +1263,6 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
     row.querySelector(".moment-ordre-input").value = i * 10;
     renderMomentBody(row, moment);
   });
-  dessinerApercuCanvas();
   changerVue("composer");
 });
 

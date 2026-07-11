@@ -18,7 +18,7 @@ from .. import schemas
 from .layout_engine import DepassementImpossible, LayoutEngine
 from .measure import construire_unites
 from .model import build_sections
-from .typography import construire_styles
+from .typography import ECHELLES_CORPS, construire_styles
 from .widgets import construire_flowables_priere, dessiner_banniere, dessiner_entete
 from .zones import (EPAISSEUR_BORDURE, HAUTEUR_UTILE, LARGEUR_COLONNE, LARGEUR_UTILE, PAGE_SIZE,
                      X0, Y0, construire_grille)
@@ -67,17 +67,11 @@ def _remplir_zone(c, zone, flowables: list) -> None:
         )
 
 
-def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: Optional[dict] = None) -> bytes:
-    """Compose le feuillet dans la grille fixe et rend le PDF. Typographie et
-    marges invariables (jamais de réduction de police, jamais de 3e page) —
-    si le contenu ne tient pas, lève DepassementImpossible plutôt que de
-    déborder ou de trahir la maquette."""
-    images = images or {}
-    sections = build_sections(feuillet)
-    styles = construire_styles()
+def _rendre_a_taille(feuillet: schemas.Feuillet, config: dict, images: dict,
+                      sections: list, grille, taille_texte: float) -> bytes:
+    styles = construire_styles(taille_texte)
     unites = construire_unites(sections, styles, LARGEUR_COLONNE)
 
-    grille = construire_grille(feuillet.priere_active)
     engine = LayoutEngine(grille.flow_order)
     assignation = engine.distribuer(unites, sections)
 
@@ -103,3 +97,25 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
 
     c.save()
     return buffer.getvalue()
+
+
+def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: Optional[dict] = None) -> bytes:
+    """Compose le feuillet dans la grille fixe et rend le PDF. La police du
+    corps des chants n'est JAMAIS réduite en dessous du plancher (dernière
+    valeur de ECHELLES_CORPS) — mais quand un feuillet léger laisse des
+    zones à moitié vides, elle est agrandie uniformément (même taille
+    partout, jamais chant par chant) jusqu'à la plus grande taille qui
+    remplit encore toutes les zones sans déborder. Si même au plancher le
+    contenu ne tient pas, lève DepassementImpossible plutôt que de déborder
+    ou de trahir la maquette."""
+    images = images or {}
+    sections = build_sections(feuillet)
+    grille = construire_grille(feuillet.priere_active)
+
+    derniere_erreur: Optional[DepassementImpossible] = None
+    for taille_texte in ECHELLES_CORPS:
+        try:
+            return _rendre_a_taille(feuillet, config, images, sections, grille, taille_texte)
+        except DepassementImpossible as exc:
+            derniere_erreur = exc
+    raise derniere_erreur

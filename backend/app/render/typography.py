@@ -1,7 +1,15 @@
-"""Typographie fixe et invariable — jamais de cascade, jamais de réduction
-de police pour faire tenir le texte. Si le contenu ne tient pas dans les
-zones disponibles, le moteur le signale (DepassementImpossible) plutôt que
-de trahir la maquette."""
+"""Typographie du corps des chants : jamais réduite en dessous du plancher,
+jamais de cascade de rétrécissement pour faire tenir le texte. En revanche,
+quand un feuillet est léger et laisse des zones à moitié vides, le moteur
+peut agrandir uniformément la police (voir ECHELLES_CORPS / pdf.py) plutôt
+que de livrer une page clairsemée — jamais l'inverse, et jamais en dessous
+du plancher. Si même au plancher le contenu ne tient pas, le moteur le
+signale (DepassementImpossible) plutôt que de trahir la maquette.
+
+Les widgets (en-tête, bannière) restent à taille strictement fixe — voir
+TAILLE_TEXTE/TAILLE_TITRE ci-dessous, utilisées telles quelles par
+widgets.py — puisqu'ils sont indépendants du flux des chants et ne
+participent jamais à cet agrandissement."""
 import re
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
@@ -21,6 +29,12 @@ FACTEUR_INTERLIGNE = 0.95
 
 INTERLIGNE_TEXTE = round(TAILLE_TEXTE * FACTEUR_INTERLIGNE, 2)
 INTERLIGNE_TITRE = round(TAILLE_TITRE * FACTEUR_INTERLIGNE, 2)
+
+# Tailles de corps essayées par le moteur, de la plus grande à la plus
+# petite (le plancher TAILLE_TEXTE en dernier) : render_feuillet_pdf_auto
+# retient la première qui remplit toutes les zones sans déborder. Le titre
+# de chaque chant garde toujours +1pt sur le corps, comme au plancher.
+ECHELLES_CORPS = [11.0, 10.5, 10.0, 9.5, 9.0, 8.5, TAILLE_TEXTE]
 
 _NUMERO_DEJA_PRESENT = re.compile(r"^\s*(\d+)\s*([.\-–&]+)\s*")
 _MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)
@@ -56,31 +70,45 @@ def mettre_en_gras_refrain(texte_echappe: str) -> str:
     return texte_echappe
 
 
-def construire_styles() -> dict:
+def construire_styles(taille_texte: float = TAILLE_TEXTE) -> dict:
+    """Construit les styles du corps des chants à une taille donnée (l'une
+    des valeurs de ECHELLES_CORPS). Le titre garde toujours +1pt sur le
+    corps ; interligne et marges inter-paragraphes sont mis à l'échelle
+    dans les mêmes proportions que TAILLE_TEXTE -> taille_texte, pour que
+    l'agrandissement reste visuellement cohérent (pas juste du texte plus
+    gros avec le même espacement serré)."""
+    ratio = taille_texte / TAILLE_TEXTE
+    taille_titre = round(TAILLE_TITRE * ratio, 2)
+    interligne_texte = round(taille_texte * FACTEUR_INTERLIGNE, 2)
+    interligne_titre = round(taille_titre * FACTEUR_INTERLIGNE, 2)
+
+    def marge(base: float) -> float:
+        return round(base * ratio, 2)
+
     return {
         "titre_section": ParagraphStyle(
             "TitreSection", parent=_styles["Normal"],
-            fontName=POLICE_GRAS, fontSize=TAILLE_TITRE, leading=INTERLIGNE_TITRE,
-            alignment=TA_LEFT, spaceAfter=2.5, spaceBefore=4,
+            fontName=POLICE_GRAS, fontSize=taille_titre, leading=interligne_titre,
+            alignment=TA_LEFT, spaceAfter=marge(2.5), spaceBefore=marge(4),
         ),
         "titre_chant": ParagraphStyle(
             "TitreChant", parent=_styles["Normal"],
-            fontName=POLICE_GRAS, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
-            alignment=TA_LEFT, spaceAfter=1.5,
+            fontName=POLICE_GRAS, fontSize=taille_texte, leading=interligne_texte,
+            alignment=TA_LEFT, spaceAfter=marge(1.5),
         ),
         "refrain": ParagraphStyle(
             "Refrain", parent=_styles["Normal"],
-            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
-            alignment=TA_LEFT, spaceAfter=2.0,
+            fontName=POLICE, fontSize=taille_texte, leading=interligne_texte,
+            alignment=TA_LEFT, spaceAfter=marge(2.0),
         ),
         "couplet": ParagraphStyle(
             "Couplet", parent=_styles["Normal"],
-            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
-            alignment=TA_LEFT, spaceAfter=2.0,
+            fontName=POLICE, fontSize=taille_texte, leading=interligne_texte,
+            alignment=TA_LEFT, spaceAfter=marge(2.0),
         ),
         "priere_corps": ParagraphStyle(
             "PriereCorps", parent=_styles["Normal"],
-            fontName=POLICE, fontSize=TAILLE_TEXTE, leading=INTERLIGNE_TEXTE,
-            alignment=TA_LEFT, spaceAfter=2.0,
+            fontName=POLICE, fontSize=taille_texte, leading=interligne_texte,
+            alignment=TA_LEFT, spaceAfter=marge(2.0),
         ),
     }
