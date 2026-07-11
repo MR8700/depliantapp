@@ -15,13 +15,13 @@ from .db import get_connection
 from .paths import DATA_DIR
 
 DEFAULT_USERNAME = "admin"
-DEFAULT_PASSWORD = "changeme123"
 
 COOKIE_NAME = "depliantapp_session"
 SESSION_DUREE_SECONDES = 30 * 24 * 3600  # 30 jours
 
 _PBKDF2_ITERATIONS = 260_000
 _SECRET_KEY_PATH = DATA_DIR / "secret_key.txt"
+_MOT_DE_PASSE_INITIAL_PATH = DATA_DIR / "mot_de_passe_initial.txt"
 
 
 def _secret_key() -> bytes:
@@ -56,15 +56,31 @@ def verify_password(mot_de_passe: str, hash_stocke: str) -> bool:
 
 
 def ensure_default_account() -> None:
-    """Crée le compte unique avec les identifiants par défaut s'il n'existe pas
-    encore — appelé au démarrage (init_db)."""
+    """Crée le compte unique s'il n'existe pas encore — appelé au démarrage
+    (init_db). Le mot de passe initial n'est JAMAIS codé en dur dans le
+    dépôt (visible publiquement dans git sinon) : il vient de la variable
+    d'environnement DEPLIANTAPP_DEFAULT_PASSWORD si définie, sinon il est
+    généré aléatoirement et affiché une seule fois dans les logs de
+    démarrage + écrit dans DATA_DIR/mot_de_passe_initial.txt, à consulter
+    juste après le tout premier déploiement puis à changer immédiatement."""
     with get_connection() as conn:
         existe = conn.execute("SELECT 1 FROM auth WHERE id = 1").fetchone()
-        if not existe:
-            conn.execute(
-                "INSERT INTO auth (id, username, password_hash, must_change_password) VALUES (1, ?, ?, 1)",
-                (DEFAULT_USERNAME, hash_password(DEFAULT_PASSWORD)),
-            )
+        if existe:
+            return
+        mot_de_passe = os.environ.get("DEPLIANTAPP_DEFAULT_PASSWORD") or secrets.token_urlsafe(12)
+        conn.execute(
+            "INSERT INTO auth (id, username, password_hash, must_change_password) VALUES (1, ?, ?, 1)",
+            (DEFAULT_USERNAME, hash_password(mot_de_passe)),
+        )
+        _MOT_DE_PASSE_INITIAL_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _MOT_DE_PASSE_INITIAL_PATH.write_text(mot_de_passe, encoding="utf-8")
+        print(
+            "\n" + "=" * 60 +
+            f"\nCompte DepliantApp créé — identifiant : {DEFAULT_USERNAME}"
+            f"\nMot de passe initial (à changer immédiatement) : {mot_de_passe}"
+            f"\n(aussi écrit dans {_MOT_DE_PASSE_INITIAL_PATH})"
+            "\n" + "=" * 60 + "\n"
+        )
 
 
 def get_account() -> Optional[dict]:
