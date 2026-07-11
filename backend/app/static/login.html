@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Connexion — DepliantApp</title>
+<style>
+  :root { --bleu: #1a3c6e; --bleu-clair: #eaf0fa; --gris: #666; --bordure: #ddd; --danger: #b23b3b; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: linear-gradient(160deg, #1a3c6e 0%, #2a5a9e 55%, #0f2547 100%);
+    color: #222;
+  }
+  .carte {
+    background: white; border-radius: 12px; padding: 32px; width: 100%; max-width: 360px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25);
+  }
+  h1 { font-size: 1.3rem; color: var(--bleu); margin: 0 0 4px 0; text-align: center; }
+  p.sous-titre { color: var(--gris); font-size: 0.85rem; text-align: center; margin: 0 0 20px 0; }
+  label { display: block; font-size: 0.85rem; color: #333; margin-bottom: 4px; margin-top: 12px; }
+  input {
+    width: 100%; padding: 9px 10px; border: 1px solid var(--bordure); border-radius: 6px;
+    font-size: 0.95rem;
+  }
+  input:focus { outline: 2px solid var(--bleu-clair); border-color: var(--bleu); }
+  button {
+    width: 100%; margin-top: 18px; padding: 10px; border: none; border-radius: 6px;
+    background: var(--bleu); color: white; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #14315c; }
+  button:disabled { opacity: 0.6; cursor: default; }
+  .erreur {
+    background: #fdeaea; border: 1px solid var(--danger); color: var(--danger);
+    border-radius: 6px; padding: 8px 10px; font-size: 0.85rem; margin-top: 14px; display: none;
+  }
+  .erreur.visible { display: block; }
+  .hint { font-size: 0.78rem; color: var(--gris); margin-top: 10px; line-height: 1.4; }
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+  <div class="carte">
+    <h1>DepliantApp</h1>
+    <p class="sous-titre">Chorale Sainte Cécile</p>
+
+    <form id="form-login">
+      <label for="login-username">Identifiant</label>
+      <input id="login-username" type="text" autocomplete="username" required autofocus>
+      <label for="login-password">Mot de passe</label>
+      <input id="login-password" type="password" autocomplete="current-password" required>
+      <div class="erreur" id="login-erreur"></div>
+      <button type="submit">Se connecter</button>
+    </form>
+
+    <form id="form-changement" class="hidden">
+      <p class="hint">Mot de passe par défaut détecté : il doit être changé avant de continuer.</p>
+      <label for="chg-actuel">Mot de passe actuel</label>
+      <input id="chg-actuel" type="password" autocomplete="current-password" required>
+      <label for="chg-nouveau">Nouveau mot de passe (8 caractères min.)</label>
+      <input id="chg-nouveau" type="password" autocomplete="new-password" required minlength="8">
+      <label for="chg-confirme">Confirmer le nouveau mot de passe</label>
+      <input id="chg-confirme" type="password" autocomplete="new-password" required minlength="8">
+      <div class="erreur" id="chg-erreur"></div>
+      <button type="submit">Changer le mot de passe et continuer</button>
+    </form>
+  </div>
+
+<script>
+async function api(url, options = {}) {
+  const res = await fetch(url, { ...options, headers: { "Content-Type": "application/json", ...(options.headers || {}) } });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "Erreur");
+  return data;
+}
+
+function afficherErreur(id, message) {
+  const el = document.getElementById(id);
+  el.textContent = message;
+  el.classList.add("visible");
+}
+function masquerErreur(id) {
+  document.getElementById(id).classList.remove("visible");
+}
+
+document.getElementById("form-login").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  masquerErreur("login-erreur");
+  const username = document.getElementById("login-username").value;
+  const password = document.getElementById("login-password").value;
+  try {
+    const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    if (data.must_change_password) {
+      document.getElementById("form-login").classList.add("hidden");
+      document.getElementById("form-changement").classList.remove("hidden");
+      document.getElementById("chg-actuel").value = password;
+    } else {
+      window.location.href = "/";
+    }
+  } catch (err) {
+    afficherErreur("login-erreur", err.message);
+  }
+});
+
+document.getElementById("form-changement").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  masquerErreur("chg-erreur");
+  const actuel = document.getElementById("chg-actuel").value;
+  const nouveau = document.getElementById("chg-nouveau").value;
+  const confirme = document.getElementById("chg-confirme").value;
+  if (nouveau !== confirme) {
+    afficherErreur("chg-erreur", "Les deux mots de passe ne correspondent pas.");
+    return;
+  }
+  try {
+    await api("/auth/change-password", {
+      method: "POST",
+      body: JSON.stringify({ mot_de_passe_actuel: actuel, nouveau_mot_de_passe: nouveau }),
+    });
+    window.location.href = "/";
+  } catch (err) {
+    afficherErreur("chg-erreur", err.message);
+  }
+});
+</script>
+</body>
+</html>

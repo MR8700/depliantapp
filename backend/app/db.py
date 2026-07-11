@@ -61,6 +61,17 @@ CREATE TABLE IF NOT EXISTS feuillets (
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Authentification : un compte unique partagé (pas de gestion multi-utilisateur).
+-- La ligne id=1 est créée avec des identifiants par défaut au premier démarrage
+-- (voir auth.py) et must_change_password=1 force le changement avant tout accès.
+CREATE TABLE IF NOT EXISTS auth (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 1,
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -114,6 +125,9 @@ def init_db() -> None:
                 "INSERT INTO chants_fts(rowid, titre, refrain, couplets) VALUES (?, ?, ?, ?)",
                 [(r["id"], r["titre"], r["refrain"], r["couplets"]) for r in rows],
             )
+
+    from . import auth  # import différé : auth.py importe get_connection depuis ce module
+    auth.ensure_default_account()
 
 
 @contextmanager

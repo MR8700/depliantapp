@@ -34,7 +34,16 @@ INTERLIGNE_TITRE = round(TAILLE_TITRE * FACTEUR_INTERLIGNE, 2)
 # petite (le plancher TAILLE_TEXTE en dernier) : render_feuillet_pdf_auto
 # retient la première qui remplit toutes les zones sans déborder. Le titre
 # de chaque chant garde toujours +1pt sur le corps, comme au plancher.
-ECHELLES_CORPS = [11.0, 10.5, 10.0, 9.5, 9.0, 8.5, TAILLE_TEXTE]
+# Pas de plafond artificiel bas : un feuillet très léger doit pouvoir
+# grossir bien au-delà de la taille "normale" pour remplir les colonnes ;
+# seul le plancher (8pt) est une vraie limite, en dessous de laquelle le
+# moteur ne descend jamais (il signale DepassementImpossible à la place).
+TAILLE_TEXTE_PLAFOND = 32.0
+_PAS_ECHELLE = 0.5
+ECHELLES_CORPS = [
+    round(TAILLE_TEXTE_PLAFOND - i * _PAS_ECHELLE, 2)
+    for i in range(int((TAILLE_TEXTE_PLAFOND - TAILLE_TEXTE) / _PAS_ECHELLE) + 1)
+]
 
 _NUMERO_DEJA_PRESENT = re.compile(r"^\s*(\d+)\s*([.\-–&]+)\s*")
 _MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)

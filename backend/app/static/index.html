@@ -38,6 +38,7 @@
   <button data-view="editeur" class="nav-btn">Éditeur</button>
   <button data-view="importer" class="nav-btn">Importer</button>
   <button data-view="reglages" class="nav-btn">Réglages</button>
+  <button id="btn-deconnexion" class="nav-btn nav-btn-deconnexion">Se déconnecter</button>
 </nav>
 
 <main>
@@ -215,6 +216,19 @@
       <button type="button" id="picker-close">Fermer</button>
     </div>
     <ul id="picker-list" class="list"></ul>
+  </div>
+</div>
+
+<div id="chant-detail-modal" class="modal hidden">
+  <div class="modal-content">
+    <span class="chant-detail-categorie" id="cd-categorie"></span>
+    <h2 id="cd-titre"></h2>
+    <div id="cd-corps" class="chant-detail-corps"></div>
+    <div class="toolbar chant-detail-actions">
+      <button type="button" id="cd-btn-ajouter" class="btn-ouvrir">Ajouter au feuillet</button>
+      <button type="button" id="cd-btn-modifier">Modifier ce chant</button>
+      <button type="button" id="cd-btn-annuler" class="btn-effacer">Annuler</button>
+    </div>
   </div>
 </div>
 

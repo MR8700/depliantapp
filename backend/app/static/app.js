@@ -39,6 +39,10 @@ function fermerMenu() {
 }
 document.getElementById("btn-menu").addEventListener("click", ouvrirMenu);
 document.getElementById("menu-overlay").addEventListener("click", fermerMenu);
+document.getElementById("btn-deconnexion").addEventListener("click", async () => {
+  await fetch("/auth/logout", { method: "POST" });
+  window.location.href = "/login.html";
+});
 
 function afficherVueDirect(nomVue) {
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
@@ -105,10 +109,11 @@ window.addEventListener("beforeunload", (e) => {
 function syncModalLock() {
   const editeurOuvert = !document.getElementById("chant-editor").classList.contains("hidden");
   const pickerOuvert = !document.getElementById("chant-picker").classList.contains("hidden");
+  const detailOuvert = !document.getElementById("chant-detail-modal").classList.contains("hidden");
   const workspaceOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
-  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || workspaceOuvert);
+  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || detailOuvert || workspaceOuvert);
 }
-["chant-editor", "chant-picker", "import-workspace-modal"].forEach((id) => {
+["chant-editor", "chant-picker", "chant-detail-modal", "import-workspace-modal"].forEach((id) => {
   new MutationObserver(syncModalLock).observe(document.getElementById(id), {
     attributes: true, attributeFilter: ["class"],
   });
@@ -413,19 +418,56 @@ async function actualiserPicker() {
     el.addEventListener("click", () => {
       const id = Number(el.dataset.id);
       const chant = chants.find((c) => c.id === id);
-      momentsState[pickerTargetMoment] = {
-        ...momentsState[pickerTargetMoment],
-        type: "chant", chant_id: chant.id, chant_titre: chant.titre,
-        total_couplets: (chant.couplets || []).length, couplet_limit: null,
-        refrain: chant.refrain, couplets: chant.couplets
-      };
-      const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
-      renderMomentBody(row, pickerTargetMoment);
-      regenererApercuSiPossible();
-      fermerModale("chant-picker");
+      ouvrirDetailChant(chant);
     });
   });
 }
+
+// --- Détail d'un chant avant ajout au feuillet (Composer) ---
+let chantDetailCourant = null;
+
+function ouvrirDetailChant(chant) {
+  chantDetailCourant = chant;
+  document.getElementById("cd-categorie").textContent = categorieLabel(chant.categorie);
+  document.getElementById("cd-titre").textContent = chant.titre || "(sans titre)";
+  const refrainHtml = chant.refrain
+    ? `<p class="chant-detail-refrain"><b>Réf :</b> ${escapeHtml(chant.refrain)}</p>` : "";
+  const coupletsHtml = (chant.couplets || [])
+    .map((c, i) => `<p class="chant-detail-couplet"><b>${i + 1}.</b> ${escapeHtml(c)}</p>`)
+    .join("");
+  document.getElementById("cd-corps").innerHTML = refrainHtml + coupletsHtml
+    || `<p class="hint">Aucune parole enregistrée pour ce chant.</p>`;
+  ouvrirModale("chant-detail-modal");
+}
+
+document.getElementById("cd-btn-annuler").addEventListener("click", () => {
+  fermerModale("chant-detail-modal");
+});
+
+document.getElementById("cd-btn-modifier").addEventListener("click", () => {
+  if (!chantDetailCourant) return;
+  const id = chantDetailCourant.id;
+  fermerModale("chant-detail-modal");
+  fermerModale("chant-picker");
+  changerVue("editeur");
+  ouvrirEditeurChant(id);
+});
+
+document.getElementById("cd-btn-ajouter").addEventListener("click", () => {
+  if (!chantDetailCourant || !pickerTargetMoment) return;
+  const chant = chantDetailCourant;
+  momentsState[pickerTargetMoment] = {
+    ...momentsState[pickerTargetMoment],
+    type: "chant", chant_id: chant.id, chant_titre: chant.titre,
+    total_couplets: (chant.couplets || []).length, couplet_limit: null,
+    refrain: chant.refrain, couplets: chant.couplets,
+  };
+  const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
+  renderMomentBody(row, pickerTargetMoment);
+  regenererApercuSiPossible();
+  fermerModale("chant-detail-modal");
+  fermerModale("chant-picker");
+});
 
 function construireFeuilletPayload() {
   const moments = [];

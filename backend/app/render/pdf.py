@@ -67,17 +67,23 @@ def _remplir_zone(c, zone, flowables: list) -> None:
         )
 
 
-def _rendre_a_taille(feuillet: schemas.Feuillet, config: dict, images: dict,
-                      sections: list, grille, taille_texte: float) -> bytes:
+def _tester_taille(feuillet: schemas.Feuillet, sections: list, grille, taille_texte: float):
+    """Vérification bon marché (pure mesure ReportLab, sans dessiner de PDF) :
+    retourne (styles, assignation) si cette taille remplit toutes les zones
+    sans déborder, sinon lève DepassementImpossible. Utilisée pour balayer
+    rapidement ECHELLES_CORPS (jusqu'à ~50 valeurs) sans payer le coût d'un
+    rendu Canvas complet à chaque tentative — seule la taille retenue est
+    effectivement dessinée, dans _dessiner_pdf."""
     styles = construire_styles(taille_texte)
     unites = construire_unites(sections, styles, LARGEUR_COLONNE)
-
     engine = LayoutEngine(grille.flow_order)
     assignation = engine.distribuer(unites, sections)
-
     if feuillet.priere_active:
         assignation[grille.toutes["G2"].nom] = construire_flowables_priere(feuillet, styles)
+    return styles, assignation
 
+
+def _dessiner_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, grille, assignation: dict) -> bytes:
     buffer = io.BytesIO()
     c = Canvas(buffer, pagesize=PAGE_SIZE)
 
@@ -115,7 +121,17 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
     derniere_erreur: Optional[DepassementImpossible] = None
     for taille_texte in ECHELLES_CORPS:
         try:
-            return _rendre_a_taille(feuillet, config, images, sections, grille, taille_texte)
+            styles, assignation = _tester_taille(feuillet, sections, grille, taille_texte)
         except DepassementImpossible as exc:
             derniere_erreur = exc
+            continue
+        try:
+            return _dessiner_pdf(feuillet, config, images, grille, assignation)
+        except DepassementImpossible as exc:
+            # Garde-fou improbable : la mesure a dit "ça tient" mais le rendu
+            # réel (Frame.addFromList) a détecté un écart. On retente avec la
+            # taille suivante plutôt que de renvoyer un PDF potentiellement
+            # incomplet.
+            derniere_erreur = exc
+            continue
     raise derniere_erreur

@@ -97,6 +97,8 @@ header h1 {
 
 .nav-btn.active { background: var(--bleu); color: white; font-weight: bold; }
 
+.nav-btn-deconnexion { margin-top: auto; color: var(--danger); background: #fdeaea; }
+
 main { padding: 12px 16px 80px; max-width: 640px; margin: 0 auto; }
 
 .view { display: none; }
@@ -245,6 +247,16 @@ button[type="submit"], #btn-generer {
   background: white; width: 100%; max-height: 80vh; overflow-y: auto;
   border-radius: 12px 12px 0 0; padding: 12px 16px;
 }
+
+.chant-detail-categorie { display: inline-block; margin-bottom: 6px; font-size: 0.72rem; font-weight: normal; padding: 2px 8px; border-radius: 10px; background: var(--bleu-clair); color: var(--bleu); }
+#cd-titre { margin: 0 0 10px 0; color: var(--bleu); }
+.chant-detail-corps { font-size: 0.92rem; line-height: 1.5; }
+.chant-detail-refrain { background: var(--bleu-clair); padding: 8px 10px; border-radius: 6px; }
+.chant-detail-couplet { margin: 8px 0; }
+.chant-detail-actions { margin-top: 16px; flex-wrap: wrap; }
+.chant-detail-actions button { flex: 1; min-width: 140px; padding: 9px 10px; border-radius: 6px; border: 1px solid var(--bordure); font-size: 0.9rem; }
+.chant-detail-actions .btn-ouvrir { background: var(--bleu); color: white; border-color: var(--bleu); }
+.chant-detail-actions .btn-effacer { background: white; color: var(--danger); border-color: var(--danger); }
 
 #composer-result { margin-top: 14px; }
 #composer-result .toolbar { margin-bottom: 10px; }
