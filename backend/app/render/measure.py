@@ -26,7 +26,17 @@ def construire_unites_section(section: Section, styles: dict, largeur: float) ->
 
     def ajouter(flowable: Paragraph, nature: str) -> None:
         _, h = flowable.wrap(largeur, HAUTEUR_INFINIE)
-        unites.append(Unite(flowable=flowable, hauteur=h, section_ordre=section.ordre, nature=nature))
+        # `wrap()` ne renvoie que la hauteur intrinsèque du texte : ReportLab
+        # ajoute séparément spaceBefore/spaceAfter au moment du rendu réel
+        # (Frame._add, avec un "collapsing" qui prend le max entre deux
+        # marges adjacentes). On additionne ici les deux marges plutôt que
+        # de les fusionner : ça surestime légèrement l'espace nécessaire,
+        # jamais l'inverse — condition nécessaire pour que le LayoutEngine
+        # ne décide jamais qu'une unité tient alors que le rendu réel la
+        # rejetterait silencieusement.
+        style = flowable.style
+        marges = (style.spaceBefore or 0) + (style.spaceAfter or 0)
+        unites.append(Unite(flowable=flowable, hauteur=h + marges, section_ordre=section.ordre, nature=nature))
 
     titre_texte = f"<u>{escape(section.label).upper()}</u>"
     ajouter(Paragraph(titre_texte, styles["titre_section"]), "titre")
@@ -40,7 +50,7 @@ def construire_unites_section(section: Section, styles: dict, largeur: float) ->
         ajouter(Paragraph(texte, styles["refrain"]), "refrain")
 
     for i, couplet in enumerate(song.couplets, start=1):
-        texte = mettre_en_gras_numero(escape(couplet), i)
+        texte = mettre_en_gras_numero(couplet, i)
         ajouter(Paragraph(texte, styles["couplet"]), "couplet")
 
     return unites

@@ -8,6 +8,7 @@ from typing import Optional
 from .common import RawChant, segment_paragraphs
 from .parse_doc import iter_paragraphs_doc
 from .parse_docx import iter_paragraphs_docx
+from .parse_notre_modele import segment_notre_modele
 from .parse_pdf import extract_text_pages, segment_by_font, segment_carnet_pages, segment_freeform_pdf, segment_booklet_layout
 
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".pdf"}
@@ -36,6 +37,10 @@ def parse_and_segment(path: Path, categorie_defaut: str = "Autre", word=None) ->
         return [(categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
 
     if suffix == ".pdf":
+        notre_modele = segment_notre_modele(path)
+        if notre_modele:
+            return _appliquer_defaut(notre_modele, categorie_defaut)
+
         pages = extract_text_pages(path)
         candidats = [segment_carnet_pages(pages)]
         try:

@@ -4,6 +4,7 @@ zones disponibles, le moteur le signale (DepassementImpossible) plutôt que
 de trahir la maquette."""
 import re
 from dataclasses import dataclass
+from xml.sax.saxutils import escape
 
 from reportlab.lib.enums import TA_LEFT
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -26,15 +27,22 @@ _MARQUEUR_REF = re.compile(r"\b(R[ée]f\s*:)", re.IGNORECASE)
 _MARQUEUR_R = re.compile(r"(^|\s)(R\s*:)")
 
 
-def mettre_en_gras_numero(texte_echappe: str, numero: int) -> str:
-    """Met le numéro de couplet en gras (« 1. » etc.), qu'il soit déjà
-    présent dans le texte source ou ajouté par le moteur."""
-    m = _NUMERO_DEJA_PRESENT.match(texte_echappe)
+def mettre_en_gras_numero(texte_brut: str, numero: int) -> str:
+    """Met le numéro de couplet en gras (« 1. », « 1&2- » etc.), qu'il soit
+    déjà présent dans le texte source ou ajouté par le moteur.
+
+    Prend le texte BRUT (non échappé XML) : la détection du préfixe doit
+    voir les vrais caractères (ex: un « & » réel dans « 1&2- »), pas leur
+    forme échappée « &amp; » — sinon le « & » de l'entité est relu comme un
+    séparateur de numéro et le « amp; » qui suit se retrouve affiché tel
+    quel. `escape()` n'est donc appliqué qu'après la détection, séparément
+    sur le préfixe et sur le reste."""
+    m = _NUMERO_DEJA_PRESENT.match(texte_brut)
     if m:
-        prefixe = texte_echappe[: m.end()]
-        reste = texte_echappe[m.end():]
-        return f"<b>{prefixe.strip()}</b> {reste}"
-    return f"<b>{numero}.</b> {texte_echappe}"
+        prefixe = escape(texte_brut[: m.end()].strip())
+        reste = escape(texte_brut[m.end():])
+        return f"<b>{prefixe}</b> {reste}"
+    return f"<b>{numero}.</b> {escape(texte_brut)}"
 
 
 def mettre_en_gras_refrain(texte_echappe: str) -> str:

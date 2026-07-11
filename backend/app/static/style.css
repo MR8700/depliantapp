@@ -218,6 +218,14 @@ button[type="submit"], #btn-generer {
 .moment-row .couplet-limite { margin: 8px 0 0 0; font-size: 0.78rem; }
 .moment-row .select-couplet-limite { margin-top: 2px; }
 
+.moment-row .moment-ordre {
+  display: inline-flex; align-items: center; gap: 6px; font-size: 0.78rem; color: var(--gris);
+  margin: 0 0 6px 0;
+}
+.moment-row .moment-ordre-input { width: 4.5em; margin: 0; }
+.moment-row.special-row .special-label { display: block; width: 100%; margin-bottom: 6px; font-weight: bold; }
+.moment-row.special-row .btn-supprimer-special { float: right; }
+
 .moment-row.moment-en-cause {
   border: 2px solid var(--danger);
   background: #fdeaea;
@@ -284,6 +292,11 @@ button[type="submit"], #btn-generer {
   margin-bottom: 8px;
 }
 .select-all-row input { width: auto; margin-top: 0; }
+
+.checkbox-row {
+  display: flex; align-items: center; gap: 8px;
+}
+.checkbox-row input { width: auto; margin-top: 0; }
 
 /* Marge basse généreuse pour que la barre d'actions fixée en bas ne cache
    jamais les derniers chants de la liste. */

@@ -47,7 +47,15 @@ def _remplir_zone(c, zone, flowables: list) -> None:
                   leftPadding=zone.padding, rightPadding=zone.padding,
                   topPadding=zone.padding, bottomPadding=zone.padding,
                   showBoundary=0)
-    restants = frame.addFromList(list(flowables), c)
+    # Frame.addFromList() modifie sa liste en place (elle retire les éléments
+    # consommés via `del drawlist[0]`) et NE RETOURNE RIEN (None) — les
+    # éléments restants ne sont donc lisibles que dans la variable passée en
+    # argument, jamais dans la valeur de retour. Il faut impérativement
+    # conserver une référence à cette liste mutable pour détecter un
+    # débordement ; l'affecter au retour (toujours None) masquait
+    # silencieusement tout contenu qui ne rentrait pas dans la zone.
+    restants = list(flowables)
+    frame.addFromList(restants, c)
     if restants:
         # Ne devrait jamais arriver : le LayoutEngine a déjà mesuré chaque
         # unité avec le même moteur ReportLab avant de l'assigner à cette

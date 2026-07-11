@@ -69,7 +69,28 @@
 
       <fieldset>
         <legend>Chants par moment liturgique</legend>
+        <p class="hint">Le champ « Ordre » contrôle la position dans le feuillet — modifie-le si tu veux changer
+        l'ordre par défaut des moments.</p>
         <div id="moments-container"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend>Chants spéciaux</legend>
+        <p class="hint">Ajoute un chant ou un texte à une position précise, en plus des moments liturgiques
+        ci-dessus (ex : un chant additionnel, une intention particulière).</p>
+        <div id="chants-speciaux-container"></div>
+        <button type="button" id="btn-ajouter-special">+ Ajouter un chant spécial</button>
+      </fieldset>
+
+      <fieldset>
+        <legend>Widgets</legend>
+        <label class="checkbox-row">
+          <input id="f-priere-active" type="checkbox">
+          Prière pour le Burkina Faso (occupe toute la dernière colonne gauche de la page 1)
+        </label>
+        <label>Texte personnalisé (facultatif — sinon le texte par défaut est utilisé)
+          <textarea id="f-priere-texte" rows="4" placeholder="Laisser vide pour utiliser le texte par défaut"></textarea>
+        </label>
       </fieldset>
 
       <button type="submit" id="btn-generer">Créer le feuillet et générer le PDF</button>
@@ -130,6 +151,7 @@
       <label>Nom de la chorale <input id="p-chorale" type="text"></label>
       <label>Paroisse / CCB <input id="p-paroisse" type="text"></label>
       <label>Contact (téléphone, affiché en pied de feuillet) <input id="p-contact" type="text"></label>
+      <label>Annonce (bannière, bas de page gauche) <input id="p-annonce" type="text"></label>
       <button type="submit">Enregistrer</button>
     </form>
     <p id="parametres-status"></p>

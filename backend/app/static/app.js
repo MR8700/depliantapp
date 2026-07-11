@@ -209,11 +209,12 @@ async function actualiserListeBibliotheque() {
 }
 
 // --- Composer ---
-function momentRowHtml(moment) {
+function momentRowHtml(moment, index) {
   const label = LABELS_MOMENTS[moment] || moment;
   return `
     <div class="moment-row" data-moment="${moment}">
       <span class="moment-label">${label}</span>
+      <label class="moment-ordre">Ordre <input type="number" class="moment-ordre-input" value="${index * 10}" step="1"></label>
       <select class="moment-type">
         <option value="aucun">— Aucun —</option>
         <option value="chant">Chant de la bibliothèque</option>
@@ -221,6 +222,68 @@ function momentRowHtml(moment) {
       </select>
       <div class="moment-body"></div>
     </div>`;
+}
+
+function specialRowHtml(id, state) {
+  return `
+    <div class="moment-row special-row" data-moment="${id}">
+      <input type="text" class="special-label" placeholder="Nom (ex : Chant additionnel)" value="${escapeHtml(state.label || "")}">
+      <label class="moment-ordre">Ordre <input type="number" class="moment-ordre-input" value="${state.ordre}" step="1"></label>
+      <select class="moment-type">
+        <option value="aucun">— Aucun —</option>
+        <option value="chant">Chant de la bibliothèque</option>
+        <option value="texte_libre">Texte libre</option>
+      </select>
+      <button type="button" class="btn-effacer btn-supprimer-special">Supprimer</button>
+      <div class="moment-body"></div>
+    </div>`;
+}
+
+let specialCounter = 0;
+
+function ajouterChantSpecial(initial = null) {
+  const id = `special-${++specialCounter}`;
+  const state = initial || { type: "aucun", ordre: (MOMENTS.length + specialCounter) * 10, label: "" };
+  momentsState[id] = state;
+  const container = document.getElementById("chants-speciaux-container");
+  const wrapper = document.createElement("div");
+  wrapper.innerHTML = specialRowHtml(id, state);
+  const row = wrapper.firstElementChild;
+  container.appendChild(row);
+  bindSpecialRow(row, id);
+  row.querySelector(".moment-type").value = state.type;
+  renderMomentBody(row, id);
+  return row;
+}
+
+function bindSpecialRow(row, id) {
+  const select = row.querySelector(".moment-type");
+  select.addEventListener("change", () => {
+    momentsState[id] = { ...momentsState[id], type: select.value };
+    renderMomentBody(row, id);
+    dessinerApercuCanvas();
+    regenererApercuSiPossible();
+  });
+  row.querySelector(".moment-ordre-input").addEventListener("input", (e) => {
+    momentsState[id].ordre = Number(e.target.value) || 0;
+    regenererApercuSiPossible();
+  });
+  row.querySelector(".special-label").addEventListener("input", (e) => {
+    momentsState[id].label = e.target.value;
+    regenererApercuSiPossible();
+  });
+  row.querySelector(".btn-supprimer-special").addEventListener("click", () => {
+    delete momentsState[id];
+    row.remove();
+    regenererApercuSiPossible();
+  });
+}
+
+document.getElementById("btn-ajouter-special").addEventListener("click", () => ajouterChantSpecial());
+
+function viderChantsSpeciaux() {
+  document.getElementById("chants-speciaux-container").innerHTML = "";
+  Object.keys(momentsState).forEach((k) => { if (k.startsWith("special-")) delete momentsState[k]; });
 }
 
 function renderMomentBody(row, moment) {
@@ -281,15 +344,19 @@ function renderMomentBody(row, moment) {
 
 function initComposer() {
   const container = document.getElementById("moments-container");
-  container.innerHTML = MOMENTS.map(momentRowHtml).join("");
+  container.innerHTML = MOMENTS.map((m, i) => momentRowHtml(m, i)).join("");
   container.querySelectorAll(".moment-row").forEach((row) => {
     const moment = row.dataset.moment;
-    momentsState[moment] = { type: "aucun" };
+    momentsState[moment] = { type: "aucun", ordre: Number(row.querySelector(".moment-ordre-input").value) };
     const select = row.querySelector(".moment-type");
     select.addEventListener("change", () => {
-      momentsState[moment] = { type: select.value };
+      momentsState[moment] = { ...momentsState[moment], type: select.value };
       renderMomentBody(row, moment);
       dessinerApercuCanvas();
+      regenererApercuSiPossible();
+    });
+    row.querySelector(".moment-ordre-input").addEventListener("input", (e) => {
+      momentsState[moment].ordre = Number(e.target.value) || 0;
       regenererApercuSiPossible();
     });
   });
@@ -299,6 +366,13 @@ function initComposer() {
     document.getElementById(id).addEventListener("input", () => {
       dessinerApercuCanvas();
     });
+  });
+  document.getElementById("f-priere-active").addEventListener("change", () => {
+    dessinerApercuCanvas();
+    regenererApercuSiPossible();
+  });
+  document.getElementById("f-priere-texte").addEventListener("input", () => {
+    regenererApercuSiPossible();
   });
   
   dessinerApercuCanvas();
@@ -352,6 +426,7 @@ async function actualiserPicker() {
       const id = Number(el.dataset.id);
       const chant = chants.find((c) => c.id === id);
       momentsState[pickerTargetMoment] = {
+        ...momentsState[pickerTargetMoment],
         type: "chant", chant_id: chant.id, chant_titre: chant.titre,
         total_couplets: (chant.couplets || []).length, couplet_limit: null,
         refrain: chant.refrain, couplets: chant.couplets
@@ -379,8 +454,25 @@ function construireFeuilletPayload() {
       titre_libre: state.titre_libre || null,
       texte_libre: state.texte_libre || null,
       couplet_limit: state.couplet_limit === 0 ? 0 : (state.couplet_limit || null),
+      ordre: state.ordre != null ? state.ordre : null,
     });
   }
+  document.querySelectorAll("#chants-speciaux-container .special-row").forEach((row) => {
+    const id = row.dataset.moment;
+    const state = momentsState[id];
+    if (!state || state.type === "aucun") return;
+    if (state.type === "chant" && !state.chant_id) return;
+    if (state.type === "texte_libre" && !state.texte_libre) return;
+    moments.push({
+      moment: (state.label || "").trim() || "Chant spécial",
+      type: state.type,
+      chant_id: state.chant_id || null,
+      titre_libre: state.titre_libre || null,
+      texte_libre: state.texte_libre || null,
+      couplet_limit: state.couplet_limit === 0 ? 0 : (state.couplet_limit || null),
+      ordre: state.ordre != null ? state.ordre : null,
+    });
+  });
   return {
     date: document.getElementById("f-date").value,
     lieu: document.getElementById("f-lieu").value,
@@ -391,6 +483,8 @@ function construireFeuilletPayload() {
       evangile: document.getElementById("f-evangile").value,
     },
     moments,
+    priere_active: document.getElementById("f-priere-active").checked,
+    priere_texte: document.getElementById("f-priere-texte").value || null,
   };
 }
 
@@ -674,6 +768,7 @@ async function chargerParametres() {
   document.getElementById("p-chorale").value = params.chorale || "";
   document.getElementById("p-paroisse").value = params.paroisse || "";
   document.getElementById("p-contact").value = params.contact || "";
+  document.getElementById("p-annonce").value = params.annonce || "";
   initImageSlots(params);
 }
 
@@ -751,6 +846,7 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
         chorale: document.getElementById("p-chorale").value,
         paroisse: document.getElementById("p-paroisse").value,
         contact: document.getElementById("p-contact").value,
+        annonce: document.getElementById("p-annonce").value,
       }),
     });
     statusEl.textContent = "Enregistré.";
@@ -1269,28 +1365,43 @@ async function modifierDepliant(id) {
   document.getElementById("f-psaume").value = feuillet.lectures.psaume || "";
   document.getElementById("f-lecture2").value = feuillet.lectures.deuxieme_lecture || "";
   document.getElementById("f-evangile").value = feuillet.lectures.evangile || "";
+  document.getElementById("f-priere-active").checked = !!feuillet.priere_active;
+  document.getElementById("f-priere-texte").value = feuillet.priere_texte || "";
 
-  Object.keys(momentsState).forEach((m) => { momentsState[m] = { type: "aucun" }; });
+  MOMENTS.forEach((m, i) => { momentsState[m] = { type: "aucun", ordre: i * 10 }; });
+  viderChantsSpeciaux();
+
   for (const m of feuillet.moments) {
+    const estMomentFixe = MOMENTS.includes(m.moment);
+    let etat = { type: "aucun" };
     if (m.type === "chant" && m.chant_id) {
       try {
         const chant = await api(`/chants/${m.chant_id}`);
-        momentsState[m.moment] = {
+        etat = {
           type: "chant", chant_id: chant.id, chant_titre: chant.titre,
           total_couplets: (chant.couplets || []).length, couplet_limit: m.couplet_limit === 0 ? 0 : (m.couplet_limit || null),
-          refrain: chant.refrain, couplets: chant.couplets
+          refrain: chant.refrain, couplets: chant.couplets,
         };
       } catch (e) {
-        momentsState[m.moment] = { type: "aucun" };
+        etat = { type: "aucun" };
       }
     } else if (m.type === "texte_libre") {
-      momentsState[m.moment] = { type: "texte_libre", titre_libre: m.titre_libre, texte_libre: m.texte_libre };
+      etat = { type: "texte_libre", titre_libre: m.titre_libre, texte_libre: m.texte_libre };
+    }
+    if (estMomentFixe) {
+      etat.ordre = m.ordre != null ? m.ordre : momentsState[m.moment].ordre;
+      momentsState[m.moment] = etat;
+    } else {
+      etat.ordre = m.ordre != null ? m.ordre : (MOMENTS.length + specialCounter) * 10;
+      etat.label = m.moment;
+      ajouterChantSpecial(etat);
     }
   }
   document.querySelectorAll("#moments-container .moment-row").forEach((row) => {
     const moment = row.dataset.moment;
-    const state = momentsState[moment] || { type: "aucun" };
+    const state = momentsState[moment] || { type: "aucun", ordre: 0 };
     row.querySelector(".moment-type").value = state.type;
+    row.querySelector(".moment-ordre-input").value = state.ordre;
     renderMomentBody(row, moment);
   });
 
@@ -1308,10 +1419,12 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
   feuilletCourantId = null;
   document.getElementById("feuillet-form").reset();
   document.getElementById("composer-result").innerHTML = indiceComposerHtml();
-  Object.keys(momentsState).forEach((m) => { momentsState[m] = { type: "aucun" }; });
-  document.querySelectorAll("#moments-container .moment-row").forEach((row) => {
+  viderChantsSpeciaux();
+  document.querySelectorAll("#moments-container .moment-row").forEach((row, i) => {
     const moment = row.dataset.moment;
+    momentsState[moment] = { type: "aucun", ordre: i * 10 };
     row.querySelector(".moment-type").value = "aucun";
+    row.querySelector(".moment-ordre-input").value = i * 10;
     renderMomentBody(row, moment);
   });
   dessinerApercuCanvas();
