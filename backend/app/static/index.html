@@ -56,7 +56,7 @@
     <form id="feuillet-form">
       <fieldset>
         <legend>Informations générales</legend>
-        <label>Date <input id="f-date" type="text" placeholder="Samedi 12 Juillet 2026" required></label>
+        <label>Date <input id="f-date" type="date" required></label>
         <label>Lieu <input id="f-lieu" type="text" placeholder="Cité, Rotonde…"></label>
       </fieldset>
 
@@ -189,6 +189,9 @@
       <input type="hidden" id="ce-id">
       <label>Titre <input id="ce-titre" type="text" placeholder="(Optionnel)"></label>
       <label>Catégorie <select id="ce-categorie"></select></label>
+      <label id="ce-nouvelle-categorie-champ" class="hidden">Nom de la nouvelle catégorie
+        <input id="ce-nouvelle-categorie" type="text" placeholder="ex: Chants de louange">
+      </label>
       <div id="ce-suggestion" class="suggestion hidden"></div>
       <label>Refrain <textarea id="ce-refrain" rows="2"></textarea></label>
       <div class="couplets-field">

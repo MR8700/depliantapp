@@ -1,12 +1,12 @@
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from . import auth
+from . import auth, crud, schemas
 from .constants import CATEGORIES_CHANTS, MOMENTS_LITURGIQUES
 from .db import init_db
 from .ml import classifier
@@ -88,9 +88,27 @@ def health():
     return {"status": "ok"}
 
 
+def _categories_completes() -> list[str]:
+    """Liste fixe (constants.py) + catégories ajoutées via "Autre" -> saisie
+    libre, persistées en base — "Autre" reste toujours en dernier, comme
+    choix de repli pour en créer une nouvelle."""
+    fixes = [c for c in CATEGORIES_CHANTS if c != "Autre"]
+    personnalisees = [c for c in crud.list_categories_personnalisees() if c not in fixes]
+    return fixes + personnalisees + ["Autre"]
+
+
 @app.get("/meta")
 def meta():
-    return {"moments": MOMENTS_LITURGIQUES, "categories": CATEGORIES_CHANTS}
+    return {"moments": MOMENTS_LITURGIQUES, "categories": _categories_completes()}
+
+
+@app.post("/categories")
+def ajouter_categorie(payload: schemas.CategoriePersonnalisee):
+    nom = payload.nom.strip()
+    if not nom or nom == "Autre":
+        raise HTTPException(status_code=400, detail="Nom de catégorie invalide")
+    crud.ajouter_categorie_personnalisee(nom)
+    return {"categories": _categories_completes()}
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"

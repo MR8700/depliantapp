@@ -4,6 +4,7 @@ Chaque widget peut être activé ou retiré sans toucher au LayoutEngine :
 - Bannière : toujours présente, ancrée en bas de la demi-page gauche (page 1).
 - Prière : facultative, consomme la zone G2 entière quand active.
 """
+from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape
@@ -18,6 +19,26 @@ from .zones import HAUTEUR_BANNIERE, HAUTEUR_ENTETE, LARGEUR_DEMI, X_DROITE, X_G
 
 HAUTEUR_LOGO = 26 * 2.8346  # 26mm en pt, cohérent avec l'ancien moteur
 HAUTEUR_BANNIERE_IMG = 20 * 2.8346
+
+_JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
+_MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin",
+            "juillet", "août", "septembre", "octobre", "novembre", "décembre"]
+
+
+def formater_date_affichage(valeur: str) -> str:
+    """Le champ `date` du feuillet est saisi via un sélecteur de date natif
+    (ISO « AAAA-MM-JJ ») depuis le Composer, mais d'anciens feuillets créés
+    avant ce changement stockent encore une chaîne libre déjà formatée
+    (ex. « Dimanche 12 juillet 2026 ») : on tente d'abord un parsing ISO, et
+    si ça échoue on renvoie la valeur telle quelle plutôt que de la
+    corrompre — aucune donnée existante n'est perdue par cette évolution."""
+    try:
+        d = datetime.strptime(valeur, "%Y-%m-%d")
+    except (ValueError, TypeError):
+        return valeur
+    jour = _JOURS_FR[d.weekday()]
+    mois = _MOIS_FR[d.month - 1]
+    return f"{jour.capitalize()} {d.day} {mois} {d.year}"
 
 DEFAULT_PRIERE_TITRE = "Prière pour le Burkina Faso"
 DEFAULT_PRIERE_TEXTE = (
@@ -97,7 +118,8 @@ def dessiner_entete(canvas, config: dict, images: dict, feuillet: schemas.Feuill
 
     texte_y -= 15
     canvas.setFont(POLICE_GRAS, 10)
-    sous_titre = feuillet.date if not feuillet.lieu else f"{feuillet.date} — {feuillet.lieu}"
+    date_affichee = formater_date_affichage(feuillet.date)
+    sous_titre = date_affichee if not feuillet.lieu else f"{date_affichee} — {feuillet.lieu}"
     canvas.drawCentredString(centre_x, texte_y, sous_titre)
     _souligner(sous_titre, 10, texte_y)
 

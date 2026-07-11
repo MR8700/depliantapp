@@ -205,14 +205,15 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
         moments=[schemas.MomentContenu(**m) for m in json.loads(row["moments"])],
         priere_active=bool(row["priere_active"]),
         priere_texte=row["priere_texte"],
+        taille_texte_manuelle=row["taille_texte_manuelle"],
     )
 
 
 def create_feuillet(feuillet: schemas.FeuilletCreate) -> schemas.Feuillet:
     with get_connection() as conn:
         cur = conn.execute(
-            "INSERT INTO feuillets (date, lieu, lectures, moments, priere_active, priere_texte) "
-            "VALUES (?, ?, ?, ?, ?, ?)",
+            "INSERT INTO feuillets (date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
                 feuillet.date,
                 feuillet.lieu,
@@ -220,6 +221,7 @@ def create_feuillet(feuillet: schemas.FeuilletCreate) -> schemas.Feuillet:
                 json.dumps([m.model_dump() for m in feuillet.moments], ensure_ascii=False),
                 int(feuillet.priere_active),
                 feuillet.priere_texte,
+                feuillet.taille_texte_manuelle,
             ),
         )
         row = conn.execute("SELECT * FROM feuillets WHERE id = ?", (cur.lastrowid,)).fetchone()
@@ -239,7 +241,7 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate) -> Optio
         conn.execute(
             """
             UPDATE feuillets SET date=?, lieu=?, lectures=?, moments=?, priere_active=?, priere_texte=?,
-                updated_at=datetime('now')
+                taille_texte_manuelle=?, updated_at=datetime('now')
             WHERE id=?
             """,
             (
@@ -249,6 +251,7 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate) -> Optio
                 json.dumps([m.model_dump() for m in feuillet.moments], ensure_ascii=False),
                 int(feuillet.priere_active),
                 feuillet.priere_texte,
+                feuillet.taille_texte_manuelle,
                 feuillet_id,
             ),
         )
@@ -269,3 +272,18 @@ def delete_feuillet(feuillet_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM feuillets WHERE id = ?", (feuillet_id,))
         return cur.rowcount > 0
+
+
+# --- Catégories personnalisées ---
+
+def list_categories_personnalisees() -> list[str]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT nom FROM categories_personnalisees ORDER BY nom").fetchall()
+        return [r["nom"] for r in rows]
+
+
+def ajouter_categorie_personnalisee(nom: str) -> str:
+    nom = nom.strip()
+    with get_connection() as conn:
+        conn.execute("INSERT OR IGNORE INTO categories_personnalisees (nom) VALUES (?)", (nom,))
+    return nom

@@ -560,6 +560,7 @@ function construireFeuilletPayload() {
     moments,
     priere_active: document.getElementById("f-priere-active").checked,
     priere_texte: document.getElementById("f-priere-texte").value || null,
+    taille_texte_manuelle: tailleTexteManuelle,
   };
 }
 
@@ -594,6 +595,11 @@ function afficherErreurDepassement(detail, resultDiv) {
   if (premiereRow) premiereRow.scrollIntoView({ behavior: "smooth", block: "center" });
 }
 
+let tailleTexteManuelle = null;
+const PAS_TAILLE_TEXTE = 1;
+const TAILLE_TEXTE_PLANCHER = 8;
+const TAILLE_TEXTE_PLAFOND = 32;
+
 async function afficherResultatFeuillet(feuilletId) {
   const resultDiv = document.getElementById("composer-result");
   nettoyerMomentsEnCause();
@@ -608,7 +614,8 @@ async function afficherResultatFeuillet(feuilletId) {
       afficherErreurDepassement(detail, resultDiv);
       return;
     }
-    
+
+    const tailleUtilisee = Number(res.headers.get("X-Taille-Texte-Pt")) || null;
     const blobUrl = URL.createObjectURL(await res.blob());
     resultDiv.innerHTML = `
       <div class="toolbar">
@@ -616,9 +623,31 @@ async function afficherResultatFeuillet(feuilletId) {
         <a href="${blobUrl}" download="feuillet-${feuilletId}.pdf" class="btn-enregistrer">Enregistrer le PDF</a>
         <button type="button" id="btn-partager-composer" class="btn-partager">Partager</button>
       </div>
+      <div class="taille-texte-controle">
+        <span class="taille-texte-label">Taille du texte des chants</span>
+        <div class="taille-texte-boutons">
+          <button type="button" id="taille-texte-moins" aria-label="Réduire">－</button>
+          <span id="taille-texte-valeur">${tailleUtilisee ? `${tailleUtilisee}pt` : "…"}</span>
+          <button type="button" id="taille-texte-plus" aria-label="Agrandir">＋</button>
+          ${tailleTexteManuelle !== null ? `<button type="button" id="taille-texte-auto" class="taille-texte-reinit">↺ Auto</button>` : ""}
+        </div>
+      </div>
       <iframe class="pdf-preview" src="${blobUrl}" title="Aperçu du feuillet"></iframe>
     `;
     document.getElementById("btn-partager-composer").addEventListener("click", () => partagerPdf(feuilletId));
+
+    const ajusterTaille = async (delta) => {
+      const base = tailleTexteManuelle !== null ? tailleTexteManuelle : (tailleUtilisee || TAILLE_TEXTE_PLANCHER);
+      tailleTexteManuelle = Math.max(TAILLE_TEXTE_PLANCHER, Math.min(TAILLE_TEXTE_PLAFOND, base + delta));
+      await regenererApercuSiPossible(true);
+    };
+    document.getElementById("taille-texte-moins").addEventListener("click", () => ajusterTaille(-PAS_TAILLE_TEXTE));
+    document.getElementById("taille-texte-plus").addEventListener("click", () => ajusterTaille(PAS_TAILLE_TEXTE));
+    const btnAuto = document.getElementById("taille-texte-auto");
+    if (btnAuto) btnAuto.addEventListener("click", async () => {
+      tailleTexteManuelle = null;
+      await regenererApercuSiPossible(true);
+    });
   } catch (err) {
     resultDiv.innerHTML = `<p class="hint">Erreur : ${escapeHtml(err.message)}</p>`;
   }
@@ -640,10 +669,10 @@ async function partagerPdf(feuilletId) {
   window.open(pdfUrl, "_blank");
 }
 
-async function regenererApercuSiPossible() {
+async function regenererApercuSiPossible(immediat = false) {
   if (!feuilletCourantId) return;
   clearTimeout(apercuTimer);
-  apercuTimer = setTimeout(async () => {
+  const executer = async () => {
     try {
       await api(`/feuillets/${feuilletCourantId}`, {
         method: "PUT",
@@ -652,7 +681,12 @@ async function regenererApercuSiPossible() {
       });
       await afficherResultatFeuillet(feuilletCourantId);
     } catch (err) { }
-  }, 400);
+  };
+  if (immediat) {
+    await executer();
+  } else {
+    apercuTimer = setTimeout(executer, 400);
+  }
 }
 
 document.getElementById("feuillet-form").addEventListener("submit", async (e) => {
@@ -943,11 +977,19 @@ function getCoupletsFromFields() {
 
 document.getElementById("ce-ajouter-couplet").addEventListener("click", () => ajouterCoupletField(""));
 
+function syncChampNouvelleCategorie() {
+  const estAutre = document.getElementById("ce-categorie").value === "Autre";
+  document.getElementById("ce-nouvelle-categorie-champ").classList.toggle("hidden", !estAutre);
+  if (!estAutre) document.getElementById("ce-nouvelle-categorie").value = "";
+}
+document.getElementById("ce-categorie").addEventListener("change", syncChampNouvelleCategorie);
+
 async function ouvrirEditeurChant(id) {
   const chant = await api(`/chants/${id}`);
   document.getElementById("ce-id").value = chant.id;
   document.getElementById("ce-titre").value = chant.titre || "";
   document.getElementById("ce-categorie").value = chant.categorie;
+  syncChampNouvelleCategorie();
   document.getElementById("ce-refrain").value = chant.refrain || "";
   renderCoupletsFields(chant.couplets);
   document.getElementById("ce-code").value = chant.code_reference || "";
@@ -964,6 +1006,7 @@ async function ouvrirEditeurChant(id) {
         <button type="button" id="ce-appliquer-suggestion">Appliquer</button>`;
       document.getElementById("ce-appliquer-suggestion").addEventListener("click", () => {
         document.getElementById("ce-categorie").value = suggestion.categorie;
+        syncChampNouvelleCategorie();
         suggestionEl.classList.add("hidden");
       });
     }
@@ -986,6 +1029,7 @@ function ouvrirEditeurNouveauChant() {
   document.getElementById("ce-id").value = "";
   document.getElementById("ce-titre").value = "";
   document.getElementById("ce-categorie").value = CATEGORIES[0] || "";
+  syncChampNouvelleCategorie();
   document.getElementById("ce-refrain").value = "";
   renderCoupletsFields([]);
   document.getElementById("ce-code").value = "";
@@ -1018,9 +1062,24 @@ document.getElementById("chant-editor-form").addEventListener("submit", async (e
     }
   }
 
+  let categorie = document.getElementById("ce-categorie").value;
+  if (categorie === "Autre") {
+    const nouvelleCategorie = document.getElementById("ce-nouvelle-categorie").value.trim();
+    if (nouvelleCategorie) {
+      const res = await api("/categories", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nom: nouvelleCategorie }),
+      });
+      CATEGORIES = res.categories;
+      peuplerSelectsCategories();
+      categorie = nouvelleCategorie;
+    }
+  }
+
   const payload = {
     titre,
-    categorie: document.getElementById("ce-categorie").value,
+    categorie,
     refrain: refrain || null,
     couplets,
     code_reference: document.getElementById("ce-code").value || null,
@@ -1242,8 +1301,25 @@ document.getElementById("btn-reset-bibliotheque").addEventListener("click", asyn
 });
 
 // --- Les dépliants ---
+const JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"];
+const MOIS_FR = ["janvier", "février", "mars", "avril", "mai", "juin",
+  "juillet", "août", "septembre", "octobre", "novembre", "décembre"];
+
+function formaterDateAffichage(valeur) {
+  // Idem render/widgets.py::formater_date_affichage : essaie un parsing ISO
+  // (saisi via le sélecteur de date natif) ; sinon renvoie tel quel (anciens
+  // feuillets dont la date est encore une chaîne libre déjà formatée).
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(valeur || "");
+  if (!m) return valeur || "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  if (Number.isNaN(d.getTime())) return valeur;
+  const jour = JOURS_FR[(d.getDay() + 6) % 7];
+  return `${jour.charAt(0).toUpperCase()}${jour.slice(1)} ${d.getDate()} ${MOIS_FR[d.getMonth()]} ${d.getFullYear()}`;
+}
+
 function depliantCardHtml(feuillet) {
-  const sousTitre = feuillet.lieu ? `${escapeHtml(feuillet.date)} — ${escapeHtml(feuillet.lieu)}` : escapeHtml(feuillet.date);
+  const dateAffichee = formaterDateAffichage(feuillet.date);
+  const sousTitre = feuillet.lieu ? `${escapeHtml(dateAffichee)} — ${escapeHtml(feuillet.lieu)}` : escapeHtml(dateAffichee);
   const pdfUrl = `/feuillets/${feuillet.id}/pdf`;
   return `
     <li class="depliant-card" data-id="${feuillet.id}">
@@ -1292,6 +1368,7 @@ async function modifierDepliant(id) {
   document.getElementById("f-evangile").value = feuillet.lectures.evangile || "";
   document.getElementById("f-priere-active").checked = !!feuillet.priere_active;
   document.getElementById("f-priere-texte").value = feuillet.priere_texte || "";
+  tailleTexteManuelle = feuillet.taille_texte_manuelle ?? null;
 
   MOMENTS.forEach((m, i) => { momentsState[m] = { type: "aucun", ordre: i * 10 }; });
   viderChantsSpeciaux();
@@ -1341,6 +1418,7 @@ function indiceComposerHtml() {
 
 document.getElementById("btn-nouveau-depliant").addEventListener("click", () => {
   feuilletCourantId = null;
+  tailleTexteManuelle = null;
   document.getElementById("feuillet-form").reset();
   document.getElementById("composer-result").innerHTML = indiceComposerHtml();
   viderChantsSpeciaux();
@@ -1364,13 +1442,7 @@ function masquerSplash() {
   document.getElementById("splash").classList.add("hidden");
 }
 
-// --- init ---
-async function init() {
-  const debutChargement = Date.now();
-  const meta = await api("/meta");
-  MOMENTS = meta.moments;
-  CATEGORIES = meta.categories;
-
+function peuplerSelectsCategories() {
   const categorieOptionsAvecToutes = `<option value="">Toutes catégories</option>` +
     CATEGORIES.map((c) => `<option value="${c}">${categorieLabel(c)}</option>`).join("");
   document.getElementById("search-categorie").innerHTML = categorieOptionsAvecToutes;
@@ -1380,6 +1452,15 @@ async function init() {
   document.getElementById("ce-categorie").innerHTML = categorieOptions;
   document.getElementById("bulk-categorie").innerHTML = categorieOptions;
   document.getElementById("import-categorie").innerHTML = categorieOptions;
+}
+
+// --- init ---
+async function init() {
+  const debutChargement = Date.now();
+  const meta = await api("/meta");
+  MOMENTS = meta.moments;
+  CATEGORIES = meta.categories;
+  peuplerSelectsCategories();
 
   initComposer();
   document.getElementById("composer-result").innerHTML = indiceComposerHtml();

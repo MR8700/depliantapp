@@ -97,6 +97,15 @@ class FeuilletBase(BaseModel):
     priere_texte: Optional[str] = None
     """Texte de la prière ; si vide et priere_active=True, le texte par
     défaut (prière pour le Burkina Faso) est utilisé."""
+    taille_texte_manuelle: Optional[float] = None
+    """Taille de police du corps des chants choisie manuellement par
+    l'utilisateur (voir render/typography.py::ECHELLES_CORPS pour les
+    bornes) ; si None (par défaut), le moteur choisit automatiquement la
+    plus grande taille qui remplit les zones sans déborder."""
+
+
+class CategoriePersonnalisee(BaseModel):
+    nom: str
 
 
 class FeuilletCreate(FeuilletBase):

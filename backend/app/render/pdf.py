@@ -18,7 +18,7 @@ from .. import schemas
 from .layout_engine import DepassementImpossible, LayoutEngine
 from .measure import construire_unites
 from .model import build_sections
-from .typography import ECHELLES_CORPS, construire_styles
+from .typography import ECHELLES_CORPS, TAILLE_TEXTE, TAILLE_TEXTE_PLAFOND, construire_styles
 from .widgets import construire_flowables_priere, dessiner_banniere, dessiner_entete
 from .zones import (EPAISSEUR_BORDURE, HAUTEUR_UTILE, LARGEUR_COLONNE, LARGEUR_UTILE, PAGE_SIZE,
                      X0, Y0, construire_grille)
@@ -105,18 +105,30 @@ def _dessiner_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, grille
     return buffer.getvalue()
 
 
-def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: Optional[dict] = None) -> bytes:
-    """Compose le feuillet dans la grille fixe et rend le PDF. La police du
-    corps des chants n'est JAMAIS réduite en dessous du plancher (dernière
-    valeur de ECHELLES_CORPS) — mais quand un feuillet léger laisse des
-    zones à moitié vides, elle est agrandie uniformément (même taille
-    partout, jamais chant par chant) jusqu'à la plus grande taille qui
-    remplit encore toutes les zones sans déborder. Si même au plancher le
-    contenu ne tient pas, lève DepassementImpossible plutôt que de déborder
-    ou de trahir la maquette."""
+def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: Optional[dict] = None) -> tuple[bytes, float]:
+    """Compose le feuillet dans la grille fixe et rend le PDF. Retourne
+    (contenu_pdf, taille_texte_utilisee).
+
+    Par défaut (feuillet.taille_texte_manuelle est None), la police du corps
+    des chants n'est JAMAIS réduite en dessous du plancher (dernière valeur
+    de ECHELLES_CORPS) — mais quand un feuillet léger laisse des zones à
+    moitié vides, elle est agrandie uniformément (même taille partout,
+    jamais chant par chant) jusqu'à la plus grande taille qui remplit
+    encore toutes les zones sans déborder.
+
+    Si l'utilisateur a choisi une taille manuelle (bouton +/- du Composer),
+    seule cette taille est essayée : pas de repli automatique, pour que le
+    réglage manuel soit honoré tel quel. Si même au plancher (mode auto) ou
+    à la taille choisie (mode manuel) le contenu ne tient pas, lève
+    DepassementImpossible plutôt que de déborder ou de trahir la maquette."""
     images = images or {}
     sections = build_sections(feuillet)
     grille = construire_grille(feuillet.priere_active)
+
+    if feuillet.taille_texte_manuelle is not None:
+        taille = max(TAILLE_TEXTE, min(TAILLE_TEXTE_PLAFOND, feuillet.taille_texte_manuelle))
+        styles, assignation = _tester_taille(feuillet, sections, grille, taille)
+        return _dessiner_pdf(feuillet, config, images, grille, assignation), taille
 
     derniere_erreur: Optional[DepassementImpossible] = None
     for taille_texte in ECHELLES_CORPS:
@@ -126,7 +138,7 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
             derniere_erreur = exc
             continue
         try:
-            return _dessiner_pdf(feuillet, config, images, grille, assignation)
+            return _dessiner_pdf(feuillet, config, images, grille, assignation), taille_texte
         except DepassementImpossible as exc:
             # Garde-fou improbable : la mesure a dit "ça tient" mais le rendu
             # réel (Frame.addFromList) a détecté un écart. On retente avec la

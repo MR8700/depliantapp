@@ -72,6 +72,16 @@ CREATE TABLE IF NOT EXISTS auth (
     must_change_password INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Catégories de chants ajoutées par les utilisateurs (via "Autre" -> saisie
+-- libre) en plus de la liste fixe CATEGORIES_CHANTS (constants.py) — pour
+-- qu'une nouvelle catégorie devienne utilisable partout et persiste, comme
+-- les catégories intégrées.
+CREATE TABLE IF NOT EXISTS categories_personnalisees (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
 """
 
 
@@ -98,6 +108,8 @@ def init_db() -> None:
             conn.execute("ALTER TABLE feuillets ADD COLUMN priere_active INTEGER NOT NULL DEFAULT 0")
         if "priere_texte" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN priere_texte TEXT")
+        if "taille_texte_manuelle" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN taille_texte_manuelle REAL")
 
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
