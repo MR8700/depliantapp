@@ -119,12 +119,58 @@ function syncModalLock() {
   });
 });
 
+// --- Modales : ouverture/fermeture animées + support du bouton retour
+// (téléphone et navigateur). Chaque ouverture pousse une entrée d'historique
+// (même URL, juste un marqueur) ; le bouton retour la dépile via popstate et
+// referme la modale au lieu de faire quitter la page. Les modales protégeant
+// une saisie en cours (chant-editor, import-workspace-modal) redemandent
+// confirmation avant de se fermer, exactement comme leurs boutons "Annuler".
+let modalStack = [];
+const MODALS_AVEC_CONFIRMATION = new Set(["chant-editor", "import-workspace-modal"]);
+const DUREE_TRANSITION_MODALE = 220;
+
 function ouvrirModale(id) {
-  document.getElementById(id).classList.remove("hidden");
+  const el = document.getElementById(id);
+  if (!el.classList.contains("hidden")) return;
+  el.classList.remove("hidden");
+  requestAnimationFrame(() => el.classList.add("visible"));
+  modalStack.push(id);
+  history.pushState({ depliantModal: id }, "", location.href);
 }
+
 function fermerModale(id) {
-  document.getElementById(id).classList.add("hidden");
+  const el = document.getElementById(id);
+  if (el.classList.contains("hidden")) return;
+  el.classList.remove("visible");
+  modalStack = modalStack.filter((m) => m !== id);
+  setTimeout(() => el.classList.add("hidden"), DUREE_TRANSITION_MODALE);
 }
+
+window.addEventListener("popstate", () => {
+  if (modalStack.length === 0) return;
+  const top = modalStack[modalStack.length - 1];
+  if (MODALS_AVEC_CONFIRMATION.has(top) &&
+      !confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
+    history.pushState({ depliantModal: top }, "", location.href);
+    return;
+  }
+  fermerModale(top);
+});
+
+const FERMETURE_X_DELEGUEE = {
+  "chant-editor": "ce-fermer",
+  "chant-picker": "picker-close",
+  "chant-detail-modal": "cd-btn-annuler",
+  "import-workspace-modal": "iw-btn-annuler",
+};
+document.querySelectorAll(".modal-close-x").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const cibleId = FERMETURE_X_DELEGUEE[btn.dataset.close];
+    const cible = cibleId && document.getElementById(cibleId);
+    if (cible) cible.click();
+    else fermerModale(btn.dataset.close);
+  });
+});
 
 async function api(path, options) {
   const res = await fetch(path, options);
