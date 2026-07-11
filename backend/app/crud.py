@@ -2,8 +2,8 @@ import json
 import re
 from typing import Optional
 
-from . import schemas
-from .db import get_connection
+from . import db, schemas
+from .db import get_connection, insert_returning_id
 from .slugify import unique_slug
 
 
@@ -13,9 +13,10 @@ def _existing_slugs(conn, exclude_id: Optional[int] = None) -> set[str]:
 
 
 def _fts_query(q: str) -> Optional[str]:
-    """Transforme la saisie utilisateur en requête FTS5 : chaque mot devient un
-    préfixe (ex. 'seign dieu' -> '"seign"* "dieu"*'), pour un rendu proche d'une
-    recherche 'contient' tout en restant rapide sur un gros volume de paroles."""
+    """Transforme la saisie utilisateur en requête FTS5 (SQLite uniquement) :
+    chaque mot devient un préfixe (ex. 'seign dieu' -> '"seign"* "dieu"*'),
+    pour un rendu proche d'une recherche 'contient' tout en restant rapide
+    sur un gros volume de paroles."""
     tokens = re.findall(r"\w+", q, re.UNICODE)
     if not tokens:
         return None
@@ -41,7 +42,8 @@ def _row_to_chant(row) -> schemas.Chant:
 def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, confiance: float = 1.0) -> schemas.Chant:
     with get_connection() as conn:
         slug = unique_slug(chant.titre, _existing_slugs(conn))
-        cur = conn.execute(
+        new_id = insert_returning_id(
+            conn,
             """
             INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -59,7 +61,7 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
                 confiance,
             ),
         )
-        row = conn.execute("SELECT * FROM chants WHERE id = ?", (cur.lastrowid,)).fetchone()
+        row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
         return _row_to_chant(row)
 
 
@@ -92,11 +94,18 @@ def list_chants(
     clauses = []
     params: list = []
     from_clause = "chants"
-    fts_q = _fts_query(q) if q else None
+    fts_q = _fts_query(q) if (q and db.BACKEND == "sqlite") else None
     if fts_q:
         from_clause = "chants JOIN chants_fts ON chants.id = chants_fts.rowid"
         clauses.append("chants_fts MATCH ?")
         params.append(fts_q)
+    elif q:
+        # Postgres : pas de FTS5 disponible, recherche par sous-chaîne (ILIKE,
+        # insensible à la casse/accents suffisant à l'échelle d'une seule
+        # chorale) sur titre/refrain/couplets plutôt qu'un moteur plein texte.
+        clauses.append("(chants.titre ILIKE ? OR chants.refrain ILIKE ? OR chants.couplets ILIKE ?)")
+        motif = f"%{q}%"
+        params.extend([motif, motif, motif])
     if categorie:
         clauses.append("chants.categorie = ?")
         params.append(categorie)
@@ -211,7 +220,8 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
 
 def create_feuillet(feuillet: schemas.FeuilletCreate) -> schemas.Feuillet:
     with get_connection() as conn:
-        cur = conn.execute(
+        new_id = insert_returning_id(
+            conn,
             "INSERT INTO feuillets (date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle) "
             "VALUES (?, ?, ?, ?, ?, ?, ?)",
             (
@@ -224,7 +234,7 @@ def create_feuillet(feuillet: schemas.FeuilletCreate) -> schemas.Feuillet:
                 feuillet.taille_texte_manuelle,
             ),
         )
-        row = conn.execute("SELECT * FROM feuillets WHERE id = ?", (cur.lastrowid,)).fetchone()
+        row = conn.execute("SELECT * FROM feuillets WHERE id = ?", (new_id,)).fetchone()
         return _row_to_feuillet(row)
 
 
@@ -237,11 +247,12 @@ def get_feuillet(feuillet_id: int) -> Optional[schemas.Feuillet]:
 def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate) -> Optional[schemas.Feuillet]:
     if not get_feuillet(feuillet_id):
         return None
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(
-            """
+            f"""
             UPDATE feuillets SET date=?, lieu=?, lectures=?, moments=?, priere_active=?, priere_texte=?,
-                taille_texte_manuelle=?, updated_at=datetime('now')
+                taille_texte_manuelle=?, updated_at={horodatage}
             WHERE id=?
             """,
             (
@@ -284,6 +295,11 @@ def list_categories_personnalisees() -> list[str]:
 
 def ajouter_categorie_personnalisee(nom: str) -> str:
     nom = nom.strip()
+    requete = (
+        "INSERT INTO categories_personnalisees (nom) VALUES (?) ON CONFLICT (nom) DO NOTHING"
+        if db.BACKEND == "postgres" else
+        "INSERT OR IGNORE INTO categories_personnalisees (nom) VALUES (?)"
+    )
     with get_connection() as conn:
-        conn.execute("INSERT OR IGNORE INTO categories_personnalisees (nom) VALUES (?)", (nom,))
+        conn.execute(requete, (nom,))
     return nom

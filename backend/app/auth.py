@@ -12,6 +12,7 @@ import time
 from datetime import datetime, timezone
 from typing import Optional
 
+from . import db
 from .db import get_connection
 from .paths import DATA_DIR
 
@@ -129,9 +130,10 @@ def change_password(mot_de_passe_actuel: str, nouveau_mot_de_passe: str) -> bool
     compte = get_account()
     if not compte or not verify_password(mot_de_passe_actuel, compte["password_hash"]):
         return False
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(
-            "UPDATE auth SET password_hash = ?, must_change_password = 0, updated_at = datetime('now') WHERE id = 1",
+            f"UPDATE auth SET password_hash = ?, must_change_password = 0, updated_at = {horodatage} WHERE id = 1",
             (hash_password(nouveau_mot_de_passe),),
         )
     return True

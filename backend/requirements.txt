@@ -6,4 +6,5 @@ reportlab
 pillow
 pymupdf
 python-multipart
+psycopg2-binary
 pywin32; sys_platform == "win32"
