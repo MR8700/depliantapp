@@ -683,3 +683,12 @@ button[type="submit"], #btn-generer {
 .profil-type { font-size: 0.78rem; color: var(--gris); }
 .profil-lecture-seule { background: #f7f7f7; border-radius: 8px; padding: 10px 12px; margin-bottom: 14px; font-size: 0.85rem; }
 
+.champ-mdp { position: relative; display: block; }
+.champ-mdp input { padding-right: 34px; }
+.btn-voyant-mdp {
+  position: absolute; right: 2px; top: 2px; width: auto; margin: 0;
+  background: none; border: none; padding: 8px; font-size: 1rem;
+  line-height: 1; cursor: pointer; color: var(--gris);
+}
+.btn-voyant-mdp:hover { background: none; color: var(--bleu); }
+

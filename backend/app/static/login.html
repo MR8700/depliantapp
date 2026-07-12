@@ -38,6 +38,14 @@
   .erreur.visible { display: block; }
   .hint { font-size: 0.78rem; color: var(--gris); margin-top: 10px; line-height: 1.4; }
   .hidden { display: none; }
+  .champ-mdp { position: relative; }
+  .champ-mdp input { padding-right: 34px; }
+  .btn-voyant-mdp {
+    position: absolute; right: 2px; top: 1px; width: auto; margin: 0;
+    background: none; border: none; padding: 8px; font-size: 1rem;
+    line-height: 1; cursor: pointer; color: var(--gris);
+  }
+  .btn-voyant-mdp:hover { background: none; color: var(--bleu); }
 </style>
 </head>
 <body>
@@ -49,7 +57,10 @@
       <label for="login-username">Identifiant</label>
       <input id="login-username" type="text" autocomplete="username" required autofocus>
       <label for="login-password">Mot de passe</label>
-      <input id="login-password" type="password" autocomplete="current-password" required>
+      <div class="champ-mdp">
+        <input id="login-password" type="password" autocomplete="current-password" required>
+        <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button>
+      </div>
       <div class="erreur" id="login-erreur"></div>
       <button type="submit">Se connecter</button>
     </form>
@@ -57,11 +68,20 @@
     <form id="form-changement" class="hidden">
       <p class="hint">Mot de passe par défaut détecté : il doit être changé avant de continuer.</p>
       <label for="chg-actuel">Mot de passe actuel</label>
-      <input id="chg-actuel" type="password" autocomplete="current-password" required>
+      <div class="champ-mdp">
+        <input id="chg-actuel" type="password" autocomplete="current-password" required>
+        <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button>
+      </div>
       <label for="chg-nouveau">Nouveau mot de passe (8 caractères min.)</label>
-      <input id="chg-nouveau" type="password" autocomplete="new-password" required minlength="8">
+      <div class="champ-mdp">
+        <input id="chg-nouveau" type="password" autocomplete="new-password" required minlength="8">
+        <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button>
+      </div>
       <label for="chg-confirme">Confirmer le nouveau mot de passe</label>
-      <input id="chg-confirme" type="password" autocomplete="new-password" required minlength="8">
+      <div class="champ-mdp">
+        <input id="chg-confirme" type="password" autocomplete="new-password" required minlength="8">
+        <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button>
+      </div>
       <div class="erreur" id="chg-erreur"></div>
       <button type="submit">Changer le mot de passe et continuer</button>
     </form>
@@ -83,6 +103,16 @@ function afficherErreur(id, message) {
 function masquerErreur(id) {
   document.getElementById(id).classList.remove("visible");
 }
+
+document.querySelectorAll(".btn-voyant-mdp").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = btn.previousElementSibling;
+    const visible = input.type === "text";
+    input.type = visible ? "password" : "text";
+    btn.textContent = visible ? "👁" : "🙈";
+    btn.setAttribute("aria-label", visible ? "Afficher le mot de passe" : "Masquer le mot de passe");
+  });
+});
 
 document.getElementById("form-login").addEventListener("submit", async (e) => {
   e.preventDefault();

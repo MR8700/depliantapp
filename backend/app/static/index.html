@@ -374,9 +374,15 @@
     <div id="profil-lecture-seule" class="profil-lecture-seule hidden"></div>
     <form id="profil-mdp-form">
       <h3>Changer le mot de passe</h3>
-      <label>Mot de passe actuel <input id="profil-mdp-actuel" type="password" autocomplete="current-password" required></label>
-      <label>Nouveau mot de passe (8 caractères min.) <input id="profil-mdp-nouveau" type="password" autocomplete="new-password" required minlength="8"></label>
-      <label>Confirmer <input id="profil-mdp-confirme" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label>Mot de passe actuel
+        <span class="champ-mdp"><input id="profil-mdp-actuel" type="password" autocomplete="current-password" required><button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button></span>
+      </label>
+      <label>Nouveau mot de passe (8 caractères min.)
+        <span class="champ-mdp"><input id="profil-mdp-nouveau" type="password" autocomplete="new-password" required minlength="8"><button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button></span>
+      </label>
+      <label>Confirmer
+        <span class="champ-mdp"><input id="profil-mdp-confirme" type="password" autocomplete="new-password" required minlength="8"><button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button></span>
+      </label>
       <p id="profil-mdp-status" class="hint"></p>
       <button type="submit">Changer le mot de passe</button>
     </form>

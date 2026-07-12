@@ -72,6 +72,28 @@ class AuthMiddleware(BaseHTTPMiddleware):
         return JSONResponse(status_code=401, content={"detail": "Authentification requise"})
 
 
+class NoCacheStaticMiddleware(BaseHTTPMiddleware):
+    """Empêche le navigateur de garder une copie locale périmée d'app.js /
+    style.css / index.html après un déploiement : ces fichiers changent de
+    contenu sans que leur URL change, donc sans ce garde-fou un onglet resté
+    ouvert (ou rouvert depuis l'historique) peut continuer à exécuter un
+    JavaScript d'avant le déploiement pendant des heures, avec des
+    fonctionnalités manquantes ou cassées. `no-cache` (pas `no-store`)
+    autorise quand même une requête conditionnelle bon marché — 304 si le
+    fichier n'a pas changé — au lieu d'un re-téléchargement complet à chaque
+    chargement de page."""
+
+    _EXTENSIONS = (".js", ".css", ".html")
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        path = request.url.path
+        if path == "/" or path.endswith(self._EXTENSIONS):
+            response.headers["Cache-Control"] = "no-cache"
+        return response
+
+
+app.add_middleware(NoCacheStaticMiddleware)
 app.add_middleware(AuthMiddleware)
 
 app.include_router(auth_router.router)

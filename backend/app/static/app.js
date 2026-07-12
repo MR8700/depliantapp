@@ -71,6 +71,16 @@ async function ouvrirProfil() {
 }
 document.getElementById("btn-mon-profil").addEventListener("click", ouvrirProfil);
 
+document.querySelectorAll(".btn-voyant-mdp").forEach((btn) => {
+  btn.addEventListener("click", () => {
+    const input = btn.previousElementSibling;
+    const visible = input.type === "text";
+    input.type = visible ? "password" : "text";
+    btn.textContent = visible ? "👁" : "🙈";
+    btn.setAttribute("aria-label", visible ? "Afficher le mot de passe" : "Masquer le mot de passe");
+  });
+});
+
 document.getElementById("profil-mdp-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("profil-mdp-status");
