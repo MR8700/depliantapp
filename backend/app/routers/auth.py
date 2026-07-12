@@ -18,14 +18,18 @@ class ChangementMotDePasse(BaseModel):
 
 @router.post("/login")
 def login(identifiants: Identifiants, response: Response):
-    if not auth.verify_credentials(identifiants.username, identifiants.password):
+    identite = auth.verify_credentials_toute_source(identifiants.username, identifiants.password)
+    if not identite:
         raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect")
-    token = auth.create_session_token(identifiants.username)
+    token = auth.create_session_token(identite)
     response.set_cookie(
         auth.COOKIE_NAME, token,
         max_age=auth.SESSION_DUREE_SECONDES, httponly=True, samesite="lax",
     )
-    compte = auth.get_account()
+    if identite.type == "super":
+        compte = auth.get_account()
+    else:
+        compte = auth.get_chorale(identite.compte_id)
     return {"ok": True, "must_change_password": bool(compte["must_change_password"])}
 
 
@@ -38,20 +42,36 @@ def logout(response: Response):
 @router.get("/status")
 def status(request: Request):
     token = request.cookies.get(auth.COOKIE_NAME)
-    username = auth.verify_session_token(token) if token else None
-    if not username:
+    identite = auth.verify_session_token(token) if token else None
+    if not identite:
         return {"authenticated": False}
-    compte = auth.get_account()
-    return {"authenticated": True, "must_change_password": bool(compte["must_change_password"]) if compte else False}
+    if identite.type == "super":
+        compte = auth.get_account()
+        nom = "Super-admin"
+    else:
+        compte = auth.get_chorale(identite.compte_id)
+        nom = compte["nom"] if compte else identite.username
+    return {
+        "authenticated": True,
+        "type": identite.type,
+        "compte_id": identite.compte_id,
+        "nom": nom,
+        "must_change_password": bool(compte["must_change_password"]) if compte else False,
+    }
 
 
 @router.post("/change-password")
 def changer_mot_de_passe(payload: ChangementMotDePasse, request: Request):
     token = request.cookies.get(auth.COOKIE_NAME)
-    if not auth.verify_session_token(token):
+    identite = auth.verify_session_token(token) if token else None
+    if not identite:
         raise HTTPException(status_code=401, detail="Non authentifié")
     if len(payload.nouveau_mot_de_passe) < 8:
         raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit faire au moins 8 caractères")
-    if not auth.change_password(payload.mot_de_passe_actuel, payload.nouveau_mot_de_passe):
+    if identite.type == "super":
+        ok = auth.change_password(payload.mot_de_passe_actuel, payload.nouveau_mot_de_passe)
+    else:
+        ok = auth.changer_mot_de_passe_chorale(identite.compte_id, payload.mot_de_passe_actuel, payload.nouveau_mot_de_passe)
+    if not ok:
         raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
     return {"ok": True}

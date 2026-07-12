@@ -155,6 +155,22 @@ CREATE TRIGGER IF NOT EXISTS chants_fts_au AFTER UPDATE ON chants BEGIN
     INSERT INTO chants_fts(rowid, titre, refrain, couplets) VALUES (new.id, new.titre, new.refrain, new.couplets);
 END;
 
+-- Comptes chorale : un identifiant/mot de passe par chorale, créés
+-- uniquement par le super-admin (pas d'auto-inscription) — même logique de
+-- hachage/changement obligatoire que la table `auth` ci-dessous, en
+-- multi-lignes. Définie avant `feuillets`/`medias`/`parametres` puisqu'ils
+-- la référencent.
+CREATE TABLE IF NOT EXISTS chorales (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nom TEXT NOT NULL,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 1,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chorales_username ON chorales(username);
+
 CREATE TABLE IF NOT EXISTS feuillets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
@@ -163,6 +179,8 @@ CREATE TABLE IF NOT EXISTS feuillets (
     moments TEXT NOT NULL DEFAULT '[]',
     priere_active INTEGER NOT NULL DEFAULT 0,
     priere_texte TEXT,
+    chorale_id INTEGER REFERENCES chorales(id),
+    clone_de_id INTEGER REFERENCES feuillets(id),
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -170,6 +188,9 @@ CREATE TABLE IF NOT EXISTS feuillets (
 -- Authentification : un compte unique partagé (pas de gestion multi-utilisateur).
 -- La ligne id=1 est créée avec des identifiants par défaut au premier démarrage
 -- (voir auth.py) et must_change_password=1 force le changement avant tout accès.
+-- Depuis l'introduction des comptes chorale (table `chorales` ci-dessus),
+-- cette table `auth` à ligne unique désigne le compte SUPER-ADMIN — même
+-- logique, juste un rôle différent, aucun changement de schéma nécessaire.
 CREATE TABLE IF NOT EXISTS auth (
     id INTEGER PRIMARY KEY CHECK (id = 1),
     username TEXT NOT NULL,
@@ -177,6 +198,60 @@ CREATE TABLE IF NOT EXISTS auth (
     must_change_password INTEGER NOT NULL DEFAULT 1,
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Pool partagé de médias (logos, bannières) : n'importe quelle chorale peut
+-- en uploader, toutes peuvent les réutiliser dans leurs réglages actifs
+-- (table `parametres` ci-dessous). Remplace l'ancienne table à un logo par
+-- emplacement, globale et unique.
+CREATE TABLE IF NOT EXISTS medias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type TEXT NOT NULL,
+    nom TEXT,
+    filename TEXT NOT NULL,
+    content_type TEXT,
+    donnees BLOB NOT NULL,
+    chorale_id INTEGER REFERENCES chorales(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Réglages actifs PAR CHORALE (nom affiché, paroisse, contact, quelles
+-- images du pool `medias` ci-dessus sont utilisées pour chaque
+-- emplacement) — remplace l'ancienne ligne singleton partagée par tout le
+-- site : modifier ses réglages n'influence plus les autres chorales.
+CREATE TABLE IF NOT EXISTS parametres (
+    chorale_id INTEGER PRIMARY KEY REFERENCES chorales(id),
+    donnees TEXT NOT NULL DEFAULT '{}'
+);
+
+-- File de modération : une chorale ne supprime jamais directement un chant
+-- (bibliothèque partagée par tous) ou un dépliant, elle en fait la demande ;
+-- le super-admin valide (suppression réelle) ou annule (la ressource reste
+-- en base mais demeure masquée pour la chorale demandeuse, voir
+-- masques_chorale ci-dessous).
+CREATE TABLE IF NOT EXISTS demandes_suppression (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type_cible TEXT NOT NULL,
+    cible_id INTEGER NOT NULL,
+    chorale_demandeuse_id INTEGER NOT NULL REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    traite_at TEXT
+);
+
+-- Visibilité par chorale : une ligne ici = cette chorale ne voit plus cette
+-- ressource dans ses listes. Créée automatiquement dès la demande de
+-- suppression (masquage immédiat, indépendant de la décision du
+-- super-admin) ; retirée uniquement par une restauration explicite du
+-- super-admin pour CETTE chorale précise — la bibliothèque garde la
+-- ressource pour toutes les autres dans tous les cas.
+CREATE TABLE IF NOT EXISTS masques_chorale (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    type_cible TEXT NOT NULL,
+    cible_id INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_masques_unique ON masques_chorale(chorale_id, type_cible, cible_id);
 
 -- Catégories de chants ajoutées par les utilisateurs (via "Autre" -> saisie
 -- libre) en plus de la liste fixe CATEGORIES_CHANTS (constants.py) — pour
@@ -215,6 +290,19 @@ CREATE INDEX IF NOT EXISTS idx_chants_categorie ON chants(categorie);
 CREATE INDEX IF NOT EXISTS idx_chants_code_reference ON chants(code_reference);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chants_slug ON chants(slug);
 
+-- Comptes chorale : voir le commentaire équivalent dans SCHEMA_SQLITE.
+-- Définie avant `feuillets`/`medias`/`parametres` puisqu'ils la référencent.
+CREATE TABLE IF NOT EXISTS chorales (
+    id SERIAL PRIMARY KEY,
+    nom TEXT NOT NULL,
+    username TEXT NOT NULL,
+    password_hash TEXT NOT NULL,
+    must_change_password INTEGER NOT NULL DEFAULT 1,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chorales_username ON chorales(username);
+
 CREATE TABLE IF NOT EXISTS feuillets (
     id SERIAL PRIMARY KEY,
     date TEXT NOT NULL,
@@ -224,6 +312,8 @@ CREATE TABLE IF NOT EXISTS feuillets (
     priere_active INTEGER NOT NULL DEFAULT 0,
     priere_texte TEXT,
     taille_texte_manuelle REAL,
+    chorale_id INTEGER REFERENCES chorales(id),
+    clone_de_id INTEGER REFERENCES feuillets(id),
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -242,28 +332,55 @@ CREATE TABLE IF NOT EXISTS categories_personnalisees (
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
--- Médias uploadés (logos, bannière, plus tard audio/vidéo des chants) stockés
--- en base plutôt que sur le disque du service web (éphémère sur Render) —
--- une seule base Postgres suffit à tout persister, sans service de stockage
--- externe séparé.
+-- Pool partagé de médias (logos, bannières) : voir le commentaire équivalent
+-- dans SCHEMA_SQLITE. Remplace l'ancienne table à un logo par emplacement,
+-- globale et unique (colonne `slot` PRIMARY KEY) — voir
+-- _renommer_tables_legacy_postgres() pour la migration de l'ancienne table.
 CREATE TABLE IF NOT EXISTS medias (
-    slot TEXT PRIMARY KEY,
+    id SERIAL PRIMARY KEY,
+    type TEXT NOT NULL,
+    nom TEXT,
     filename TEXT NOT NULL,
     content_type TEXT,
     donnees BYTEA NOT NULL,
-    updated_at TIMESTAMP NOT NULL DEFAULT now()
+    chorale_id INTEGER REFERENCES chorales(id),
+    created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
--- Réglages généraux (chorale, paroisse, annonce, etc.) — équivalent Postgres
--- de config.json, lui aussi sur le disque éphémère du service web.
+-- Réglages actifs PAR CHORALE — voir le commentaire équivalent dans
+-- SCHEMA_SQLITE. Remplace l'ancienne ligne singleton id=1 partagée par tout
+-- le site.
 CREATE TABLE IF NOT EXISTS parametres (
-    id INTEGER PRIMARY KEY CHECK (id = 1),
+    chorale_id INTEGER PRIMARY KEY REFERENCES chorales(id),
     donnees TEXT NOT NULL DEFAULT '{}'
 );
+
+-- File de modération / visibilité par chorale — voir le commentaire
+-- équivalent dans SCHEMA_SQLITE.
+CREATE TABLE IF NOT EXISTS demandes_suppression (
+    id SERIAL PRIMARY KEY,
+    type_cible TEXT NOT NULL,
+    cible_id INTEGER NOT NULL,
+    chorale_demandeuse_id INTEGER NOT NULL REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    traite_at TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS masques_chorale (
+    id SERIAL PRIMARY KEY,
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    type_cible TEXT NOT NULL,
+    cible_id INTEGER NOT NULL,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_masques_unique ON masques_chorale(chorale_id, type_cible, cible_id);
 
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_active INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_texte TEXT;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS taille_texte_manuelle REAL;
+ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS chorale_id INTEGER REFERENCES chorales(id);
+ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS clone_de_id INTEGER REFERENCES feuillets(id);
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS slug TEXT;
 """
 
@@ -303,6 +420,10 @@ def _init_sqlite() -> None:
             conn.execute("ALTER TABLE feuillets ADD COLUMN priere_texte TEXT")
         if "taille_texte_manuelle" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN taille_texte_manuelle REAL")
+        if "chorale_id" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN chorale_id INTEGER REFERENCES chorales(id)")
+        if "clone_de_id" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN clone_de_id INTEGER REFERENCES feuillets(id)")
 
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
@@ -331,9 +452,65 @@ def _init_sqlite() -> None:
                 [(r["id"], r["titre"], r["refrain"], r["couplets"]) for r in rows],
             )
 
+        _migrer_vers_multi_chorale(conn)
+
+
+def _renommer_tables_legacy_postgres(conn) -> None:
+    """Avant la création du nouveau schéma multi-chorale : si `medias`/
+    `parametres` existent encore avec leur ANCIENNE structure (mono-tenant,
+    une ligne/slot globale — colonne `chorale_id` absente), on les renomme
+    de côté plutôt que de les laisser bloquer silencieusement la création
+    des nouvelles tables du même nom (CREATE TABLE IF NOT EXISTS ne touche
+    pas une table déjà là, même de structure différente). Sur une base
+    neuve qui n'a jamais connu l'ancien modèle, ces tables n'existent pas
+    encore : `table_columns` renvoie alors un ensemble vide et rien ne se
+    passe — idempotent par construction, pas besoin de flag séparé."""
+    colonnes_parametres = table_columns(conn, "parametres")
+    if colonnes_parametres and "chorale_id" not in colonnes_parametres:
+        conn.execute("ALTER TABLE parametres RENAME TO parametres_legacy_singleton")
+    colonnes_medias = table_columns(conn, "medias")
+    if colonnes_medias and "chorale_id" not in colonnes_medias:
+        conn.execute("ALTER TABLE medias RENAME TO medias_legacy_slot")
+
+
+def _migrer_vers_multi_chorale(conn) -> None:
+    """Migration unique, idempotente (ne fait rien si une chorale existe déjà) :
+    bascule le modèle mono-tenant historique vers le modèle multi-chorale —
+    crée une première chorale "Chorale Sainte Cécile" et lui rattache toutes
+    les données existantes (dépliants, réglages, logos/bannière)."""
+    if conn.execute("SELECT 1 FROM chorales LIMIT 1").fetchone():
+        return
+
+    import secrets
+
+    from . import auth as auth_module  # import différé, même raison qu'ailleurs dans ce module
+
+    mot_de_passe = secrets.token_urlsafe(12)
+    chorale_id = insert_returning_id(
+        conn,
+        "INSERT INTO chorales (nom, username, password_hash, must_change_password) VALUES (?, ?, ?, 1)",
+        ("Chorale Sainte Cécile", "chorale-sainte-cecile", auth_module.hash_password(mot_de_passe)),
+    )
+    print(
+        "\n" + "=" * 60 +
+        "\nMigration multi-chorale : première chorale créée automatiquement"
+        "\nNom : Chorale Sainte Cécile"
+        "\nIdentifiant : chorale-sainte-cecile"
+        f"\nMot de passe initial (à changer immédiatement) : {mot_de_passe}"
+        "\n(les dépliants/réglages/logos existants lui ont été rattachés)"
+        "\n" + "=" * 60 + "\n"
+    )
+
+    conn.execute("UPDATE feuillets SET chorale_id = ? WHERE chorale_id IS NULL", (chorale_id,))
+
+    from . import config as config_module  # import différé : config.py importe get_connection depuis ce module
+
+    config_module.migrer_donnees_legacy_vers_chorale(conn, chorale_id)
+
 
 def _init_postgres() -> None:
     with get_connection() as conn:
+        _renommer_tables_legacy_postgres(conn)
         conn.executescript(SCHEMA_POSTGRES)
 
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
@@ -345,6 +522,8 @@ def _init_postgres() -> None:
                 slug = unique_slug(row["titre"], existants)
                 existants.add(slug)
                 conn.execute("UPDATE chants SET slug = ? WHERE id = ?", (slug, row["id"]))
+
+        _migrer_vers_multi_chorale(conn)
 
 
 @contextmanager

@@ -1,11 +1,18 @@
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
 
-from .. import crud, schemas
+from .. import auth, crud, schemas
+from ..deps import identite_courante, require_superadmin
 from ..ml import classifier, duplicates
 
 router = APIRouter(prefix="/chants", tags=["chants"])
+
+
+def _chorale_id_pour_masquage(identite: auth.Identite) -> Optional[int]:
+    """Le masquage (voir masques_chorale) ne s'applique qu'aux chorales — le
+    super-admin doit tout voir pour pouvoir modérer."""
+    return identite.compte_id if identite.type == "chorale" else None
 
 
 @router.get("", response_model=list[schemas.Chant])
@@ -16,9 +23,11 @@ def search_chants(
     confiance_max: Optional[float] = None,
     limit: int = 100,
     offset: int = 0,
+    identite: auth.Identite = Depends(identite_courante),
 ):
     return crud.list_chants(
-        q=q, categorie=categorie, occasion=occasion, confiance_max=confiance_max, limit=limit, offset=offset
+        q=q, categorie=categorie, occasion=occasion, confiance_max=confiance_max, limit=limit, offset=offset,
+        chorale_id_appelant=_chorale_id_pour_masquage(identite),
     )
 
 
@@ -34,13 +43,13 @@ def bulk_categorize(payload: schemas.BulkCategorize):
 
 
 @router.post("/bulk_delete")
-def bulk_delete(payload: schemas.BulkDelete):
+def bulk_delete(payload: schemas.BulkDelete, _identite: auth.Identite = Depends(require_superadmin)):
     deleted = crud.bulk_delete_chants(payload.ids)
     return {"deleted": deleted}
 
 
 @router.delete("/all")
-def delete_all_chants(confirmation: str):
+def delete_all_chants(confirmation: str, _identite: auth.Identite = Depends(require_superadmin)):
     if confirmation != "SUPPRIMER":
         raise HTTPException(status_code=400, detail="Confirmation invalide")
     return {"deleted": crud.delete_all_chants()}
@@ -55,8 +64,8 @@ def get_chant_by_slug(slug: str):
 
 
 @router.get("/{chant_id}", response_model=schemas.Chant)
-def get_chant(chant_id: int):
-    chant = crud.get_chant(chant_id)
+def get_chant(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
+    chant = crud.get_chant(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return chant
@@ -71,7 +80,10 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate):
 
 
 @router.delete("/{chant_id}")
-def delete_chant(chant_id: int):
+def delete_chant(chant_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Réservé au super-admin — une chorale passe par POST /moderation/demandes
+    (voir routers/moderation.py) pour demander une suppression, jamais un
+    DELETE direct sur la bibliothèque partagée."""
     if not crud.delete_chant(chant_id):
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return {"ok": True}

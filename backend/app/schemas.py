@@ -114,3 +114,12 @@ class FeuilletCreate(FeuilletBase):
 
 class Feuillet(FeuilletBase):
     id: int
+    chorale_id: Optional[int] = None
+    """Chorale propriétaire — toujours fixé côté serveur depuis l'identité de
+    la requête, jamais depuis le payload client (voir routers/feuillets.py)."""
+    clone_de_id: Optional[int] = None
+    """Si ce dépliant est né du clonage d'un dépliant d'une autre chorale
+    (modification d'un dépliant qu'on ne possède pas), id de l'original."""
+    chorale_nom: Optional[str] = None
+    """Nom de la chorale propriétaire — jointure en lecture seule, pour
+    l'affichage "composé par X" ; jamais stocké tel quel en base."""

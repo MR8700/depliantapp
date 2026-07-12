@@ -1,7 +1,9 @@
-"""Authentification à compte unique partagé (pas de gestion multi-utilisateur) :
-un identifiant/mot de passe protège tout le site, avec changement obligatoire du
-mot de passe par défaut à la première connexion. Hachage PBKDF2 et cookies de
-session signés en HMAC — uniquement la bibliothèque standard, pas de dépendance
+"""Authentification multi-comptes : un compte SUPER-ADMIN unique (table `auth`,
+historique — protégeait tout le site avant l'introduction des chorales) plus
+un compte par CHORALE (table `chorales`, créés uniquement par le super-admin).
+Même logique de hachage/session/changement obligatoire du mot de passe par
+défaut pour les deux types de compte. Hachage PBKDF2 et cookies de session
+signés en HMAC — uniquement la bibliothèque standard, pas de dépendance
 supplémentaire pour une fonctionnalité de cette taille."""
 import base64
 import hashlib
@@ -9,14 +11,26 @@ import hmac
 import os
 import secrets
 import time
+from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Literal, Optional
 
 from . import db
-from .db import get_connection
+from .db import get_connection, insert_returning_id
 from .paths import DATA_DIR
 
 DEFAULT_USERNAME = "admin"
+
+
+@dataclass(frozen=True)
+class Identite:
+    """Identité résolue à partir d'un jeton de session valide."""
+
+    type: Literal["super", "chorale"]
+    compte_id: int
+    """Id de la ligne `chorales` pour type="chorale" ; toujours 0 pour
+    type="super" (compte unique, pas d'id à proprement parler)."""
+    username: str
 
 COOKIE_NAME = "depliantapp_session"
 SESSION_DUREE_SECONDES = 30 * 24 * 3600  # 30 jours
@@ -114,12 +128,13 @@ def ensure_default_account() -> None:
 
 
 def get_account() -> Optional[dict]:
+    """Le compte SUPER-ADMIN (ligne unique historique — voir docstring de module)."""
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM auth WHERE id = 1").fetchone()
         return dict(row) if row else None
 
 
-def verify_credentials(username: str, mot_de_passe: str) -> bool:
+def _verify_credentials_super(username: str, mot_de_passe: str) -> bool:
     compte = get_account()
     if not compte:
         return False
@@ -127,6 +142,8 @@ def verify_credentials(username: str, mot_de_passe: str) -> bool:
 
 
 def change_password(mot_de_passe_actuel: str, nouveau_mot_de_passe: str) -> bool:
+    """Changement de mot de passe du compte SUPER-ADMIN (auto-service, comme
+    avant) — voir changer_mot_de_passe_chorale pour l'équivalent chorale."""
     compte = get_account()
     if not compte or not verify_password(mot_de_passe_actuel, compte["password_hash"]):
         return False
@@ -139,30 +156,117 @@ def change_password(mot_de_passe_actuel: str, nouveau_mot_de_passe: str) -> bool
     return True
 
 
+# --- Comptes chorale ------------------------------------------------------
+
+def get_chorale(chorale_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM chorales WHERE id = ?", (chorale_id,)).fetchone()
+        return dict(row) if row else None
+
+
+def get_chorale_by_username(username: str) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT * FROM chorales WHERE username = ?", (username,)).fetchone()
+        return dict(row) if row else None
+
+
+def list_chorales() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id, nom, username, must_change_password, created_at FROM chorales ORDER BY nom").fetchall()
+        return [dict(r) for r in rows]
+
+
+def username_deja_pris(username: str) -> bool:
+    """Unicité imposée entre les deux tables de comptes (chorale + super-admin)
+    puisqu'un même formulaire de connexion sert aux deux."""
+    if get_chorale_by_username(username):
+        return True
+    compte_super = get_account()
+    return bool(compte_super and hmac.compare_digest(username, compte_super["username"]))
+
+
+def creer_chorale(nom: str, username: str, mot_de_passe_initial: str) -> dict:
+    with get_connection() as conn:
+        chorale_id = insert_returning_id(
+            conn,
+            "INSERT INTO chorales (nom, username, password_hash, must_change_password) VALUES (?, ?, ?, 1)",
+            (nom, username, hash_password(mot_de_passe_initial)),
+        )
+    return get_chorale(chorale_id)
+
+
+def changer_mot_de_passe_chorale(chorale_id: int, mot_de_passe_actuel: str, nouveau_mot_de_passe: str) -> bool:
+    """Auto-service, en miroir de change_password() pour le super-admin."""
+    compte = get_chorale(chorale_id)
+    if not compte or not verify_password(mot_de_passe_actuel, compte["password_hash"]):
+        return False
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chorales SET password_hash = ?, must_change_password = 0, updated_at = {horodatage} WHERE id = ?",
+            (hash_password(nouveau_mot_de_passe), chorale_id),
+        )
+    return True
+
+
+def reinitialiser_mot_de_passe_chorale(chorale_id: int, nouveau_mot_de_passe: str) -> None:
+    """Action SUPER-ADMIN (pas d'auto-service) : force un nouveau mot de
+    passe et remet must_change_password à 1 pour que la chorale doive le
+    changer à sa prochaine connexion."""
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chorales SET password_hash = ?, must_change_password = 1, updated_at = {horodatage} WHERE id = ?",
+            (hash_password(nouveau_mot_de_passe), chorale_id),
+        )
+
+
+def verify_credentials_toute_source(username: str, mot_de_passe: str) -> Optional[Identite]:
+    """Essaie d'abord les comptes chorale, puis le compte super-admin unique
+    (unicité de username garantie à la création, voir username_deja_pris)."""
+    chorale = get_chorale_by_username(username)
+    if chorale and verify_password(mot_de_passe, chorale["password_hash"]):
+        return Identite(type="chorale", compte_id=chorale["id"], username=chorale["username"])
+    if _verify_credentials_super(username, mot_de_passe):
+        return Identite(type="super", compte_id=0, username=username)
+    return None
+
+
+# --- Session ----------------------------------------------------------
+
 def _sign(payload: str) -> str:
     return hmac.new(_secret_key(), payload.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
-def create_session_token(username: str) -> str:
+def create_session_token(identite: Identite) -> str:
     expiration = int(time.time()) + SESSION_DUREE_SECONDES
-    payload = f"{username}:{expiration}"
+    payload = f"{identite.type}:{identite.compte_id}:{identite.username}:{expiration}"
     signature = _sign(payload)
     brut = f"{payload}:{signature}"
     return base64.urlsafe_b64encode(brut.encode("utf-8")).decode("ascii")
 
 
-def verify_session_token(token: str) -> Optional[str]:
-    """Retourne le nom d'utilisateur si le jeton est valide (signature intacte,
-    non expiré), sinon None."""
+def verify_session_token(token: str) -> Optional[Identite]:
+    """Retourne l'identité résolue si le jeton est valide (signature intacte,
+    non expiré), sinon None. Le username est extrait en 3 temps (signature
+    dépouillée par la droite, type/compte_id par la gauche, expiration par
+    la droite du reste) plutôt qu'un simple rsplit à 5 parties, pour rester
+    correct même si un username venait à contenir ":" (comme le faisait déjà
+    l'ancien format à 3 champs)."""
     try:
         brut = base64.urlsafe_b64decode(token.encode("ascii")).decode("utf-8")
-        username, expiration_str, signature = brut.rsplit(":", 2)
+        avant_signature, signature = brut.rsplit(":", 1)
+        type_compte, compte_id_str, reste = avant_signature.split(":", 2)
+        username, expiration_str = reste.rsplit(":", 1)
+        compte_id = int(compte_id_str)
         expiration = int(expiration_str)
     except (ValueError, UnicodeDecodeError):
         return None
-    payload = f"{username}:{expiration}"
+    payload = f"{type_compte}:{compte_id}:{username}:{expiration}"
     if not hmac.compare_digest(_sign(payload), signature):
         return None
     if time.time() > expiration:
         return None
-    return username
+    if type_compte not in ("super", "chorale"):
+        return None
+    return Identite(type=type_compte, compte_id=compte_id, username=username)

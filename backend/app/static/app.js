@@ -18,6 +18,7 @@ const LABELS_MOMENTS = {
 
 let MOMENTS = [];
 let CATEGORIES = [];
+let IDENTITE = null; // { authenticated, type: "chorale"|"super", nom, must_change_password }
 const momentsState = {}; // moment -> { type, chant_id, chant_titre, titre_libre, texte_libre, total_couplets, couplet_limit, refrain, couplets }
 let pickerTargetMoment = null;
 let searchTimer = null;
@@ -55,6 +56,7 @@ function afficherVueDirect(nomVue) {
   if (nomVue === "reglages") chargerParametres();
   if (nomVue === "editeur") actualiserEditeur();
   if (nomVue === "depliants") actualiserDepliants();
+  if (nomVue === "admin") actualiserAdmin();
 }
 
 function changerVue(nomVue) {
@@ -674,11 +676,15 @@ async function regenererApercuSiPossible(immediat = false) {
   clearTimeout(apercuTimer);
   const executer = async () => {
     try {
-      await api(`/feuillets/${feuilletCourantId}`, {
+      const feuillet = await api(`/feuillets/${feuilletCourantId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(construireFeuilletPayload()),
       });
+      // Si ce dépliant appartient à une autre chorale, chaque PUT le clone
+      // (voir crud.update_feuillet) : adopter le nouvel id tout de suite,
+      // sinon chaque frappe suivante recloncerait depuis l'id d'origine.
+      feuilletCourantId = feuillet.id;
       await afficherResultatFeuillet(feuilletCourantId);
     } catch (err) { }
   };
@@ -696,6 +702,7 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
   resultDiv.textContent = "Génération en cours…";
   afficherSplashGeneration();
   try {
+    const idAvant = feuilletCourantId;
     const feuillet = feuilletCourantId
       ? await api(`/feuillets/${feuilletCourantId}`, {
           method: "PUT",
@@ -707,8 +714,15 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
+    const vientDetreClone = idAvant && feuillet.id !== idAvant;
     feuilletCourantId = feuillet.id;
     await afficherResultatFeuillet(feuillet.id);
+    if (vientDetreClone) {
+      resultDiv.insertAdjacentHTML(
+        "afterbegin",
+        `<p class="hint">Copié dans ton espace — le dépliant original n'a pas été modifié.</p>`
+      );
+    }
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
   } finally {
@@ -778,6 +792,8 @@ function actualiserApercuPriere() {
 });
 document.getElementById("p-priere-defaut").addEventListener("input", actualiserApercuPriere);
 
+const SLOT_TYPE_MEDIA = { logo_gauche: "logo", logo_droit: "logo", banniere_bas: "banniere" };
+
 function initImageSlots(params) {
   const container = document.getElementById("image-slots");
   if (!container.dataset.init) {
@@ -786,10 +802,11 @@ function initImageSlots(params) {
         <p><b>${label}</b></p>
         <img class="logo-preview hidden" alt="${label}">
         <p class="slot-status hint"></p>
-        <label>Choisir une image <input type="file" accept="image/*" class="slot-fichier"></label>
+        <label>Envoyer une nouvelle image <input type="file" accept="image/*" class="slot-fichier"></label>
         <div class="toolbar">
-          <button type="button" class="slot-upload">Enregistrer</button>
-          <button type="button" class="slot-supprimer btn-effacer">Supprimer</button>
+          <button type="button" class="slot-upload">Envoyer et utiliser</button>
+          <button type="button" class="slot-choisir">Choisir dans la bibliothèque</button>
+          <button type="button" class="slot-supprimer btn-effacer">Retirer</button>
         </div>
       </div>`).join("");
     container.dataset.init = "1";
@@ -809,43 +826,72 @@ function initImageSlots(params) {
         try {
           const res = await fetch(`/parametres/image/${slot}`, { method: "POST", body: formData });
           if (!res.ok) throw new Error(await res.text());
-          const data = await res.json();
-          afficherImageSlot(slot, data[`${slot}_filename`]);
+          afficherImageSlot(slot, true);
           input.value = "";
         } catch (err) {
           statusEl.textContent = `Erreur : ${err.message}`;
         }
       });
+      el.querySelector(".slot-choisir").addEventListener("click", () => ouvrirMediaPicker(slot));
       el.querySelector(".slot-supprimer").addEventListener("click", async () => {
         await api(`/parametres/image/${slot}`, { method: "DELETE" });
-        afficherImageSlot(slot, null);
+        afficherImageSlot(slot, false);
       });
     });
   }
 
-  Object.keys(IMAGE_SLOTS).forEach((slot) => afficherImageSlot(slot, params[`${slot}_filename`]));
+  Object.keys(IMAGE_SLOTS).forEach((slot) => afficherImageSlot(slot, !!params[`${slot}_media_id`]));
 }
 
 const APERCU_IMG_PAR_SLOT = {
   logo_gauche: "apercu-logo-gauche", logo_droit: "apercu-logo-droit", banniere_bas: "apercu-banniere-img",
 };
 
-function afficherImageSlot(slot, filename) {
+function afficherImageSlot(slot, presente) {
   const el = document.querySelector(`.image-slot[data-slot="${slot}"]`);
   if (!el) return;
   const img = el.querySelector(".logo-preview");
   const statusEl = el.querySelector(".slot-status");
   const apercuImg = document.getElementById(APERCU_IMG_PAR_SLOT[slot]);
-  if (filename) {
+  if (presente) {
     img.src = `/parametres/image/${slot}?t=${Date.now()}`;
     img.classList.remove("hidden");
-    statusEl.textContent = "Utilisée sur tous les prochains feuillets.";
+    statusEl.textContent = "Utilisée sur tes prochains feuillets.";
     if (apercuImg) { apercuImg.src = img.src; apercuImg.classList.remove("hidden"); }
   } else {
     img.classList.add("hidden");
-    statusEl.textContent = "Aucune image définie.";
+    statusEl.textContent = "Aucune image choisie.";
     if (apercuImg) apercuImg.classList.add("hidden");
   }
+}
+
+// --- Picker d'images du pool partagé ---
+let mediaPickerSlot = null;
+
+async function ouvrirMediaPicker(slot) {
+  mediaPickerSlot = slot;
+  const medias = await api(`/parametres/medias?type=${SLOT_TYPE_MEDIA[slot]}`);
+  const grid = document.getElementById("media-picker-grid");
+  if (medias.length === 0) {
+    grid.innerHTML = `<p class="hint">Aucune image de ce type dans la bibliothèque partagée pour l'instant.</p>`;
+  } else {
+    grid.innerHTML = medias.map((m) => `
+      <button type="button" class="media-picker-item" data-media-id="${m.id}">
+        <img src="/parametres/medias/${m.id}/fichier" alt="${escapeHtml(m.nom || m.filename)}">
+      </button>`).join("");
+    grid.querySelectorAll(".media-picker-item").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        await api(`/parametres/image/${mediaPickerSlot}/activer`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ media_id: Number(btn.dataset.mediaId) }),
+        });
+        afficherImageSlot(mediaPickerSlot, true);
+        fermerModale("media-picker-modal");
+      });
+    });
+  }
+  ouvrirModale("media-picker-modal");
 }
 
 document.getElementById("parametres-form").addEventListener("submit", async (e) => {
@@ -982,15 +1028,27 @@ document.getElementById("bulk-appliquer").addEventListener("click", async () => 
 });
 
 document.getElementById("bulk-supprimer").addEventListener("click", async () => {
-  if (!confirm(`Supprimer ${selectionEditeur.size} chant(s) sélectionné(s) ?`)) return;
-  await api("/chants/bulk_delete", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ ids: [...selectionEditeur] }),
-  });
+  if (IDENTITE.type === "super") {
+    if (!confirm(`Supprimer définitivement ${selectionEditeur.size} chant(s) sélectionné(s) ?`)) return;
+    await api("/chants/bulk_delete", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: [...selectionEditeur] }),
+    });
+  } else {
+    if (!confirm(`Demander la suppression de ${selectionEditeur.size} chant(s) sélectionné(s) ? Ils disparaîtront immédiatement de ta bibliothèque ; la décision finale revient au super-admin.`)) return;
+    for (const id of selectionEditeur) {
+      await api("/moderation/demandes", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type_cible: "chant", cible_id: id }),
+      });
+    }
+  }
   selectionEditeur.clear();
   majBulkBar();
   await actualiserEditeur();
+  await actualiserListeBibliotheque();
 });
 
 function renderCoupletsFields(couplets) {
@@ -1160,10 +1218,15 @@ document.getElementById("chant-editor-form").addEventListener("submit", async (e
 document.getElementById("ce-supprimer").addEventListener("click", async () => {
   const id = document.getElementById("ce-id").value;
   if (!id) return;
-  if (!confirm("Supprimer ce chant ?")) return;
-  await api(`/chants/${id}`, { method: "DELETE" });
+  if (!confirm("Demander la suppression de ce chant ? Il disparaîtra immédiatement de ta bibliothèque ; la décision finale revient au super-admin.")) return;
+  await api("/moderation/demandes", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ type_cible: "chant", cible_id: Number(id) }),
+  });
   fermerModale("chant-editor");
   await actualiserEditeur();
+  await actualiserListeBibliotheque();
 });
 
 // --- Importer (Interactive Workspace) ---
@@ -1398,22 +1461,27 @@ function depliantCardHtml(feuillet) {
   const dateAffichee = formaterDateAffichage(feuillet.date);
   const sousTitre = feuillet.lieu ? `${escapeHtml(dateAffichee)} — ${escapeHtml(feuillet.lieu)}` : escapeHtml(dateAffichee);
   const pdfUrl = `/feuillets/${feuillet.id}/pdf`;
+  const estAMoi = feuillet.chorale_id === IDENTITE.compte_id;
+  const attribution = !estAMoi && feuillet.chorale_nom
+    ? `<div class="chant-meta">Composé par ${escapeHtml(feuillet.chorale_nom)}</div>` : "";
   return `
     <li class="depliant-card" data-id="${feuillet.id}">
       <div class="chant-titre">${sousTitre}</div>
       <div class="chant-meta">${feuillet.moments.length} moment(s) renseigné(s)</div>
+      ${attribution}
       <div class="toolbar depliant-actions">
         <a href="${pdfUrl}" target="_blank" class="btn-ouvrir">Ouvrir</a>
         <a href="${pdfUrl}" download="feuillet-${feuillet.id}.pdf" class="btn-enregistrer">Enregistrer</a>
         <button type="button" class="btn-partager" data-action="partager">Partager</button>
-        <button type="button" class="btn-modifier" data-action="modifier">Modifier</button>
-        <button type="button" class="btn-effacer" data-action="supprimer">Supprimer</button>
+        <button type="button" class="btn-modifier" data-action="modifier">${estAMoi ? "Modifier" : "Copier et modifier"}</button>
+        ${estAMoi ? '<button type="button" class="btn-effacer" data-action="supprimer">Supprimer</button>' : ""}
       </div>
     </li>`;
 }
 
 async function actualiserDepliants() {
-  const feuillets = await api("/feuillets");
+  const portee = document.getElementById("depliants-portee").value;
+  const feuillets = await api(`/feuillets?mine=${portee === "mine"}`);
   const list = document.getElementById("depliants-list");
   if (feuillets.length === 0) {
     list.innerHTML = etatVideHtml("📄", "Aucun feuillet créé pour l'instant",
@@ -1426,11 +1494,18 @@ async function actualiserDepliants() {
     const id = Number(el.dataset.id);
     el.querySelector('[data-action="partager"]').addEventListener("click", () => partagerPdf(id));
     el.querySelector('[data-action="modifier"]').addEventListener("click", () => modifierDepliant(id));
-    el.querySelector('[data-action="supprimer"]').addEventListener("click", async () => {
-      if (!confirm("Supprimer ce feuillet ?")) return;
-      await api(`/feuillets/${id}`, { method: "DELETE" });
-      await actualiserDepliants();
-    });
+    const btnSupprimer = el.querySelector('[data-action="supprimer"]');
+    if (btnSupprimer) {
+      btnSupprimer.addEventListener("click", async () => {
+        if (!confirm("Demander la suppression de ce feuillet ? Il disparaîtra immédiatement de ton espace ; la décision finale revient au super-admin.")) return;
+        await api("/moderation/demandes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type_cible: "feuillet", cible_id: id }),
+        });
+        await actualiserDepliants();
+      });
+    }
   });
 }
 
@@ -1509,6 +1584,8 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
   changerVue("composer");
 });
 
+document.getElementById("depliants-portee").addEventListener("change", actualiserDepliants);
+
 // --- Splash ---
 function afficherSplashGeneration() {
   document.getElementById("splash-message").textContent = "Génération du feuillet…";
@@ -1531,21 +1608,171 @@ function peuplerSelectsCategories() {
   document.getElementById("import-categorie").innerHTML = categorieOptions;
 }
 
+// --- Administration (super-admin) ---
+
+function choraleCardHtml(chorale) {
+  return `
+    <li class="chorale-card" data-id="${chorale.id}">
+      <div class="chant-titre">${escapeHtml(chorale.nom)}</div>
+      <div class="chant-meta">Identifiant : ${escapeHtml(chorale.username)}${chorale.must_change_password ? " — mot de passe pas encore défini" : ""}</div>
+      <div class="toolbar">
+        <button type="button" class="btn-reset-mdp">Réinitialiser le mot de passe</button>
+      </div>
+    </li>`;
+}
+
+async function actualiserAdminChorales() {
+  const chorales = await api("/chorales/detail");
+  const list = document.getElementById("admin-chorales-list");
+  list.innerHTML = chorales.length
+    ? chorales.map(choraleCardHtml).join("")
+    : `<p class="hint">Aucune chorale créée pour l'instant.</p>`;
+  list.querySelectorAll(".chorale-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    el.querySelector(".btn-reset-mdp").addEventListener("click", async () => {
+      if (!confirm("Réinitialiser le mot de passe de cette chorale ? Elle devra en définir un nouveau à sa prochaine connexion.")) return;
+      const res = await api(`/chorales/${id}/reset-password`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      alert(`Nouveau mot de passe initial : ${res.mot_de_passe_initial}\n(à communiquer à la chorale — il ne sera plus affiché ensuite)`);
+      await actualiserAdminChorales();
+    });
+  });
+}
+
+function demandeCardHtml(demande) {
+  const apercu = demande.apercu
+    ? (demande.type_cible === "chant" ? escapeHtml(demande.apercu.titre) : `${escapeHtml(demande.apercu.date)}${demande.apercu.lieu ? " — " + escapeHtml(demande.apercu.lieu) : ""}`)
+    : "(ressource déjà supprimée entre-temps)";
+  return `
+    <li class="demande-card" data-id="${demande.id}">
+      <div class="chant-titre">${demande.type_cible === "chant" ? "Chant" : "Dépliant"} : ${apercu}</div>
+      <div class="chant-meta">Demandé par ${escapeHtml(demande.chorale_nom)}</div>
+      <div class="toolbar">
+        <button type="button" class="btn-valider btn-effacer">Valider (supprimer définitivement)</button>
+        <button type="button" class="btn-annuler-demande">Annuler (conserver)</button>
+      </div>
+    </li>`;
+}
+
+async function actualiserAdminDemandes() {
+  const demandes = await api("/moderation/demandes?statut=en_attente");
+  const list = document.getElementById("admin-demandes-list");
+  list.innerHTML = demandes.length
+    ? demandes.map(demandeCardHtml).join("")
+    : `<p class="hint">Aucune demande en attente.</p>`;
+  list.querySelectorAll(".demande-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    el.querySelector(".btn-valider").addEventListener("click", async () => {
+      if (!confirm("Supprimer définitivement cette ressource pour toutes les chorales ? Action irréversible.")) return;
+      await api(`/moderation/demandes/${id}/valider`, { method: "POST" });
+      await actualiserAdminDemandes();
+      await actualiserAdminMasques();
+    });
+    el.querySelector(".btn-annuler-demande").addEventListener("click", async () => {
+      await api(`/moderation/demandes/${id}/annuler`, { method: "POST" });
+      await actualiserAdminDemandes();
+      await actualiserAdminMasques();
+    });
+  });
+}
+
+function masqueCardHtml(masque) {
+  const apercu = masque.apercu
+    ? (masque.type_cible === "chant" ? escapeHtml(masque.apercu.titre) : `${escapeHtml(masque.apercu.date)}${masque.apercu.lieu ? " — " + escapeHtml(masque.apercu.lieu) : ""}`)
+    : "(ressource supprimée)";
+  return `
+    <li class="masque-card" data-id="${masque.id}">
+      <div class="chant-titre">${masque.type_cible === "chant" ? "Chant" : "Dépliant"} : ${apercu}</div>
+      <div class="chant-meta">Masqué pour ${escapeHtml(masque.chorale_nom)}</div>
+      <div class="toolbar">
+        <button type="button" class="btn-restaurer">Restaurer pour cette chorale</button>
+      </div>
+    </li>`;
+}
+
+async function actualiserAdminMasques() {
+  const masques = await api("/moderation/masques");
+  const list = document.getElementById("admin-masques-list");
+  list.innerHTML = masques.length
+    ? masques.map(masqueCardHtml).join("")
+    : `<p class="hint">Aucune ressource masquée pour l'instant.</p>`;
+  list.querySelectorAll(".masque-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    el.querySelector(".btn-restaurer").addEventListener("click", async () => {
+      await api(`/moderation/masques/${id}`, { method: "DELETE" });
+      await actualiserAdminMasques();
+    });
+  });
+}
+
+async function actualiserAdmin() {
+  await actualiserAdminChorales();
+  await actualiserAdminDemandes();
+  await actualiserAdminMasques();
+}
+
+document.getElementById("admin-chorale-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("admin-chorale-status");
+  const nom = document.getElementById("admin-chorale-nom").value.trim();
+  const username = document.getElementById("admin-chorale-username").value.trim();
+  statusEl.textContent = "Création…";
+  try {
+    const res = await api("/chorales", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ nom, username }),
+    });
+    statusEl.textContent = `Chorale créée. Mot de passe initial : ${res.mot_de_passe_initial} (à communiquer à la chorale — il ne sera plus affiché ensuite).`;
+    document.getElementById("admin-chorale-form").reset();
+    await actualiserAdminChorales();
+  } catch (err) {
+    statusEl.textContent = `Erreur : ${err.message}`;
+  }
+});
+
 // --- init ---
 async function init() {
   const debutChargement = Date.now();
+
+  IDENTITE = await api("/auth/status");
+  const badge = document.getElementById("identite-badge");
+  if (IDENTITE.authenticated) {
+    badge.textContent = IDENTITE.type === "super" ? "Super-admin" : IDENTITE.nom;
+  }
+  document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
+  if (IDENTITE.type === "super") {
+    // Le super-admin n'a pas d'espace chorale : ces vues (composition,
+    // dépliants, réglages) supposent toutes une chorale connectée.
+    ["composer", "depliants", "reglages"].forEach((v) => {
+      document.querySelector(`.nav-btn[data-view="${v}"]`).classList.add("hidden");
+    });
+  }
+
   const meta = await api("/meta");
   MOMENTS = meta.moments;
   CATEGORIES = meta.categories;
   peuplerSelectsCategories();
 
-  initComposer();
-  document.getElementById("composer-result").innerHTML = indiceComposerHtml();
-  await actualiserListeBibliotheque();
-  await actualiserEditeur();
-  const params = await api("/parametres");
-  document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
-  document.getElementById("splash-titre").textContent = params.chorale || "DepliantApp";
+  if (IDENTITE.type === "super") {
+    // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages
+    // propres) : atterrit directement sur l'administration plutôt que sur
+    // la bibliothèque, qui reste néanmoins consultable pour la modération.
+    await actualiserListeBibliotheque();
+    await actualiserAdmin();
+    changerVue("admin");
+  } else {
+    initComposer();
+    document.getElementById("composer-result").innerHTML = indiceComposerHtml();
+    await actualiserListeBibliotheque();
+    await actualiserEditeur();
+    const params = await api("/parametres");
+    document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
+    document.getElementById("splash-titre").textContent = params.chorale || "DepliantApp";
+  }
 
   // Initialisation à partir du hash courant ou de la bibliothèque par défaut
   gererNavigationHash();

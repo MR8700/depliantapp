@@ -11,7 +11,7 @@ from .constants import CATEGORIES_CHANTS, MOMENTS_LITURGIQUES
 from .db import init_db
 from .ml import classifier
 from .routers import auth as auth_router
-from .routers import chants, feuillets, import_, ml, parametres
+from .routers import chants, chorales, feuillets, import_, ml, moderation, parametres
 
 app = FastAPI(title="DepliantApp API", version="0.1.0")
 
@@ -32,9 +32,13 @@ _CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
-    """Verrouille tout le site derrière un compte unique partagé. Le mot de
+    """Verrouille tout le site derrière une authentification obligatoire —
+    soit un compte chorale, soit le compte super-admin unique. Le mot de
     passe par défaut doit être changé avant tout accès au reste du site
-    (must_change_password), pas seulement conseillé."""
+    (must_change_password), pas seulement conseillé. L'identité résolue est
+    attachée à `request.state.identite` pour que les routeurs en aval sachent
+    qui agit (chorale_id à filtrer, ou droits super-admin) sans redécoder le
+    cookie eux-mêmes."""
 
     async def dispatch(self, request, call_next):
         path = request.url.path
@@ -42,14 +46,18 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         token = request.cookies.get(auth.COOKIE_NAME)
-        username = auth.verify_session_token(token) if token else None
-        if not username:
+        identite = auth.verify_session_token(token) if token else None
+        if not identite:
             return self._refuser(request)
+        request.state.identite = identite
 
         if path in _CHEMINS_CHANGEMENT_MDP:
             return await call_next(request)
 
-        compte = auth.get_account()
+        if identite.type == "super":
+            compte = auth.get_account()
+        else:
+            compte = auth.get_chorale(identite.compte_id)
         if compte and compte["must_change_password"]:
             return self._refuser(request)
 
@@ -67,9 +75,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
 app.add_middleware(AuthMiddleware)
 
 app.include_router(auth_router.router)
+app.include_router(chorales.router)
 app.include_router(chants.router)
 app.include_router(feuillets.router)
 app.include_router(parametres.router)
+app.include_router(moderation.router)
 app.include_router(ml.router)
 app.include_router(import_.router)
 

@@ -28,6 +28,7 @@
     <span></span><span></span><span></span>
   </button>
   <h1 id="app-title">DepliantApp</h1>
+  <span id="identite-badge" class="identite-badge"></span>
 </header>
 
 <div id="menu-overlay" class="menu-overlay hidden"></div>
@@ -38,6 +39,7 @@
   <button data-view="editeur" class="nav-btn">Éditeur</button>
   <button data-view="importer" class="nav-btn">Importer</button>
   <button data-view="reglages" class="nav-btn">Réglages</button>
+  <button data-view="admin" id="nav-admin" class="nav-btn hidden">Administration</button>
   <button id="btn-deconnexion" class="nav-btn nav-btn-deconnexion">Se déconnecter</button>
 </nav>
 
@@ -103,6 +105,10 @@
   <section id="view-depliants" class="view">
     <div class="toolbar">
       <button type="button" id="btn-nouveau-depliant">+ Nouveau feuillet</button>
+      <select id="depliants-portee">
+        <option value="mine">Mes dépliants</option>
+        <option value="tous">Tous les dépliants</option>
+      </select>
     </div>
     <ul id="depliants-list" class="list"></ul>
   </section>
@@ -172,7 +178,9 @@
     <fieldset>
       <legend>Images de l'en-tête / pied de page</legend>
       <p class="hint">Reproduisent la mise en page réelle des dépliants : logo à gauche, logo à droite,
-      bannière décorative en bas de page. Utilisées sur toutes les compositions à venir.</p>
+      bannière décorative en bas de page. Le pool d'images est partagé entre toutes les chorales : uploade
+      une nouvelle image ou réutilise une image déjà envoyée par une autre chorale. Ce choix ne concerne que
+      tes propres dépliants.</p>
       <div id="image-slots"></div>
 
       <div class="reglages-apercu" id="apercu-banniere-bloc">
@@ -216,6 +224,35 @@
       <label>Tape <code>SUPPRIMER</code> pour confirmer <input id="reset-confirmation" type="text"></label>
       <button type="button" id="btn-reset-bibliotheque" class="btn-effacer">Vider la bibliothèque</button>
       <p id="reset-status"></p>
+    </fieldset>
+  </section>
+
+  <!-- Administration (super-admin uniquement) -->
+  <section id="view-admin" class="view">
+    <fieldset>
+      <legend>Chorales</legend>
+      <form id="admin-chorale-form" class="toolbar">
+        <input id="admin-chorale-nom" type="text" placeholder="Nom de la chorale" required>
+        <input id="admin-chorale-username" type="text" placeholder="Identifiant de connexion" required>
+        <button type="submit">Créer la chorale</button>
+      </form>
+      <p id="admin-chorale-status" class="hint"></p>
+      <ul id="admin-chorales-list" class="list"></ul>
+    </fieldset>
+
+    <fieldset>
+      <legend>Demandes de suppression en attente</legend>
+      <p class="hint">Une chorale ne supprime jamais directement un chant ou un dépliant : la ressource est
+      masquée pour elle immédiatement, en attendant ta décision. Valider supprime réellement la ressource pour
+      tout le monde ; annuler la conserve mais elle reste invisible pour la chorale demandeuse.</p>
+      <ul id="admin-demandes-list" class="list"></ul>
+    </fieldset>
+
+    <fieldset>
+      <legend>Ressources masquées (restauration)</legend>
+      <p class="hint">Après une annulation, la chorale demandeuse ne revoit une ressource que si tu la restaures
+      spécifiquement pour elle ici.</p>
+      <ul id="admin-masques-list" class="list"></ul>
     </fieldset>
   </section>
 </main>
@@ -273,6 +310,16 @@
       <button type="button" id="cd-btn-modifier">Modifier ce chant</button>
       <button type="button" id="cd-btn-annuler" class="btn-effacer">Annuler</button>
     </div>
+  </div>
+</div>
+
+<div id="media-picker-modal" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="media-picker-modal" aria-label="Fermer">&times;</button>
+    <h2>Choisir une image</h2>
+    <p class="hint">Pool partagé entre toutes les chorales — les images déjà envoyées par d'autres restent
+    réutilisables ici.</p>
+    <div id="media-picker-grid" class="media-picker-grid"></div>
   </div>
 </div>
 
