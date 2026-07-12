@@ -127,11 +127,24 @@ function verifierModalesOuvertes() {
   return ceOuvert || iwOuvert;
 }
 
+// Vues réservées au super-admin : le bouton correspondant est déjà masqué
+// pour les comptes chorale (voir init()), mais un accès direct par hash
+// (URL tapée à la main, favori, bouton précédent) doit être bloqué ici
+// aussi — masquer le bouton seul ne suffit pas à protéger la vue.
+const VUES_SUPERADMIN_UNIQUEMENT = new Set(["admin", "statistiques"]);
+
 function gererNavigationHash() {
   if (bloqueNavigation) return;
   const hash = window.location.hash || "#/bibliotheque";
   const nomVue = hash.replace("#/", "");
-  
+
+  if (VUES_SUPERADMIN_UNIQUEMENT.has(nomVue) && IDENTITE && IDENTITE.type !== "super") {
+    bloqueNavigation = true;
+    window.location.hash = "#/bibliotheque";
+    setTimeout(() => { bloqueNavigation = false; }, 50);
+    return;
+  }
+
   if (nomVue !== vuePrecedente && verifierModalesOuvertes()) {
     if (!confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
       bloqueNavigation = true;
@@ -203,6 +216,12 @@ function fermerModale(id) {
 window.addEventListener("popstate", () => {
   if (modalStack.length === 0) return;
   const top = modalStack[modalStack.length - 1];
+  if (top === "texte-grand-editor") {
+    if (!fermerTexteGrandEditeur()) {
+      history.pushState({ depliantModal: top }, "", location.href);
+    }
+    return;
+  }
   if (MODALS_AVEC_CONFIRMATION.has(top) &&
       !confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
     history.pushState({ depliantModal: top }, "", location.href);
@@ -216,6 +235,7 @@ const FERMETURE_X_DELEGUEE = {
   "chant-picker": "picker-close",
   "chant-detail-modal": "cd-btn-annuler",
   "import-workspace-modal": "iw-btn-annuler",
+  "texte-grand-editor": "tge-annuler",
 };
 document.querySelectorAll(".modal-close-x").forEach((btn) => {
   btn.addEventListener("click", () => {
@@ -1108,27 +1128,30 @@ document.getElementById("bulk-appliquer").addEventListener("click", async (e) =>
 });
 
 document.getElementById("bulk-supprimer").addEventListener("click", async (e) => {
-  await avecChargement(e.currentTarget, async () => {
   if (IDENTITE.type === "super") {
     if (!confirm(`Supprimer définitivement ${selectionEditeur.size} chant(s) sélectionné(s) ?`)) return;
-    await api("/chants/bulk_delete", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ids: [...selectionEditeur] }),
-    });
   } else {
     if (!confirm(`Demander la suppression de ${selectionEditeur.size} chant(s) sélectionné(s) ? Ils disparaîtront immédiatement de ta bibliothèque ; la décision finale revient au super-admin.`)) return;
-    for (const id of selectionEditeur) {
-      await api("/moderation/demandes", {
+  }
+  await avecChargement(e.currentTarget, async () => {
+    if (IDENTITE.type === "super") {
+      await api("/chants/bulk_delete", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type_cible: "chant", cible_id: id }),
+        body: JSON.stringify({ ids: [...selectionEditeur] }),
       });
+    } else {
+      for (const id of selectionEditeur) {
+        await api("/moderation/demandes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type_cible: "chant", cible_id: id }),
+        });
+      }
     }
-  }
-  selectionEditeur.clear();
-  majBulkBar();
-  await actualiserEditeur();
+    selectionEditeur.clear();
+    majBulkBar();
+    await actualiserEditeur();
   });
   await actualiserListeBibliotheque();
 });
@@ -1176,9 +1199,21 @@ function getCoupletsFromFields() {
     .filter(Boolean);
 }
 
+// Découpe un texte en couplets séparés par une ligne vide — réutilisé par
+// la saisie manuelle (ci-dessous) et par l'assistant d'import (.iw-couplets).
+function splitTexteEnCouplets(texte) {
+  return texte.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+}
+
 document.getElementById("ce-ajouter-couplet").addEventListener("click", () => {
   ouvrirTexteGrandEditeur("Nouveau couplet", "", true, (valeur) => {
-    const couplets = valeur.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+    const couplets = splitTexteEnCouplets(valeur);
+    if (couplets.length === 0) return;
+    // Retire les rangées encore vides (ex. le couplet vide créé par défaut
+    // sur un chant tout neuf) avant d'ajouter les nouveaux couplets saisis.
+    document.querySelectorAll("#ce-couplets-container textarea").forEach((t) => {
+      if (!t.value.trim()) t.closest(".couplet-field-row").remove();
+    });
     couplets.forEach((c) => ajouterCoupletField(c));
   });
 });
@@ -1187,11 +1222,13 @@ document.getElementById("ce-ajouter-couplet").addEventListener("click", () => {
 // d'origine sont trop étroits pour écrire ou parcourir un long texte, donc
 // on les rend en lecture seule et on ouvre cette modale plein écran au clic.
 let tgeOnValider = null;
+let tgeValeurInitiale = "";
 function ouvrirTexteGrandEditeur(titre, valeurInitiale, avecAstuceCouplets, onValider) {
   document.getElementById("tge-titre").textContent = titre;
   document.getElementById("tge-astuce").classList.toggle("hidden", !avecAstuceCouplets);
   const zone = document.getElementById("tge-textarea");
   zone.value = valeurInitiale || "";
+  tgeValeurInitiale = zone.value;
   tgeOnValider = onValider;
   ouvrirModale("texte-grand-editor");
   setTimeout(() => zone.focus(), 250);
@@ -1203,9 +1240,22 @@ document.getElementById("tge-inserer").addEventListener("click", () => {
   fermerModale("texte-grand-editor");
   if (callback) callback(valeur);
 });
-document.getElementById("tge-annuler").addEventListener("click", () => {
+// Ferme la grande modale de texte ; si son contenu a été modifié depuis
+// l'ouverture, redemande confirmation (bouton "Annuler", "×" et bouton
+// retour passent tous par ici) pour ne pas perdre un long texte par erreur.
+// Retourne false si l'utilisateur a choisi de rester dans la modale.
+function fermerTexteGrandEditeur() {
+  const valeurActuelle = document.getElementById("tge-textarea").value;
+  if (valeurActuelle !== tgeValeurInitiale &&
+      !confirm("Abandonner les modifications de ce texte ?")) {
+    return false;
+  }
   tgeOnValider = null;
   fermerModale("texte-grand-editor");
+  return true;
+}
+document.getElementById("tge-annuler").addEventListener("click", () => {
+  fermerTexteGrandEditeur();
 });
 
 function syncChampNouvelleCategorie() {
@@ -1477,7 +1527,7 @@ function afficherImportWorkspace(chants) {
     card.querySelector(".iw-titre").addEventListener("input", (e) => { item.titre = e.target.value; });
     card.querySelector(".iw-refrain").addEventListener("input", (e) => { item.refrain = e.target.value; });
     card.querySelector(".iw-couplets").addEventListener("input", (e) => {
-      item.couplets = e.target.value.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+      item.couplets = splitTexteEnCouplets(e.target.value);
     });
     card.querySelector(".iw-categorie").addEventListener("change", (e) => { item.categorie = e.target.value; });
   });
@@ -1907,7 +1957,10 @@ function messageBulleHtml(m) {
   const deMoi = m.expediteur_type === IDENTITE.type;
   const image = m.piece_jointe_filename
     ? `<img src="/messages/${m.id}/piece-jointe" alt="Pièce jointe">` : "";
-  const heure = new Date(m.created_at.replace(" ", "T")).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  // created_at est stocké sans fuseau (UTC réel côté SQLite/Postgres) : sans
+  // le "Z", Date() l'interpréterait comme une heure locale et afficherait un
+  // horaire décalé de l'écart UTC du lecteur.
+  const heure = new Date(m.created_at.replace(" ", "T") + "Z").toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
   return `
     <div class="message-bulle ${deMoi ? "de-moi" : "de-lautre"}">
       ${m.texte ? escapeHtml(m.texte).replace(/\n/g, "<br>") : ""}

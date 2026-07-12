@@ -523,26 +523,35 @@ def get_statistiques() -> dict:
 
 def list_message_threads() -> list[dict]:
     """Boîte de réception du super-admin : une entrée par chorale, avec le
-    dernier message et le nombre de non-lus envoyés par la chorale."""
+    dernier message et le nombre de non-lus envoyés par la chorale. 3
+    requêtes au total quel que soit le nombre de chorales (au lieu d'une
+    requête par chorale) : une pour la liste, une pour le dernier message de
+    chaque fil (fenêtrage), une pour les compteurs de non-lus (agrégation)."""
     with get_connection() as conn:
         chorales = conn.execute("SELECT id, nom FROM chorales ORDER BY nom").fetchall()
-        threads = []
-        for c in chorales:
-            dernier = conn.execute(
-                "SELECT texte, expediteur_type, created_at FROM messages WHERE chorale_id = ? "
-                "ORDER BY created_at DESC LIMIT 1",
-                (c["id"],),
-            ).fetchone()
-            non_lus = conn.execute(
-                "SELECT COUNT(*) AS n FROM messages WHERE chorale_id = ? AND expediteur_type = 'chorale' AND lu = 0",
-                (c["id"],),
-            ).fetchone()["n"]
-            threads.append({
+        derniers = {
+            r["chorale_id"]: r for r in conn.execute(
+                "SELECT chorale_id, texte, expediteur_type, created_at FROM ("
+                "  SELECT chorale_id, texte, expediteur_type, created_at,"
+                "  ROW_NUMBER() OVER (PARTITION BY chorale_id ORDER BY created_at DESC) AS rang"
+                "  FROM messages"
+                ") t WHERE rang = 1"
+            ).fetchall()
+        }
+        non_lus_par_chorale = {
+            r["chorale_id"]: r["n"] for r in conn.execute(
+                "SELECT chorale_id, COUNT(*) AS n FROM messages "
+                "WHERE expediteur_type = 'chorale' AND lu = 0 GROUP BY chorale_id"
+            ).fetchall()
+        }
+        return [
+            {
                 "chorale_id": c["id"], "chorale_nom": c["nom"],
-                "dernier_message": dict(dernier) if dernier else None,
-                "non_lus": non_lus,
-            })
-        return threads
+                "dernier_message": dict(derniers[c["id"]]) if c["id"] in derniers else None,
+                "non_lus": non_lus_par_chorale.get(c["id"], 0),
+            }
+            for c in chorales
+        ]
 
 
 def list_messages(chorale_id: int) -> list[dict]:
@@ -568,7 +577,7 @@ def creer_message(
             conn,
             "INSERT INTO messages (chorale_id, expediteur_type, texte, piece_jointe_donnees, "
             "piece_jointe_content_type, piece_jointe_filename) VALUES (?, ?, ?, ?, ?, ?)",
-            (chorale_id, expediteur_type, texte, db.binary(donnees) if donnees else None, content_type, filename),
+            (chorale_id, expediteur_type, texte, db.binary(donnees) if donnees is not None else None, content_type, filename),
         )
         row = conn.execute(
             "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "

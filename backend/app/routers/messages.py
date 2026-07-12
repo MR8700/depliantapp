@@ -20,6 +20,14 @@ def _chorale_id_du_fil(identite: auth.Identite, chorale_id_param: Optional[int])
     return chorale_id_param
 
 
+def _verifier_acces_chorale(identite: auth.Identite, chorale_id: int) -> None:
+    """Vérifie qu'une identité a le droit de voir une ressource déjà
+    résolue pour une chorale donnée (ex. pièce jointe) — le super-admin
+    voit tout, une chorale seulement les siennes."""
+    if identite.type == "chorale" and identite.compte_id != chorale_id:
+        raise HTTPException(status_code=403, detail="Accès refusé")
+
+
 @router.get("/chorales")
 def inbox(_identite: auth.Identite = Depends(require_superadmin)):
     return crud.list_message_threads()
@@ -39,14 +47,18 @@ async def envoyer(
     identite: auth.Identite = Depends(identite_courante),
 ):
     cid = _chorale_id_du_fil(identite, chorale_id)
-    if not (texte and texte.strip()) and not piece_jointe:
-        raise HTTPException(status_code=400, detail="Message vide")
     piece = None
     if piece_jointe:
         if not (piece_jointe.content_type or "").startswith("image/"):
             raise HTTPException(status_code=400, detail="La pièce jointe doit être une image")
         contenu = await piece_jointe.read()
-        piece = (contenu, piece_jointe.content_type, piece_jointe.filename)
+        # Un fichier vide (0 octet) ne compte pas comme une vraie pièce
+        # jointe : sans ce garde-fou le message serait accepté sans texte
+        # ni contenu, avec une image cassée dans le fil.
+        if contenu:
+            piece = (contenu, piece_jointe.content_type, piece_jointe.filename)
+    if not (texte and texte.strip()) and not piece:
+        raise HTTPException(status_code=400, detail="Message vide")
     return crud.creer_message(cid, identite.type, texte.strip() if texte else None, piece)
 
 
@@ -73,6 +85,5 @@ def piece_jointe(message_id: int, identite: auth.Identite = Depends(identite_cou
     # Pièce jointe privée au fil : jamais accessible en dehors de la
     # chorale concernée ou du super-admin (contrairement au pool `medias`
     # partagé, qui lui est public à tout compte authentifié).
-    if identite.type == "chorale" and identite.compte_id != chorale_id:
-        raise HTTPException(status_code=403, detail="Accès refusé")
+    _verifier_acces_chorale(identite, chorale_id)
     return Response(content=contenu, media_type=content_type)
