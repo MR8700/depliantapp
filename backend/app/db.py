@@ -253,6 +253,23 @@ CREATE TABLE IF NOT EXISTS masques_chorale (
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_masques_unique ON masques_chorale(chorale_id, type_cible, cible_id);
 
+-- Messagerie privée : un seul fil par chorale, toujours avec le super-admin
+-- (pas de messagerie entre chorales). Pièce jointe stockée directement sur
+-- la ligne (pas le pool `medias`, qui reste réservé aux logos/bannières
+-- partagés — une pièce jointe de chat est privée au fil).
+CREATE TABLE IF NOT EXISTS messages (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    expediteur_type TEXT NOT NULL,
+    texte TEXT,
+    piece_jointe_donnees BLOB,
+    piece_jointe_content_type TEXT,
+    piece_jointe_filename TEXT,
+    lu INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
+
 -- Catégories de chants ajoutées par les utilisateurs (via "Autre" -> saisie
 -- libre) en plus de la liste fixe CATEGORIES_CHANTS (constants.py) — pour
 -- qu'une nouvelle catégorie devienne utilisable partout et persiste, comme
@@ -375,6 +392,19 @@ CREATE TABLE IF NOT EXISTS masques_chorale (
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_masques_unique ON masques_chorale(chorale_id, type_cible, cible_id);
+
+CREATE TABLE IF NOT EXISTS messages (
+    id SERIAL PRIMARY KEY,
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    expediteur_type TEXT NOT NULL,
+    texte TEXT,
+    piece_jointe_donnees BYTEA,
+    piece_jointe_content_type TEXT,
+    piece_jointe_filename TEXT,
+    lu INTEGER NOT NULL DEFAULT 0,
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
 
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_active INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_texte TEXT;

@@ -460,6 +460,165 @@ def restaurer_masque(masque_id: int) -> bool:
         return cur.rowcount > 0
 
 
+# --- Statistiques (super-admin) ---
+
+def get_statistiques() -> dict:
+    """Vue d'ensemble chiffrée pour le panneau Administration — agrégations
+    pures sur les tables existantes, aucune donnée dupliquée/mise en cache."""
+    with get_connection() as conn:
+        total_chants = conn.execute("SELECT COUNT(*) AS n FROM chants").fetchone()["n"]
+        total_feuillets = conn.execute("SELECT COUNT(*) AS n FROM feuillets").fetchone()["n"]
+        total_chorales = conn.execute("SELECT COUNT(*) AS n FROM chorales").fetchone()["n"]
+
+        chants_par_categorie = [
+            dict(r) for r in conn.execute(
+                "SELECT categorie, COUNT(*) AS nombre FROM chants GROUP BY categorie ORDER BY nombre DESC"
+            ).fetchall()
+        ]
+
+        feuillets_par_chorale = [
+            dict(r) for r in conn.execute(
+                "SELECT c.nom AS chorale_nom, COUNT(f.id) AS nombre, MAX(f.created_at) AS dernier "
+                "FROM chorales c LEFT JOIN feuillets f ON f.chorale_id = c.id "
+                "GROUP BY c.id, c.nom ORDER BY nombre DESC"
+            ).fetchall()
+        ]
+
+        demandes_en_attente = conn.execute(
+            "SELECT COUNT(*) AS n FROM demandes_suppression WHERE statut = 'en_attente'"
+        ).fetchone()["n"]
+        demandes_validees = conn.execute(
+            "SELECT COUNT(*) AS n FROM demandes_suppression WHERE statut = 'validee'"
+        ).fetchone()["n"]
+        masques_actifs = conn.execute("SELECT COUNT(*) AS n FROM masques_chorale").fetchone()["n"]
+
+        feuillets_recents = [
+            dict(r) for r in conn.execute(
+                "SELECT f.date, f.lieu, c.nom AS chorale_nom, f.created_at "
+                "FROM feuillets f LEFT JOIN chorales c ON c.id = f.chorale_id "
+                "ORDER BY f.created_at DESC LIMIT 10"
+            ).fetchall()
+        ]
+        chants_recents = [
+            dict(r) for r in conn.execute(
+                "SELECT titre, categorie, created_at FROM chants ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()
+        ]
+
+    return {
+        "total_chants": total_chants,
+        "total_feuillets": total_feuillets,
+        "total_chorales": total_chorales,
+        "chants_par_categorie": chants_par_categorie,
+        "feuillets_par_chorale": feuillets_par_chorale,
+        "demandes_en_attente": demandes_en_attente,
+        "demandes_validees": demandes_validees,
+        "masques_actifs": masques_actifs,
+        "feuillets_recents": feuillets_recents,
+        "chants_recents": chants_recents,
+    }
+
+
+# --- Messagerie privée (chorale <-> super-admin, un seul fil par chorale) ---
+
+def list_message_threads() -> list[dict]:
+    """Boîte de réception du super-admin : une entrée par chorale, avec le
+    dernier message et le nombre de non-lus envoyés par la chorale."""
+    with get_connection() as conn:
+        chorales = conn.execute("SELECT id, nom FROM chorales ORDER BY nom").fetchall()
+        threads = []
+        for c in chorales:
+            dernier = conn.execute(
+                "SELECT texte, expediteur_type, created_at FROM messages WHERE chorale_id = ? "
+                "ORDER BY created_at DESC LIMIT 1",
+                (c["id"],),
+            ).fetchone()
+            non_lus = conn.execute(
+                "SELECT COUNT(*) AS n FROM messages WHERE chorale_id = ? AND expediteur_type = 'chorale' AND lu = 0",
+                (c["id"],),
+            ).fetchone()["n"]
+            threads.append({
+                "chorale_id": c["id"], "chorale_nom": c["nom"],
+                "dernier_message": dict(dernier) if dernier else None,
+                "non_lus": non_lus,
+            })
+        return threads
+
+
+def list_messages(chorale_id: int) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, "
+            "piece_jointe_content_type, piece_jointe_filename, lu, created_at "
+            "FROM messages WHERE chorale_id = ? ORDER BY created_at ASC",
+            (chorale_id,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+def creer_message(
+    chorale_id: int, expediteur_type: str, texte: Optional[str],
+    piece_jointe: Optional[tuple[bytes, str, str]] = None,
+) -> dict:
+    """piece_jointe = (donnees, content_type, filename) si une image est
+    jointe, sinon None."""
+    donnees, content_type, filename = piece_jointe if piece_jointe else (None, None, None)
+    with get_connection() as conn:
+        message_id = insert_returning_id(
+            conn,
+            "INSERT INTO messages (chorale_id, expediteur_type, texte, piece_jointe_donnees, "
+            "piece_jointe_content_type, piece_jointe_filename) VALUES (?, ?, ?, ?, ?, ?)",
+            (chorale_id, expediteur_type, texte, db.binary(donnees) if donnees else None, content_type, filename),
+        )
+        row = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
+            "piece_jointe_filename, lu, created_at FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(row)
+
+
+def marquer_lus(chorale_id: int, lecteur_type: str) -> None:
+    """lecteur_type = qui vient d'ouvrir le fil ('chorale' ou 'super') ->
+    marque comme lus les messages envoyés par L'AUTRE partie."""
+    autre = "super" if lecteur_type == "chorale" else "chorale"
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE messages SET lu = 1 WHERE chorale_id = ? AND expediteur_type = ? AND lu = 0",
+            (chorale_id, autre),
+        )
+
+
+def compter_non_lus(chorale_id: int, lecteur_type: str) -> int:
+    autre = "super" if lecteur_type == "chorale" else "chorale"
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM messages WHERE chorale_id = ? AND expediteur_type = ? AND lu = 0",
+            (chorale_id, autre),
+        ).fetchone()["n"]
+
+
+def compter_non_lus_total_super() -> int:
+    with get_connection() as conn:
+        return conn.execute(
+            "SELECT COUNT(*) AS n FROM messages WHERE expediteur_type = 'chorale' AND lu = 0"
+        ).fetchone()["n"]
+
+
+def get_piece_jointe_message(message_id: int) -> Optional[tuple[bytes, str, int]]:
+    """Retourne aussi chorale_id pour que l'appelant vérifie que l'identité
+    a le droit de voir CE fil avant de servir l'image (pièce jointe privée,
+    pas le pool `medias` partagé)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT piece_jointe_donnees, piece_jointe_content_type, chorale_id FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+    if not row or not row["piece_jointe_donnees"]:
+        return None
+    return bytes(row["piece_jointe_donnees"]), row["piece_jointe_content_type"] or "application/octet-stream", row["chorale_id"]
+
+
 # --- Catégories personnalisées ---
 
 def list_categories_personnalisees() -> list[str]:

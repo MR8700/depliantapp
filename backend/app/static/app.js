@@ -40,9 +40,58 @@ function fermerMenu() {
 }
 document.getElementById("btn-menu").addEventListener("click", ouvrirMenu);
 document.getElementById("menu-overlay").addEventListener("click", fermerMenu);
-document.getElementById("btn-deconnexion").addEventListener("click", async () => {
-  await fetch("/auth/logout", { method: "POST" });
-  window.location.href = "/login.html";
+document.getElementById("btn-deconnexion").addEventListener("click", async (e) => {
+  await avecChargement(e.currentTarget, async () => {
+    await fetch("/auth/logout", { method: "POST" });
+    window.location.href = "/login.html";
+  });
+});
+
+// --- Profil ---
+async function ouvrirProfil() {
+  document.getElementById("profil-avatar").textContent = (IDENTITE.nom || "?").charAt(0).toUpperCase();
+  document.getElementById("profil-nom").textContent = IDENTITE.nom;
+  document.getElementById("profil-type").textContent = IDENTITE.type === "super" ? "Super-admin" : "Compte chorale";
+
+  const lectureSeule = document.getElementById("profil-lecture-seule");
+  if (IDENTITE.type === "chorale") {
+    const params = await api("/parametres");
+    lectureSeule.classList.remove("hidden");
+    lectureSeule.innerHTML = `
+      <p><b>Paroisse / CCB :</b> ${escapeHtml(params.paroisse || "(non renseignée)")}</p>
+      <p><b>Contact :</b> ${escapeHtml(params.contact || "(non renseigné)")}</p>
+      <p class="hint">Modifiable depuis Réglages.</p>`;
+  } else {
+    lectureSeule.classList.add("hidden");
+  }
+  document.getElementById("profil-mdp-form").reset();
+  document.getElementById("profil-mdp-status").textContent = "";
+  ouvrirModale("profil-modal");
+  fermerMenu();
+}
+document.getElementById("btn-mon-profil").addEventListener("click", ouvrirProfil);
+
+document.getElementById("profil-mdp-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const statusEl = document.getElementById("profil-mdp-status");
+  const actuel = document.getElementById("profil-mdp-actuel").value;
+  const nouveau = document.getElementById("profil-mdp-nouveau").value;
+  const confirme = document.getElementById("profil-mdp-confirme").value;
+  if (nouveau !== confirme) {
+    statusEl.textContent = "Les deux mots de passe ne correspondent pas.";
+    return;
+  }
+  try {
+    await avecChargementSubmit(e.target, () => api("/auth/change-password", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ mot_de_passe_actuel: actuel, nouveau_mot_de_passe: nouveau }),
+    }));
+    statusEl.textContent = "Mot de passe changé.";
+    document.getElementById("profil-mdp-form").reset();
+  } catch (err) {
+    statusEl.textContent = `Erreur : ${err.message}`;
+  }
 });
 
 function afficherVueDirect(nomVue) {
@@ -57,13 +106,15 @@ function afficherVueDirect(nomVue) {
   if (nomVue === "editeur") actualiserEditeur();
   if (nomVue === "depliants") actualiserDepliants();
   if (nomVue === "admin") actualiserAdmin();
+  if (nomVue === "statistiques") actualiserStatistiques();
+  if (nomVue === "messagerie") demarrerMessagerie(); else arreterMessagerie();
 }
 
 function changerVue(nomVue) {
   window.location.hash = "#/" + nomVue;
 }
 
-document.querySelectorAll(".nav-btn").forEach((btn) => {
+document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
   btn.addEventListener("click", () => {
     changerVue(btn.dataset.view);
     fermerMenu();
@@ -113,9 +164,10 @@ function syncModalLock() {
   const pickerOuvert = !document.getElementById("chant-picker").classList.contains("hidden");
   const detailOuvert = !document.getElementById("chant-detail-modal").classList.contains("hidden");
   const workspaceOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
-  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || detailOuvert || workspaceOuvert);
+  const tgeOuvert = !document.getElementById("texte-grand-editor").classList.contains("hidden");
+  document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || detailOuvert || workspaceOuvert || tgeOuvert);
 }
-["chant-editor", "chant-picker", "chant-detail-modal", "import-workspace-modal"].forEach((id) => {
+["chant-editor", "chant-picker", "chant-detail-modal", "import-workspace-modal", "texte-grand-editor"].forEach((id) => {
   new MutationObserver(syncModalLock).observe(document.getElementById(id), {
     attributes: true, attributeFilter: ["class"],
   });
@@ -187,6 +239,28 @@ async function api(path, options) {
     throw erreur;
   }
   return res.status === 204 ? null : res.json();
+}
+
+// --- Indicateur de chargement (cercle tournant) sur un bouton d'action ---
+async function avecChargement(bouton, fn) {
+  if (!bouton || bouton.disabled) return fn();
+  const contenuOriginal = bouton.innerHTML;
+  bouton.disabled = true;
+  bouton.innerHTML = `<span class="spinner" aria-hidden="true"></span>${contenuOriginal}`;
+  try {
+    return await fn();
+  } finally {
+    bouton.disabled = false;
+    bouton.innerHTML = contenuOriginal;
+  }
+}
+
+// Variante pour un handler de soumission de formulaire : résout le bouton
+// submit automatiquement (form.requestSubmit()/submit event -> e.submitter
+// n'est pas fiable partout, on cherche simplement le bouton [type=submit]).
+async function avecChargementSubmit(form, fn) {
+  const bouton = form.querySelector('button[type="submit"]');
+  return avecChargement(bouton, fn);
 }
 
 // --- Bibliothèque ---
@@ -646,9 +720,11 @@ async function afficherResultatFeuillet(feuilletId) {
     document.getElementById("taille-texte-moins").addEventListener("click", () => ajusterTaille(-PAS_TAILLE_TEXTE));
     document.getElementById("taille-texte-plus").addEventListener("click", () => ajusterTaille(PAS_TAILLE_TEXTE));
     const btnAuto = document.getElementById("taille-texte-auto");
-    if (btnAuto) btnAuto.addEventListener("click", async () => {
-      tailleTexteManuelle = null;
-      await regenererApercuSiPossible(true);
+    if (btnAuto) btnAuto.addEventListener("click", async (e) => {
+      await avecChargement(e.currentTarget, async () => {
+        tailleTexteManuelle = null;
+        await regenererApercuSiPossible(true);
+      });
     });
   } catch (err) {
     resultDiv.innerHTML = `<p class="hint">Erreur : ${escapeHtml(err.message)}</p>`;
@@ -702,6 +778,7 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
   resultDiv.textContent = "Génération en cours…";
   afficherSplashGeneration();
   try {
+    await avecChargementSubmit(e.target, async () => {
     const idAvant = feuilletCourantId;
     const feuillet = feuilletCourantId
       ? await api(`/feuillets/${feuilletCourantId}`, {
@@ -723,6 +800,7 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
         `<p class="hint">Copié dans ton espace — le dépliant original n'a pas été modifié.</p>`
       );
     }
+    });
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
   } finally {
@@ -813,7 +891,7 @@ function initImageSlots(params) {
 
     container.querySelectorAll(".image-slot").forEach((el) => {
       const slot = el.dataset.slot;
-      el.querySelector(".slot-upload").addEventListener("click", async () => {
+      el.querySelector(".slot-upload").addEventListener("click", async (e) => {
         const input = el.querySelector(".slot-fichier");
         const statusEl = el.querySelector(".slot-status");
         if (!input.files.length) {
@@ -824,8 +902,10 @@ function initImageSlots(params) {
         formData.append("fichier", input.files[0]);
         statusEl.textContent = "Envoi…";
         try {
-          const res = await fetch(`/parametres/image/${slot}`, { method: "POST", body: formData });
-          if (!res.ok) throw new Error(await res.text());
+          await avecChargement(e.currentTarget, async () => {
+            const res = await fetch(`/parametres/image/${slot}`, { method: "POST", body: formData });
+            if (!res.ok) throw new Error(await res.text());
+          });
           afficherImageSlot(slot, true);
           input.value = "";
         } catch (err) {
@@ -833,8 +913,8 @@ function initImageSlots(params) {
         }
       });
       el.querySelector(".slot-choisir").addEventListener("click", () => ouvrirMediaPicker(slot));
-      el.querySelector(".slot-supprimer").addEventListener("click", async () => {
-        await api(`/parametres/image/${slot}`, { method: "DELETE" });
+      el.querySelector(".slot-supprimer").addEventListener("click", async (e) => {
+        await avecChargement(e.currentTarget, () => api(`/parametres/image/${slot}`, { method: "DELETE" }));
         afficherImageSlot(slot, false);
       });
     });
@@ -880,12 +960,12 @@ async function ouvrirMediaPicker(slot) {
         <img src="/parametres/medias/${m.id}/fichier" alt="${escapeHtml(m.nom || m.filename)}">
       </button>`).join("");
     grid.querySelectorAll(".media-picker-item").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        await api(`/parametres/image/${mediaPickerSlot}/activer`, {
+      btn.addEventListener("click", async (e) => {
+        await avecChargement(e.currentTarget, () => api(`/parametres/image/${mediaPickerSlot}/activer`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ media_id: Number(btn.dataset.mediaId) }),
-        });
+        }));
         afficherImageSlot(mediaPickerSlot, true);
         fermerModale("media-picker-modal");
       });
@@ -898,7 +978,7 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
   e.preventDefault();
   const statusEl = document.getElementById("parametres-status");
   try {
-    await api("/parametres", {
+    await avecChargementSubmit(e.target, () => api("/parametres", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -908,7 +988,7 @@ document.getElementById("parametres-form").addEventListener("submit", async (e) 
         annonce: document.getElementById("p-annonce").value,
         priere_texte_defaut: document.getElementById("p-priere-defaut").value,
       }),
-    });
+    }));
     statusEl.textContent = "Enregistré.";
     document.getElementById("app-title").textContent = document.getElementById("p-chorale").value || "DepliantApp";
   } catch (err) {
@@ -1015,19 +1095,20 @@ document.getElementById("edit-q").addEventListener("input", () => {
 });
 document.getElementById("edit-filtre").addEventListener("change", actualiserEditeur);
 
-document.getElementById("bulk-appliquer").addEventListener("click", async () => {
+document.getElementById("bulk-appliquer").addEventListener("click", async (e) => {
   const categorie = document.getElementById("bulk-categorie").value;
-  await api("/chants/bulk_categorize", {
+  await avecChargement(e.currentTarget, () => api("/chants/bulk_categorize", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ ids: [...selectionEditeur], categorie }),
-  });
+  }));
   selectionEditeur.clear();
   majBulkBar();
   await actualiserEditeur();
 });
 
-document.getElementById("bulk-supprimer").addEventListener("click", async () => {
+document.getElementById("bulk-supprimer").addEventListener("click", async (e) => {
+  await avecChargement(e.currentTarget, async () => {
   if (IDENTITE.type === "super") {
     if (!confirm(`Supprimer définitivement ${selectionEditeur.size} chant(s) sélectionné(s) ?`)) return;
     await api("/chants/bulk_delete", {
@@ -1048,6 +1129,7 @@ document.getElementById("bulk-supprimer").addEventListener("click", async () => 
   selectionEditeur.clear();
   majBulkBar();
   await actualiserEditeur();
+  });
   await actualiserListeBibliotheque();
 });
 
@@ -1063,10 +1145,17 @@ function ajouterCoupletField(texte) {
   row.className = "couplet-field-row";
   row.innerHTML = `
     <span class="couplet-numero"></span>
-    <textarea rows="2"></textarea>
+    <textarea rows="2" readonly class="champ-cliquable" placeholder="Toucher pour écrire ce couplet…"></textarea>
     <button type="button" class="btn-supprimer-couplet" title="Supprimer ce couplet">✕</button>
   `;
-  row.querySelector("textarea").value = texte || "";
+  const champ = row.querySelector("textarea");
+  champ.value = texte || "";
+  champ.addEventListener("click", () => {
+    const numero = row.querySelector(".couplet-numero").textContent;
+    ouvrirTexteGrandEditeur(`Couplet ${numero}`, champ.value, false, (valeur) => {
+      champ.value = valeur.trim();
+    });
+  });
   row.querySelector(".btn-supprimer-couplet").addEventListener("click", () => {
     row.remove();
     numeroterCoupletsFields();
@@ -1087,7 +1176,37 @@ function getCoupletsFromFields() {
     .filter(Boolean);
 }
 
-document.getElementById("ce-ajouter-couplet").addEventListener("click", () => ajouterCoupletField(""));
+document.getElementById("ce-ajouter-couplet").addEventListener("click", () => {
+  ouvrirTexteGrandEditeur("Nouveau couplet", "", true, (valeur) => {
+    const couplets = valeur.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+    couplets.forEach((c) => ajouterCoupletField(c));
+  });
+});
+
+// --- Grande modale de saisie de texte (refrain / couplets) : les champs
+// d'origine sont trop étroits pour écrire ou parcourir un long texte, donc
+// on les rend en lecture seule et on ouvre cette modale plein écran au clic.
+let tgeOnValider = null;
+function ouvrirTexteGrandEditeur(titre, valeurInitiale, avecAstuceCouplets, onValider) {
+  document.getElementById("tge-titre").textContent = titre;
+  document.getElementById("tge-astuce").classList.toggle("hidden", !avecAstuceCouplets);
+  const zone = document.getElementById("tge-textarea");
+  zone.value = valeurInitiale || "";
+  tgeOnValider = onValider;
+  ouvrirModale("texte-grand-editor");
+  setTimeout(() => zone.focus(), 250);
+}
+document.getElementById("tge-inserer").addEventListener("click", () => {
+  const valeur = document.getElementById("tge-textarea").value;
+  const callback = tgeOnValider;
+  tgeOnValider = null;
+  fermerModale("texte-grand-editor");
+  if (callback) callback(valeur);
+});
+document.getElementById("tge-annuler").addEventListener("click", () => {
+  tgeOnValider = null;
+  fermerModale("texte-grand-editor");
+});
 
 function syncChampNouvelleCategorie() {
   const estAutre = document.getElementById("ce-categorie").value === "Autre";
@@ -1095,6 +1214,13 @@ function syncChampNouvelleCategorie() {
   if (!estAutre) document.getElementById("ce-nouvelle-categorie").value = "";
 }
 document.getElementById("ce-categorie").addEventListener("change", syncChampNouvelleCategorie);
+
+document.getElementById("ce-refrain").addEventListener("click", () => {
+  const champ = document.getElementById("ce-refrain");
+  ouvrirTexteGrandEditeur("Refrain", champ.value, false, (valeur) => {
+    champ.value = valeur.trim();
+  });
+});
 
 async function ouvrirEditeurChant(id) {
   const chant = await api(`/chants/${id}`);
@@ -1159,6 +1285,7 @@ document.getElementById("ce-fermer").addEventListener("click", () => {
 
 document.getElementById("chant-editor-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+  await avecChargementSubmit(e.target, async () => {
   const id = document.getElementById("ce-id").value;
   let titre = document.getElementById("ce-titre").value.trim();
   const refrain = document.getElementById("ce-refrain").value.trim();
@@ -1213,17 +1340,18 @@ document.getElementById("chant-editor-form").addEventListener("submit", async (e
   }
   fermerModale("chant-editor");
   await actualiserEditeur();
+  });
 });
 
-document.getElementById("ce-supprimer").addEventListener("click", async () => {
+document.getElementById("ce-supprimer").addEventListener("click", async (e) => {
   const id = document.getElementById("ce-id").value;
   if (!id) return;
   if (!confirm("Demander la suppression de ce chant ? Il disparaîtra immédiatement de ta bibliothèque ; la décision finale revient au super-admin.")) return;
-  await api("/moderation/demandes", {
+  await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ type_cible: "chant", cible_id: Number(id) }),
-  });
+  }));
   fermerModale("chant-editor");
   await actualiserEditeur();
   await actualiserListeBibliotheque();
@@ -1248,14 +1376,16 @@ document.getElementById("import-form").addEventListener("submit", async (e) => {
     </div>
   `;
   try {
-    const res = await fetch("/import/upload", { method: "POST", body: formData });
-    if (!res.ok) throw new Error(await res.text());
-    const data = await res.json();
+    await avecChargementSubmit(e.target, async () => {
+      const res = await fetch("/import/upload", { method: "POST", body: formData });
+      if (!res.ok) throw new Error(await res.text());
+      const data = await res.json();
 
-    resultDiv.textContent = "";
-    fichierInput.value = ""; // reset
+      resultDiv.textContent = "";
+      fichierInput.value = ""; // reset
 
-    afficherImportWorkspace(data.chants);
+      afficherImportWorkspace(data.chants);
+    });
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
   }
@@ -1410,18 +1540,18 @@ document.getElementById("iw-btn-confirmer").addEventListener("click", async () =
 });
 
 // --- Réglages : entraînement du modèle ---
-document.getElementById("btn-train").addEventListener("click", async () => {
+document.getElementById("btn-train").addEventListener("click", async (e) => {
   const statusEl = document.getElementById("train-status");
   statusEl.textContent = "Entraînement…";
   try {
-    const res = await api("/ml/train", { method: "POST" });
+    const res = await avecChargement(e.currentTarget, () => api("/ml/train", { method: "POST" }));
     statusEl.textContent = `Modèle entraîné sur ${res.exemples} chants, ${res.categories.length} catégories.`;
   } catch (err) {
     statusEl.textContent = `Erreur : ${err.message}`;
   }
 });
 
-document.getElementById("btn-reset-bibliotheque").addEventListener("click", async () => {
+document.getElementById("btn-reset-bibliotheque").addEventListener("click", async (e) => {
   const statusEl = document.getElementById("reset-status");
   const confirmation = document.getElementById("reset-confirmation").value;
   if (confirmation !== "SUPPRIMER") {
@@ -1430,7 +1560,7 @@ document.getElementById("btn-reset-bibliotheque").addEventListener("click", asyn
   }
   if (!confirm("Vraiment tout supprimer ? Cette action est irréversible.")) return;
   try {
-    const res = await api(`/chants/all?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE" });
+    const res = await avecChargement(e.currentTarget, () => api(`/chants/all?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE" }));
     statusEl.textContent = `${res.deleted} chant(s) supprimé(s). Bibliothèque vide.`;
     document.getElementById("reset-confirmation").value = "";
     await actualiserListeBibliotheque();
@@ -1496,13 +1626,13 @@ async function actualiserDepliants() {
     el.querySelector('[data-action="modifier"]').addEventListener("click", () => modifierDepliant(id));
     const btnSupprimer = el.querySelector('[data-action="supprimer"]');
     if (btnSupprimer) {
-      btnSupprimer.addEventListener("click", async () => {
+      btnSupprimer.addEventListener("click", async (e) => {
         if (!confirm("Demander la suppression de ce feuillet ? Il disparaîtra immédiatement de ton espace ; la décision finale revient au super-admin.")) return;
-        await api("/moderation/demandes", {
+        await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ type_cible: "feuillet", cible_id: id }),
-        });
+        }));
         await actualiserDepliants();
       });
     }
@@ -1629,13 +1759,13 @@ async function actualiserAdminChorales() {
     : `<p class="hint">Aucune chorale créée pour l'instant.</p>`;
   list.querySelectorAll(".chorale-card").forEach((el) => {
     const id = Number(el.dataset.id);
-    el.querySelector(".btn-reset-mdp").addEventListener("click", async () => {
+    el.querySelector(".btn-reset-mdp").addEventListener("click", async (e) => {
       if (!confirm("Réinitialiser le mot de passe de cette chorale ? Elle devra en définir un nouveau à sa prochaine connexion.")) return;
-      const res = await api(`/chorales/${id}/reset-password`, {
+      const res = await avecChargement(e.currentTarget, () => api(`/chorales/${id}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
-      });
+      }));
       alert(`Nouveau mot de passe initial : ${res.mot_de_passe_initial}\n(à communiquer à la chorale — il ne sera plus affiché ensuite)`);
       await actualiserAdminChorales();
     });
@@ -1665,14 +1795,14 @@ async function actualiserAdminDemandes() {
     : `<p class="hint">Aucune demande en attente.</p>`;
   list.querySelectorAll(".demande-card").forEach((el) => {
     const id = Number(el.dataset.id);
-    el.querySelector(".btn-valider").addEventListener("click", async () => {
+    el.querySelector(".btn-valider").addEventListener("click", async (e) => {
       if (!confirm("Supprimer définitivement cette ressource pour toutes les chorales ? Action irréversible.")) return;
-      await api(`/moderation/demandes/${id}/valider`, { method: "POST" });
+      await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/valider`, { method: "POST" }));
       await actualiserAdminDemandes();
       await actualiserAdminMasques();
     });
-    el.querySelector(".btn-annuler-demande").addEventListener("click", async () => {
-      await api(`/moderation/demandes/${id}/annuler`, { method: "POST" });
+    el.querySelector(".btn-annuler-demande").addEventListener("click", async (e) => {
+      await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/annuler`, { method: "POST" }));
       await actualiserAdminDemandes();
       await actualiserAdminMasques();
     });
@@ -1701,8 +1831,8 @@ async function actualiserAdminMasques() {
     : `<p class="hint">Aucune ressource masquée pour l'instant.</p>`;
   list.querySelectorAll(".masque-card").forEach((el) => {
     const id = Number(el.dataset.id);
-    el.querySelector(".btn-restaurer").addEventListener("click", async () => {
-      await api(`/moderation/masques/${id}`, { method: "DELETE" });
+    el.querySelector(".btn-restaurer").addEventListener("click", async (e) => {
+      await avecChargement(e.currentTarget, () => api(`/moderation/masques/${id}`, { method: "DELETE" }));
       await actualiserAdminMasques();
     });
   });
@@ -1714,6 +1844,165 @@ async function actualiserAdmin() {
   await actualiserAdminMasques();
 }
 
+// --- Statistiques ---
+
+async function actualiserStatistiques() {
+  const s = await api("/statistiques");
+  const el = document.getElementById("stats-contenu");
+  const feuilletsParChoraleLignes = s.feuillets_par_chorale.map((f) => `
+    <tr><td>${escapeHtml(f.chorale_nom)}</td><td>${f.nombre}</td>
+    <td>${f.dernier ? formaterDateAffichage(f.dernier.slice(0, 10)) : "—"}</td></tr>`).join("");
+  const categoriesLignes = s.chants_par_categorie.map((c) => `
+    <tr><td>${categorieLabel(c.categorie)}</td><td>${c.nombre}</td></tr>`).join("");
+  const feuilletsRecentsLignes = s.feuillets_recents.map((f) => `
+    <tr><td>${escapeHtml(formaterDateAffichage(f.date))}${f.lieu ? " — " + escapeHtml(f.lieu) : ""}</td>
+    <td>${escapeHtml(f.chorale_nom || "—")}</td></tr>`).join("");
+  const chantsRecentsLignes = s.chants_recents.map((c) => `
+    <tr><td>${escapeHtml(c.titre)}</td><td>${categorieLabel(c.categorie)}</td></tr>`).join("");
+
+  el.innerHTML = `
+    <div class="stats-cartes">
+      <div class="stats-carte"><div class="stats-valeur">${s.total_chorales}</div><div class="stats-label">Chorales</div></div>
+      <div class="stats-carte"><div class="stats-valeur">${s.total_chants}</div><div class="stats-label">Chants</div></div>
+      <div class="stats-carte"><div class="stats-valeur">${s.total_feuillets}</div><div class="stats-label">Dépliants</div></div>
+      <div class="stats-carte"><div class="stats-valeur">${s.demandes_en_attente}</div><div class="stats-label">Demandes en attente</div></div>
+      <div class="stats-carte"><div class="stats-valeur">${s.masques_actifs}</div><div class="stats-label">Masques actifs</div></div>
+      <div class="stats-carte"><div class="stats-valeur">${s.demandes_validees}</div><div class="stats-label">Suppressions validées</div></div>
+    </div>
+
+    <div class="stats-section">
+      <h3>Dépliants par chorale</h3>
+      <table class="stats-table"><thead><tr><th>Chorale</th><th>Dépliants</th><th>Dernier</th></tr></thead>
+      <tbody>${feuilletsParChoraleLignes || '<tr><td colspan="3">Aucune donnée.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="stats-section">
+      <h3>Chants par catégorie</h3>
+      <table class="stats-table"><thead><tr><th>Catégorie</th><th>Nombre</th></tr></thead>
+      <tbody>${categoriesLignes || '<tr><td colspan="2">Aucune donnée.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="stats-section">
+      <h3>Derniers dépliants composés</h3>
+      <table class="stats-table"><thead><tr><th>Dépliant</th><th>Chorale</th></tr></thead>
+      <tbody>${feuilletsRecentsLignes || '<tr><td colspan="2">Aucune donnée.</td></tr>'}</tbody></table>
+    </div>
+
+    <div class="stats-section">
+      <h3>Derniers chants ajoutés</h3>
+      <table class="stats-table"><thead><tr><th>Titre</th><th>Catégorie</th></tr></thead>
+      <tbody>${chantsRecentsLignes || '<tr><td colspan="2">Aucune donnée.</td></tr>'}</tbody></table>
+    </div>
+  `;
+}
+
+document.getElementById("btn-imprimer-stats").addEventListener("click", () => window.print());
+
+// --- Messagerie (implémentation complète plus loin dans ce fichier) ---
+let messagerieIntervalle = null;
+let messagerieChoraleActive = null;
+let piecJointeSelectionnee = null;
+
+function messageBulleHtml(m) {
+  const deMoi = m.expediteur_type === IDENTITE.type;
+  const image = m.piece_jointe_filename
+    ? `<img src="/messages/${m.id}/piece-jointe" alt="Pièce jointe">` : "";
+  const heure = new Date(m.created_at.replace(" ", "T")).toLocaleString("fr-FR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" });
+  return `
+    <div class="message-bulle ${deMoi ? "de-moi" : "de-lautre"}">
+      ${m.texte ? escapeHtml(m.texte).replace(/\n/g, "<br>") : ""}
+      ${image}
+      <time>${heure}</time>
+    </div>`;
+}
+
+async function chargerFilMessagerie() {
+  const fil = document.getElementById("messagerie-fil");
+  if (IDENTITE.type === "super" && !messagerieChoraleActive) {
+    fil.innerHTML = `<p class="hint">Choisis une chorale ci-dessus pour voir sa conversation.</p>`;
+    return;
+  }
+  const url = IDENTITE.type === "super" ? `/messages?chorale_id=${messagerieChoraleActive}` : "/messages";
+  const messages = await api(url);
+  fil.innerHTML = messages.length
+    ? messages.map(messageBulleHtml).join("")
+    : `<p class="hint">Aucun message pour l'instant — écris le premier ci-dessous.</p>`;
+  fil.scrollTop = fil.scrollHeight;
+
+  const urlLu = IDENTITE.type === "super" ? `/messages/lu?chorale_id=${messagerieChoraleActive}` : "/messages/lu";
+  await api(urlLu, { method: "POST" });
+  await actualiserBadgeMessagerie();
+}
+
+async function actualiserBadgeMessagerie() {
+  const { non_lus } = await api("/messages/non-lus");
+  const badge = document.getElementById("badge-messagerie");
+  badge.textContent = non_lus > 0 ? non_lus : "";
+  badge.classList.toggle("hidden", non_lus === 0);
+}
+
+async function chargerInboxSuperAdmin() {
+  const threads = await api("/messages/chorales");
+  const select = document.getElementById("messagerie-chorale-select");
+  select.classList.remove("hidden");
+  select.innerHTML = threads.map((t) => `
+    <option value="${t.chorale_id}">${escapeHtml(t.chorale_nom)}${t.non_lus > 0 ? ` (${t.non_lus} non lu${t.non_lus > 1 ? "s" : ""})` : ""}</option>
+  `).join("");
+  if (!messagerieChoraleActive && threads.length) messagerieChoraleActive = threads[0].chorale_id;
+  if (messagerieChoraleActive) select.value = messagerieChoraleActive;
+}
+
+document.getElementById("messagerie-chorale-select").addEventListener("change", async (e) => {
+  messagerieChoraleActive = Number(e.target.value);
+  await chargerFilMessagerie();
+});
+
+document.getElementById("messagerie-btn-piece-jointe").addEventListener("click", () => {
+  document.getElementById("messagerie-piece-jointe").click();
+});
+document.getElementById("messagerie-piece-jointe").addEventListener("change", (e) => {
+  piecJointeSelectionnee = e.target.files[0] || null;
+  document.getElementById("messagerie-piece-jointe-nom").textContent =
+    piecJointeSelectionnee ? `Image jointe : ${piecJointeSelectionnee.name}` : "";
+});
+
+document.getElementById("messagerie-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const texteInput = document.getElementById("messagerie-texte");
+  const texte = texteInput.value.trim();
+  if (!texte && !piecJointeSelectionnee) return;
+  const formData = new FormData();
+  if (texte) formData.append("texte", texte);
+  if (piecJointeSelectionnee) formData.append("piece_jointe", piecJointeSelectionnee);
+  if (IDENTITE.type === "super" && messagerieChoraleActive) formData.append("chorale_id", messagerieChoraleActive);
+  const res = await avecChargementSubmit(e.target, () => fetch("/messages", { method: "POST", body: formData }));
+  if (!res.ok) { alert("Erreur lors de l'envoi : " + (await res.text())); return; }
+  texteInput.value = "";
+  piecJointeSelectionnee = null;
+  document.getElementById("messagerie-piece-jointe").value = "";
+  document.getElementById("messagerie-piece-jointe-nom").textContent = "";
+  await chargerFilMessagerie();
+  if (IDENTITE.type === "super") await chargerInboxSuperAdmin();
+});
+
+async function demarrerMessagerie() {
+  if (IDENTITE.type === "super") {
+    await chargerInboxSuperAdmin();
+  } else {
+    document.getElementById("messagerie-chorale-select").classList.add("hidden");
+  }
+  await chargerFilMessagerie();
+  arreterMessagerie();
+  messagerieIntervalle = setInterval(async () => {
+    if (IDENTITE.type === "super") await chargerInboxSuperAdmin();
+    await chargerFilMessagerie();
+  }, 10000);
+}
+
+function arreterMessagerie() {
+  if (messagerieIntervalle) { clearInterval(messagerieIntervalle); messagerieIntervalle = null; }
+}
+
 document.getElementById("admin-chorale-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   const statusEl = document.getElementById("admin-chorale-status");
@@ -1721,11 +2010,11 @@ document.getElementById("admin-chorale-form").addEventListener("submit", async (
   const username = document.getElementById("admin-chorale-username").value.trim();
   statusEl.textContent = "Création…";
   try {
-    const res = await api("/chorales", {
+    const res = await avecChargementSubmit(e.target, () => api("/chorales", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nom, username }),
-    });
+    }));
     statusEl.textContent = `Chorale créée. Mot de passe initial : ${res.mot_de_passe_initial} (à communiquer à la chorale — il ne sera plus affiché ensuite).`;
     document.getElementById("admin-chorale-form").reset();
     await actualiserAdminChorales();
@@ -1744,6 +2033,7 @@ async function init() {
     badge.textContent = IDENTITE.type === "super" ? "Super-admin" : IDENTITE.nom;
   }
   document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
+  document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
   if (IDENTITE.type === "super") {
     // Le super-admin n'a pas d'espace chorale : ces vues (composition,
     // dépliants, réglages) supposent toutes une chorale connectée.
@@ -1756,6 +2046,7 @@ async function init() {
   MOMENTS = meta.moments;
   CATEGORIES = meta.categories;
   peuplerSelectsCategories();
+  await actualiserBadgeMessagerie();
 
   if (IDENTITE.type === "super") {
     // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages

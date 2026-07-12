@@ -11,7 +11,7 @@ from .constants import CATEGORIES_CHANTS, MOMENTS_LITURGIQUES
 from .db import init_db
 from .ml import classifier
 from .routers import auth as auth_router
-from .routers import chants, chorales, feuillets, import_, ml, moderation, parametres
+from .routers import chants, chorales, feuillets, import_, messages, ml, moderation, parametres, statistiques
 
 app = FastAPI(title="DepliantApp API", version="0.1.0")
 
@@ -80,6 +80,8 @@ app.include_router(chants.router)
 app.include_router(feuillets.router)
 app.include_router(parametres.router)
 app.include_router(moderation.router)
+app.include_router(statistiques.router)
+app.include_router(messages.router)
 app.include_router(ml.router)
 app.include_router(import_.router)
 

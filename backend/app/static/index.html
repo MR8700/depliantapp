@@ -33,12 +33,15 @@
 
 <div id="menu-overlay" class="menu-overlay hidden"></div>
 <nav id="menu-berger" class="menu-berger">
+  <button id="btn-mon-profil" class="nav-btn nav-btn-profil">Mon profil</button>
   <button data-view="bibliotheque" class="nav-btn active">Bibliothèque</button>
   <button data-view="composer" class="nav-btn">Composer</button>
   <button data-view="depliants" class="nav-btn">Les dépliants</button>
   <button data-view="editeur" class="nav-btn">Éditeur</button>
   <button data-view="importer" class="nav-btn">Importer</button>
   <button data-view="reglages" class="nav-btn">Réglages</button>
+  <button data-view="messagerie" id="nav-messagerie" class="nav-btn">Messagerie <span id="badge-messagerie" class="badge-non-lus hidden"></span></button>
+  <button data-view="statistiques" id="nav-statistiques" class="nav-btn hidden">Statistiques</button>
   <button data-view="admin" id="nav-admin" class="nav-btn hidden">Administration</button>
   <button id="btn-deconnexion" class="nav-btn nav-btn-deconnexion">Se déconnecter</button>
 </nav>
@@ -227,6 +230,27 @@
     </fieldset>
   </section>
 
+  <!-- Statistiques (super-admin uniquement) -->
+  <section id="view-statistiques" class="view">
+    <div class="toolbar no-print">
+      <button type="button" id="btn-imprimer-stats">Imprimer</button>
+    </div>
+    <div id="stats-contenu" class="stats-contenu"></div>
+  </section>
+
+  <!-- Messagerie -->
+  <section id="view-messagerie" class="view">
+    <select id="messagerie-chorale-select" class="hidden"></select>
+    <div id="messagerie-fil" class="messagerie-fil"></div>
+    <form id="messagerie-form" class="messagerie-form">
+      <input id="messagerie-piece-jointe" type="file" accept="image/*" class="hidden">
+      <button type="button" id="messagerie-btn-piece-jointe" aria-label="Joindre une image">📎</button>
+      <input id="messagerie-texte" type="text" placeholder="Écrire un message…" autocomplete="off">
+      <button type="submit">Envoyer</button>
+    </form>
+    <p id="messagerie-piece-jointe-nom" class="hint"></p>
+  </section>
+
   <!-- Administration (super-admin uniquement) -->
   <section id="view-admin" class="view">
     <fieldset>
@@ -268,11 +292,12 @@
         <input id="ce-nouvelle-categorie" type="text" placeholder="ex: Chants de louange">
       </label>
       <div id="ce-suggestion" class="suggestion hidden"></div>
-      <label>Refrain <textarea id="ce-refrain" rows="2"></textarea></label>
+      <label>Refrain <textarea id="ce-refrain" rows="2" readonly class="champ-cliquable" placeholder="Toucher pour écrire le refrain…"></textarea></label>
       <div class="couplets-field">
         <span class="couplets-label">Couplets</span>
         <div id="ce-couplets-container"></div>
         <button type="button" id="ce-ajouter-couplet">+ Ajouter un couplet</button>
+        <p class="hint">Astuce : dans la fenêtre d'ajout, séparez plusieurs couplets par une ligne vide pour les créer tous en une fois.</p>
       </div>
       <label>Code de référence <input id="ce-code" type="text" placeholder="ex: D 6"></label>
       <label>Occasions (séparées par des virgules) <input id="ce-occasions" type="text"></label>
@@ -283,6 +308,19 @@
         <button type="button" id="ce-fermer">Annuler</button>
       </div>
     </form>
+  </div>
+</div>
+
+<div id="texte-grand-editor" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="texte-grand-editor" aria-label="Fermer">&times;</button>
+    <h3 id="tge-titre" class="tge-titre"></h3>
+    <p id="tge-astuce" class="hint hidden">Séparez plusieurs couplets par une ligne vide pour les créer tous en une fois.</p>
+    <textarea id="tge-textarea" class="tge-textarea"></textarea>
+    <div class="toolbar">
+      <button type="button" id="tge-inserer">Insérer</button>
+      <button type="button" id="tge-annuler">Annuler</button>
+    </div>
   </div>
 </div>
 
@@ -320,6 +358,28 @@
     <p class="hint">Pool partagé entre toutes les chorales — les images déjà envoyées par d'autres restent
     réutilisables ici.</p>
     <div id="media-picker-grid" class="media-picker-grid"></div>
+  </div>
+</div>
+
+<div id="profil-modal" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="profil-modal" aria-label="Fermer">&times;</button>
+    <div class="profil-entete">
+      <div id="profil-avatar" class="profil-avatar"></div>
+      <div>
+        <div id="profil-nom" class="profil-nom"></div>
+        <div id="profil-type" class="profil-type"></div>
+      </div>
+    </div>
+    <div id="profil-lecture-seule" class="profil-lecture-seule hidden"></div>
+    <form id="profil-mdp-form">
+      <h3>Changer le mot de passe</h3>
+      <label>Mot de passe actuel <input id="profil-mdp-actuel" type="password" autocomplete="current-password" required></label>
+      <label>Nouveau mot de passe (8 caractères min.) <input id="profil-mdp-nouveau" type="password" autocomplete="new-password" required minlength="8"></label>
+      <label>Confirmer <input id="profil-mdp-confirme" type="password" autocomplete="new-password" required minlength="8"></label>
+      <p id="profil-mdp-status" class="hint"></p>
+      <button type="submit">Changer le mot de passe</button>
+    </form>
   </div>
 </div>
 
