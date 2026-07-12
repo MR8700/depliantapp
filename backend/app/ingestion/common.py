@@ -28,15 +28,14 @@ REF_RE = re.compile(r"^\s*(R[ée]f(?:rain)?\.?\s*\d*|R)\s*[:;]\s*(.*)$", re.IGNO
 # très fréquent en PDF (mise en page Word qui convertit "-" en "—").
 VERSE_RE = re.compile(r"^\s*(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[\.\-\)–—:]\s*(.+)$")
 BULLET_RE = re.compile(r"^\s*[•●▪◦►\-\*]\s+(.+)$")
-# Lignes dialoguées (chant à plusieurs voix) : ne créent jamais de nouveau
-# couplet, prolongent seulement le bloc en cours (cas "Soliste:"/"Chœur:",
-# mais aussi les abréviations à une lettre très fréquentes dans les carnets
-# scannés/PDF : "S/", "S/A :", "T/A:", "Ts:", "Ts :").
-DIALOGUE_RE = re.compile(
-    r"^\s*(Soliste|Solo|Ch[oœ]ur|Tous|Assembl[ée]e|Sop(?:rano)?|Alt(?:o)?|T[ée]nor|Basse|Cantor"
-    r"|Ts|[SATBH](?:\s*/\s*[SATBH])*)\s*[:/;]",
-    re.IGNORECASE,
-)
+# Lignes dialoguées / voix alternées (chant à plusieurs voix ou en
+# alternatim, ex. Gloria "A./B./Tous:") : mot complet ("Soliste:"/"Chœur:")
+# ou abréviation à une ou deux lettres ("S/", "S/A :", "T/A:", "Ts:", "A.",
+# "B-", "A)"...) — le séparateur couvre maintenant aussi le point, le tiret
+# et la parenthèse fermante, pas seulement ":"/"/"/";", très fréquents dans
+# les carnets scannés/PDF pour marquer une voix.
+_VOIX_MOT = r"(?:Soliste|Solo|Ch[oœ]ur|Tous|Assembl[ée]e|Sop(?:rano)?|Alt(?:o)?|T[ée]nor|Basse|Cantor|Ts|[SATBHF](?:\s*/\s*[SATBHF])*)"
+DIALOGUE_RE = re.compile(rf"^\s*{_VOIX_MOT}\s*[:/;.\-)]", re.IGNORECASE)
 BIS_TER_RE = re.compile(r"\(\s*(bis|ter|x\s*\d)\s*\)\s*$", re.IGNORECASE)
 
 INLINE_VERSE_SPLIT_RE = re.compile(r"(?=\b\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s)")
@@ -50,6 +49,15 @@ _INLINE_MARKER_SPLIT_RE = re.compile(
     r"(?<=\S)(?<!\(Ref)(?<!\(R[ée]f)\s+"
     r"(?=(?:R[ée]f(?:rain)?\.?\s*\d*\s*[:;])"
     r"|(?:\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s*(?=[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ])))",
+    re.IGNORECASE,
+)
+# Même principe pour les voix alternées (Gloria "A./B./Tous:" etc.) tapées
+# à la suite sans le moindre saut de ligne, très fréquent en PDF ("Gloire à
+# Dieu... A. Nous te louons... B. Nous t'adorons...") — sans cet éclatement,
+# tout le chant reste un seul bloc et finit promu refrain par défaut faute
+# d'un autre marqueur détecté à l'intérieur.
+_INLINE_DIALOGUE_SPLIT_RE = re.compile(
+    rf"(?<=\S)\s+(?={_VOIX_MOT}\s*[:/;.\-)]\s*(?=[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]))",
     re.IGNORECASE,
 )
 
@@ -199,9 +207,10 @@ def _eclater_marqueurs_internes(paragraphs: list[str]) -> list[str]:
     for p in paragraphs:
         for morceau in _INLINE_MARKER_SPLIT_RE.split(p):
             for sous_morceau in _split_titres_codes(morceau):
-                sous_morceau = sous_morceau.strip()
-                if sous_morceau:
-                    lignes.append(sous_morceau)
+                for sous_sous_morceau in _INLINE_DIALOGUE_SPLIT_RE.split(sous_morceau):
+                    sous_sous_morceau = sous_sous_morceau.strip()
+                    if sous_sous_morceau:
+                        lignes.append(sous_sous_morceau)
     return lignes
 
 
@@ -233,8 +242,10 @@ def _classer_ligne(ligne: str) -> _Ligne:
     verse_m = VERSE_RE.match(ligne)
     if verse_m:
         return _Ligne(ligne, "verset", verse_m.group(1), verse_m.group(2).strip())
-    if DIALOGUE_RE.match(ligne):
-        return _Ligne(ligne, "dialogue", None, ligne)
+    dialogue_m = DIALOGUE_RE.match(ligne)
+    if dialogue_m:
+        contenu = ligne[dialogue_m.end():].strip()
+        return _Ligne(ligne, "dialogue", dialogue_m.group(0).strip(" :/;.-)"), contenu or ligne)
     bullet_m = BULLET_RE.match(ligne)
     if bullet_m:
         return _Ligne(ligne, "puce", None, bullet_m.group(1).strip())
@@ -416,16 +427,30 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
             continue
 
         if ligne.type == "dialogue":
-            # Prolonge toujours le bloc en cours (jamais un nouveau couplet).
+            # Une voix (S/, A., Tous:...) qui suit un Réf/couplet déjà
+            # engagé le prolonge (cas "1-S/ ... S/A: ..." où S/ fait
+            # partie du couplet 1, jamais un nouveau couplet).
             if dernier_type == "ref" and blocs_refrain_explicite:
                 blocs_refrain_explicite[-1] = f"{blocs_refrain_explicite[-1]} {ligne.texte}".strip()
-            elif dernier_type == "verset" and blocs_versets:
+                continue
+            if dernier_type == "verset" and blocs_versets:
                 m, t = blocs_versets[-1]
                 blocs_versets[-1] = (m, f"{t} {ligne.texte}".strip())
-            elif blocs_pre_versets:
-                blocs_pre_versets[-1] = f"{blocs_pre_versets[-1]} {ligne.texte}".strip()
-            else:
-                blocs_pre_versets.append(ligne.texte)
+                continue
+            # Aucun Réf/couplet numéroté en cours pour ce chant : les voix
+            # sont alors le SEUL marqueur structurel disponible (Gloria en
+            # alternatim "A./B./Tous:", sans aucune numérotation) et
+            # doivent créer des couplets distincts plutôt qu'un unique
+            # bloc géant qui finirait promu refrain par défaut faute
+            # d'un autre marqueur détecté à l'intérieur. dernier_type prend
+            # une valeur DIFFÉRENTE de "verset" pour ne pas s'auto-prolonger
+            # à la ligne dialoguée suivante (sinon seule la toute première
+            # voix créerait un couplet, toutes les suivantes l'étendraient).
+            if titre_courant is None and not a_du_contenu():
+                titre_courant = "(sans titre)"
+            blocs_versets.append((str(len(blocs_versets) + 1), ligne.contenu))
+            dernier_type = "voix"
+            a_vu_marqueur = True
             continue
 
         if ligne.type == "puce":
