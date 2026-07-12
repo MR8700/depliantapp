@@ -45,7 +45,7 @@ def get_feuillet_pdf(feuillet_id: int):
     feuillet = crud.get_feuillet(feuillet_id)
     if not feuillet:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
-    images = {slot: config.get_image_path(slot) for slot in config.IMAGE_SLOTS}
+    images = {slot: config.get_image_reader(slot) for slot in config.IMAGE_SLOTS}
     try:
         pdf_bytes, taille_texte = render_feuillet_pdf_auto(feuillet, config.get_config(), images=images)
     except DepassementImpossible as exc:

@@ -1301,13 +1301,13 @@ document.getElementById("iw-btn-annuler").addEventListener("click", () => {
 document.getElementById("iw-btn-confirmer").addEventListener("click", async () => {
   const container = document.getElementById("import-workspace-container");
   const cards = container.querySelectorAll(".iw-card");
-  
+
   const payloadChants = importWorkspaceChants.map((item, index) => {
     const card = cards[index];
     const action = card.querySelector(`input[name="iw-action-${index}"]:checked`).value;
     const replaceSelect = card.querySelector(`.iw-replace-select`);
     const replace_id = replaceSelect ? Number(replaceSelect.value) : null;
-    
+
     return {
       action,
       replace_id,
@@ -1320,7 +1320,13 @@ document.getElementById("iw-btn-confirmer").addEventListener("click", async () =
       confiance: item.confiance || 1.0
     };
   });
-  
+
+  const progression = document.getElementById("iw-progression");
+  const btnConfirmer = document.getElementById("iw-btn-confirmer");
+  const btnAnnuler = document.getElementById("iw-btn-annuler");
+  progression.style.display = "";
+  btnConfirmer.disabled = true;
+  btnAnnuler.disabled = true;
   try {
     const res = await api("/import/finalize", {
       method: "POST",
@@ -1333,6 +1339,10 @@ document.getElementById("iw-btn-confirmer").addEventListener("click", async () =
     await actualiserEditeur();
   } catch (err) {
     alert("Erreur lors de la finalisation: " + err.message);
+  } finally {
+    progression.style.display = "none";
+    btnConfirmer.disabled = false;
+    btnAnnuler.disabled = false;
   }
 });
 

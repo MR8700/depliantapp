@@ -4,13 +4,13 @@ Chaque widget peut être activé ou retiré sans toucher au LayoutEngine :
 - Bannière : toujours présente, ancrée en bas de la demi-page gauche (page 1).
 - Prière : facultative, consomme la zone G2 entière quand active.
 """
+import sys
 from datetime import datetime
-from pathlib import Path
 from typing import Optional
 from xml.sax.saxutils import escape
 
-from PIL import Image as PILImage
 from reportlab.lib import colors
+from reportlab.lib.utils import ImageReader
 from reportlab.platypus import Paragraph
 
 from .. import schemas
@@ -56,9 +56,8 @@ DEFAULT_PRIERE_TEXTE = (
 )
 
 
-def _image_dims(chemin: Path, hauteur_max: float) -> tuple[float, float]:
-    with PILImage.open(chemin) as img:
-        largeur_px, hauteur_px = img.size
+def _image_dims(image: ImageReader, hauteur_max: float) -> tuple[float, float]:
+    largeur_px, hauteur_px = image.getSize()
     ratio = largeur_px / hauteur_px
     return hauteur_max * ratio, hauteur_max
 
@@ -77,16 +76,16 @@ def dessiner_entete(canvas, config: dict, images: dict, feuillet: schemas.Feuill
     logo_d = images.get("logo_droit")
     if logo_g:
         try:
-            canvas.drawImage(str(logo_g), x0, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
+            canvas.drawImage(logo_g, x0, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
                               height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[avertissement] logo_gauche non dessiné : {exc}", file=sys.stderr)
     if logo_d:
         try:
-            canvas.drawImage(str(logo_d), x1 - HAUTEUR_LOGO, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
+            canvas.drawImage(logo_d, x1 - HAUTEUR_LOGO, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
                               height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[avertissement] logo_droit non dessiné : {exc}", file=sys.stderr)
 
     paroisse = config.get("paroisse", "")
     if paroisse:
@@ -168,11 +167,11 @@ def dessiner_banniere(canvas, config: dict, images: dict) -> None:
     if banniere_img:
         try:
             largeur, hauteur = _image_dims(banniere_img, HAUTEUR_BANNIERE_IMG)
-            canvas.drawImage(str(banniere_img), centre_x - largeur / 2, y - hauteur,
+            canvas.drawImage(banniere_img, centre_x - largeur / 2, y - hauteur,
                               width=largeur, height=hauteur, preserveAspectRatio=True, mask="auto")
             y -= hauteur + 6
-        except Exception:
-            pass
+        except Exception as exc:
+            print(f"[avertissement] banniere_bas non dessinée : {exc}", file=sys.stderr)
 
     contact = config.get("contact")
     if contact:

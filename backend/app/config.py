@@ -1,6 +1,9 @@
+import io
 import json
 from pathlib import Path
 from typing import Optional
+
+from reportlab.lib.utils import ImageReader
 
 from . import db
 from .paths import DATA_DIR
@@ -108,6 +111,24 @@ def get_image_bytes(slot: str) -> Optional[tuple[bytes, str]]:
     if not row:
         return None
     return bytes(row["donnees"]), row["content_type"] or "application/octet-stream"
+
+
+def get_image_reader(slot: str) -> Optional[ImageReader]:
+    """Image prête à être dessinée par ReportLab (`canvas.drawImage`), quel
+    que soit le backend de stockage — c'est le point d'entrée à utiliser
+    pour le rendu PDF (contrairement à get_image_path, qui ne fonctionne
+    qu'en SQLite : l'appeler directement depuis le rendu faisait
+    disparaître logos/bannière en silence sur Postgres, get_image_path y
+    renvoyant toujours None puisque save_image n'y écrit jamais sur
+    disque)."""
+    if db.BACKEND == "postgres":
+        result = get_image_bytes(slot)
+        if not result:
+            return None
+        content, _content_type = result
+        return ImageReader(io.BytesIO(content))
+    path = get_image_path(slot)
+    return ImageReader(str(path)) if path else None
 
 
 def delete_image(slot: str) -> dict:
