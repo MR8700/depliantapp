@@ -1607,6 +1607,31 @@
         </button>
       </div>
     </div>
+</div>
+
+<!-- Admin Reset Password Success Modal -->
+<div id="admin-reset-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 480px; border-radius: 16px; padding: 24px; text-align: center; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
+    <div style="font-size: 3rem; color: #10B981; margin-bottom: 8px;">🔑</div>
+    <h3 style="margin: 0; color: #1F4A7C; font-size: 1.25rem;">Mot de passe réinitialisé</h3>
+    <p style="margin: 0; color: #64748B; font-size: 0.9rem; line-height: 1.5;">
+      Le mot de passe de la chorale <strong id="reset-modal-nom"></strong> a été réinitialisé avec succès.
+    </p>
+    
+    <div style="background: #F1F5F9; border: 1px solid #E2E8F0; padding: 16px; border-radius: 10px; margin: 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+      <code id="reset-modal-mdp" style="font-family: monospace; font-size: 1.3rem; font-weight: 700; color: #1E293B; letter-spacing: 0.05em; flex: 1; text-align: left;"></code>
+      <button type="button" id="btn-copy-reset-mdp" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        <span>📋</span> Copier
+      </button>
+    </div>
+    
+    <p style="margin: 0; color: #EF4444; font-size: 0.75rem; font-weight: 600; line-height: 1.4;">
+      ⚠️ Communiquez ce mot de passe temporaire à la chorale. Il ne sera plus affiché après la fermeture de cette fenêtre.
+    </p>
+    
+    <button type="button" onclick="fermerModale('admin-reset-modal')" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #1F4A7C; color: white; cursor: pointer; margin-top: 8px;">
+      Fermer
+    </button>
   </div>
 </div>
 

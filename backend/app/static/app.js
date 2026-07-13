@@ -5084,14 +5084,26 @@ async function actualiserAdminChorales() {
     : `<p class="hint">Aucune chorale créée pour l'instant.</p>`;
   list.querySelectorAll(".chorale-card").forEach((el) => {
     const id = Number(el.dataset.id);
+    const chorale = chorales.find(c => c.id === id);
     el.querySelector(".btn-reset-mdp").addEventListener("click", async (e) => {
-      if (!confirm("Réinitialiser le mot de passe de cette chorale ? Elle devra en définir un nouveau à sa prochaine connexion.")) return;
+      if (!confirm(`Réinitialiser le mot de passe de la chorale "${chorale ? chorale.nom : ''}" ? Elle devra en définir un nouveau à sa prochaine connexion.`)) return;
       const res = await avecChargement(e.currentTarget, () => api(`/chorales/${id}/reset-password`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({}),
       }));
-      alert(`Nouveau mot de passe initial : ${res.mot_de_passe_initial}\n(à communiquer à la chorale — il ne sera plus affiché ensuite)`);
+      
+      document.getElementById("reset-modal-nom").textContent = chorale ? chorale.nom : "Chorale";
+      document.getElementById("reset-modal-mdp").textContent = res.mot_de_passe_initial;
+      
+      document.getElementById("btn-copy-reset-mdp").onclick = () => {
+        navigator.clipboard.writeText(res.mot_de_passe_initial);
+        const copyBtn = document.getElementById("btn-copy-reset-mdp");
+        copyBtn.innerHTML = "<span>✓</span> Copié !";
+        setTimeout(() => { copyBtn.innerHTML = "<span>📋</span> Copier"; }, 2000);
+      };
+      
+      ouvrirModale("admin-reset-modal");
       await actualiserAdminChorales();
     });
   });
