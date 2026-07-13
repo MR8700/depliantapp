@@ -1156,6 +1156,9 @@ button[type="submit"], #btn-generer {
     max-width: 100% !important;
     padding: 24px 32px 80px !important;
   }
+  .modal {
+    left: 240px !important;
+  }
 }
 
 /* Sidebar nav icons in menu berger */
