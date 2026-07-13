@@ -307,7 +307,7 @@ button[type="submit"], #btn-generer {
   background: rgba(10, 16, 28, 0.55);
   backdrop-filter: blur(3px);
   -webkit-backdrop-filter: blur(3px);
-  display: flex; align-items: flex-end; justify-content: center; z-index: 20;
+  display: flex; align-items: flex-end; justify-content: center; z-index: 1000;
   opacity: 0; transition: opacity 0.22s ease;
 }
 .modal.hidden { display: none; }
