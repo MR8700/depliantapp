@@ -1117,14 +1117,14 @@
 
 <!-- Song Details Viewer Modal (Canva/Notion style) -->
 <div id="chant-details-modal" class="modal hidden">
-  <div class="modal-content" style="max-width: 600px; border-radius: 16px; overflow: hidden; padding: 0;">
-    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 20px; position: relative;">
+  <div class="modal-content" style="max-width: 600px; border-radius: 16px; overflow: hidden; padding: 0; display: flex; flex-direction: column; max-height: 85vh;">
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 20px; position: relative; flex-shrink: 0;">
       <span id="det-categorie-badge" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px;">Entrée</span>
       <h2 id="det-titre" style="margin: 0; font-size: 1.4rem; font-weight: 700;">Chant titre</h2>
       <p id="det-auteur" style="margin: 4px 0 0 0; font-size: 0.85rem; opacity: 0.9; font-style: italic;">Auteur : -</p>
       <button type="button" style="position: absolute; top: 16px; right: 16px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" onclick="fermerModale('chant-details-modal')">&times;</button>
     </div>
-    <div style="padding: 24px; display: flex; flex-direction: column; gap: 20px; max-height: 60vh; overflow-y: auto; background: #F8FAFC;">
+    <div style="padding: 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto; background: #F8FAFC;">
       
       <!-- Refrain Section -->
       <div id="det-refrain-sec" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
@@ -1163,7 +1163,7 @@
     </div>
     
     <!-- Actions rapides footer -->
-    <div style="background: white; border-top: 1px solid #E2E8F0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; align-items: center;">
+    <div style="background: white; border-top: 1px solid #E2E8F0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; align-items: center; flex-shrink: 0; flex-wrap: wrap;">
       <span id="det-info-sup" style="font-size: 0.75rem; color: #64748B; margin-right: auto;">Créé par admin</span>
       <button type="button" id="det-btn-public" class="btn-secondary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem;">Rendre privé</button>
       <button type="button" id="det-btn-supprimer" class="btn-danger" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #ef4444; color: white; border: none; cursor: pointer;">Supprimer</button>
