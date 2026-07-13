@@ -24,8 +24,15 @@ app.add_middleware(
 
 # Chemins accessibles sans authentification : uniquement ce qu'il faut pour
 # afficher la page de connexion elle-même (login.html est autonome, sans
-# dépendance vers app.js/style.css qui restent, eux, protégés).
-_CHEMINS_PUBLICS = {"/auth/login", "/auth/status", "/health", "/login.html", "/favicon.ico"}
+# dépendance vers app.js/style.css qui restent, eux, protégés) — plus les
+# fichiers d'installation de l'appli (manifest, icônes, service worker) :
+# le navigateur doit pouvoir les récupérer AVANT toute connexion (prompt
+# d'installation depuis login.html) ; ils ne contiennent aucune donnée, donc
+# aucun risque à les laisser publics.
+_CHEMINS_PUBLICS = {
+    "/auth/login", "/auth/status", "/health", "/login.html", "/favicon.ico",
+    "/manifest.json", "/sw.js", "/icon-192.png", "/icon-512.png",
+}
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
 # doit encore être changé (sinon impossible de le changer...).
 _CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password"}

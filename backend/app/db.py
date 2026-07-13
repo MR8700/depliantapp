@@ -125,6 +125,13 @@ CREATE TABLE IF NOT EXISTS chants (
     source_file TEXT,
     occasions TEXT NOT NULL DEFAULT '[]',
     confiance REAL NOT NULL DEFAULT 1.0,
+    mots_cles TEXT NOT NULL DEFAULT '[]',
+    actif INTEGER NOT NULL DEFAULT 1,
+    favori INTEGER NOT NULL DEFAULT 0,
+    chant_principal INTEGER NOT NULL DEFAULT 0,
+    duree_estimee TEXT,
+    tonalite TEXT,
+    remarques TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -266,6 +273,10 @@ CREATE TABLE IF NOT EXISTS messages (
     piece_jointe_content_type TEXT,
     piece_jointe_filename TEXT,
     lu INTEGER NOT NULL DEFAULT 0,
+    parent_id INTEGER REFERENCES messages(id),
+    reactions TEXT NOT NULL DEFAULT '{}',
+    modifie INTEGER NOT NULL DEFAULT 0,
+    supprime INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
@@ -299,6 +310,13 @@ CREATE TABLE IF NOT EXISTS chants (
     source_file TEXT,
     occasions TEXT NOT NULL DEFAULT '[]',
     confiance REAL NOT NULL DEFAULT 1.0,
+    mots_cles TEXT NOT NULL DEFAULT '[]',
+    actif INTEGER NOT NULL DEFAULT 1,
+    favori INTEGER NOT NULL DEFAULT 0,
+    chant_principal INTEGER NOT NULL DEFAULT 0,
+    duree_estimee TEXT,
+    tonalite TEXT,
+    remarques TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -329,6 +347,8 @@ CREATE TABLE IF NOT EXISTS feuillets (
     priere_active INTEGER NOT NULL DEFAULT 0,
     priere_texte TEXT,
     taille_texte_manuelle REAL,
+    one_page_mode INTEGER NOT NULL DEFAULT 0,
+    banniere_active INTEGER NOT NULL DEFAULT 1,
     chorale_id INTEGER REFERENCES chorales(id),
     clone_de_id INTEGER REFERENCES feuillets(id),
     created_at TIMESTAMP NOT NULL DEFAULT now(),
@@ -402,6 +422,10 @@ CREATE TABLE IF NOT EXISTS messages (
     piece_jointe_content_type TEXT,
     piece_jointe_filename TEXT,
     lu INTEGER NOT NULL DEFAULT 0,
+    parent_id INTEGER REFERENCES messages(id),
+    reactions TEXT NOT NULL DEFAULT '{}',
+    modifie INTEGER NOT NULL DEFAULT 0,
+    supprime INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
@@ -412,6 +436,17 @@ ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS taille_texte_manuelle REAL;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS chorale_id INTEGER REFERENCES chorales(id);
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS clone_de_id INTEGER REFERENCES feuillets(id);
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS slug TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS mots_cles TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS actif INTEGER NOT NULL DEFAULT 1;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS favori INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS chant_principal INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS duree_estimee TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS tonalite TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS remarques TEXT;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES messages(id);
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT NOT NULL DEFAULT '{}';
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS modifie INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN IF NOT EXISTS supprime INTEGER NOT NULL DEFAULT 0;
 """
 
 
@@ -435,8 +470,23 @@ def _init_sqlite() -> None:
     with get_connection() as conn:
         # migration : ajoute la colonne slug si la base existait avant son introduction
         colonnes = {row["name"] for row in conn.execute("PRAGMA table_info(chants)").fetchall()}
-        if colonnes and "slug" not in colonnes:
-            conn.execute("ALTER TABLE chants ADD COLUMN slug TEXT")
+        if colonnes:
+            if "slug" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN slug TEXT")
+            if "mots_cles" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN mots_cles TEXT NOT NULL DEFAULT '[]'")
+            if "actif" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN actif INTEGER NOT NULL DEFAULT 1")
+            if "favori" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN favori INTEGER NOT NULL DEFAULT 0")
+            if "chant_principal" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN chant_principal INTEGER NOT NULL DEFAULT 0")
+            if "duree_estimee" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN duree_estimee TEXT")
+            if "tonalite" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN tonalite TEXT")
+            if "remarques" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN remarques TEXT")
 
         conn.executescript(SCHEMA_SQLITE)
 
@@ -450,10 +500,24 @@ def _init_sqlite() -> None:
             conn.execute("ALTER TABLE feuillets ADD COLUMN priere_texte TEXT")
         if "taille_texte_manuelle" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN taille_texte_manuelle REAL")
+        if "one_page_mode" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN one_page_mode INTEGER NOT NULL DEFAULT 0")
+        if "banniere_active" not in colonnes_feuillets:
+            conn.execute("ALTER TABLE feuillets ADD COLUMN banniere_active INTEGER NOT NULL DEFAULT 1")
         if "chorale_id" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN chorale_id INTEGER REFERENCES chorales(id)")
         if "clone_de_id" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN clone_de_id INTEGER REFERENCES feuillets(id)")
+
+        colonnes_messages = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
+        if "parent_id" not in colonnes_messages:
+            conn.execute("ALTER TABLE messages ADD COLUMN parent_id INTEGER REFERENCES messages(id)")
+        if "reactions" not in colonnes_messages:
+            conn.execute("ALTER TABLE messages ADD COLUMN reactions TEXT NOT NULL DEFAULT '{}'")
+        if "modifie" not in colonnes_messages:
+            conn.execute("ALTER TABLE messages ADD COLUMN modifie INTEGER NOT NULL DEFAULT 0")
+        if "supprime" not in colonnes_messages:
+            conn.execute("ALTER TABLE messages ADD COLUMN supprime INTEGER NOT NULL DEFAULT 0")
 
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)

@@ -79,7 +79,8 @@ def _tester_taille(feuillet: schemas.Feuillet, config: dict, sections: list, gri
     engine = LayoutEngine(grille.flow_order)
     assignation = engine.distribuer(unites, sections)
     if feuillet.priere_active:
-        assignation[grille.toutes["G2"].nom] = construire_flowables_priere(feuillet, styles, config)
+        cle_priere = "C2" if getattr(feuillet, "one_page_mode", False) else "G2"
+        assignation[grille.toutes[cle_priere].nom] = construire_flowables_priere(feuillet, styles, config)
     return styles, assignation
 
 
@@ -87,19 +88,27 @@ def _dessiner_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, grille
     buffer = io.BytesIO()
     c = Canvas(buffer, pagesize=PAGE_SIZE)
 
-    # ---- Page 1 : demi-page droite (en-tête + D1/D2), demi-page gauche (G1/G2 + bannière) ----
-    _dessiner_bordure(c)
-    dessiner_entete(c, config, images, feuillet)
-    dessiner_banniere(c, config, images)
-    for nom in ("D1", "D2", "G1", "G2"):
-        _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
-    c.showPage()
+    if getattr(feuillet, "one_page_mode", False):
+        # ---- Mode 1 page paysage unique : C1/C2 (gauche) et en-tête + D1/D2 (droite) ----
+        _dessiner_bordure(c)
+        dessiner_entete(c, config, images, feuillet)
+        for nom in ("C1", "C2", "D1", "D2"):
+            _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
+        c.showPage()
+    else:
+        # ---- Page 1 : demi-page droite (en-tête + D1/D2), demi-page gauche (G1/G2 + bannière) ----
+        _dessiner_bordure(c)
+        dessiner_entete(c, config, images, feuillet)
+        dessiner_banniere(c, config, images)
+        for nom in ("D1", "D2", "G1", "G2"):
+            _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
+        c.showPage()
 
-    # ---- Page 2 : 4 colonnes identiques, entièrement dédiées aux chants ----
-    _dessiner_bordure(c)
-    for nom in ("C1", "C2", "C3", "C4"):
-        _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
-    c.showPage()
+        # ---- Page 2 : 4 colonnes identiques, entièrement dédiées aux chants ----
+        _dessiner_bordure(c)
+        for nom in ("C1", "C2", "C3", "C4"):
+            _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
+        c.showPage()
 
     c.save()
     return buffer.getvalue()
@@ -123,7 +132,11 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
     DepassementImpossible plutôt que de déborder ou de trahir la maquette."""
     images = images or {}
     sections = build_sections(feuillet)
-    grille = construire_grille(feuillet.priere_active)
+    grille = construire_grille(
+        feuillet.priere_active,
+        getattr(feuillet, "one_page_mode", False),
+        getattr(feuillet, "banniere_active", True)
+    )
 
     if feuillet.taille_texte_manuelle is not None:
         taille = max(TAILLE_TEXTE, min(TAILLE_TEXTE_PLAFOND, feuillet.taille_texte_manuelle))

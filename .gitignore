@@ -5,3 +5,6 @@ backend/uvicorn_err*.log
 *.pyc
 .venv/
 venv/
+../*.txt
+../text.txt
+text.txt

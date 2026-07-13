@@ -44,22 +44,87 @@ async def envoyer(
     chorale_id: Optional[int] = Form(None),
     texte: Optional[str] = Form(None),
     piece_jointe: Optional[UploadFile] = None,
+    parent_id: Optional[int] = Form(None),
     identite: auth.Identite = Depends(identite_courante),
 ):
     cid = _chorale_id_du_fil(identite, chorale_id)
     piece = None
     if piece_jointe:
-        if not (piece_jointe.content_type or "").startswith("image/"):
-            raise HTTPException(status_code=400, detail="La pièce jointe doit être une image")
         contenu = await piece_jointe.read()
-        # Un fichier vide (0 octet) ne compte pas comme une vraie pièce
-        # jointe : sans ce garde-fou le message serait accepté sans texte
-        # ni contenu, avec une image cassée dans le fil.
+        # Limite de 20 Mo (20 * 1024 * 1024 octets)
+        if len(contenu) > 20 * 1024 * 1024:
+            raise HTTPException(status_code=400, detail="La pièce jointe ne doit pas dépasser 20 Mo")
         if contenu:
-            piece = (contenu, piece_jointe.content_type, piece_jointe.filename)
+            piece = (contenu, piece_jointe.content_type or "application/octet-stream", piece_jointe.filename)
     if not (texte and texte.strip()) and not piece:
         raise HTTPException(status_code=400, detail="Message vide")
-    return crud.creer_message(cid, identite.type, texte.strip() if texte else None, piece)
+    return crud.creer_message(cid, identite.type, texte.strip() if texte else None, piece, parent_id)
+
+
+@router.put("/{message_id}")
+def modifier(
+    message_id: int,
+    texte: str = Form(...),
+    identite: auth.Identite = Depends(identite_courante)
+):
+    msg = crud.get_message(message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message introuvable")
+    
+    # Seul l'auteur d'un message peut le modifier
+    if identite.type == "chorale" and (msg["expediteur_type"] != "chorale" or msg["chorale_id"] != identite.compte_id):
+        raise HTTPException(status_code=403, detail="Accès interdit")
+    if identite.type == "super" and msg["expediteur_type"] != "super":
+        raise HTTPException(status_code=403, detail="Accès interdit")
+        
+    if not texte.strip():
+        raise HTTPException(status_code=400, detail="Le texte ne peut pas être vide")
+        
+    res = crud.modifier_message(message_id, texte.strip())
+    if not res:
+         raise HTTPException(status_code=500, detail="Erreur lors de la modification")
+    return res
+
+
+@router.delete("/{message_id}")
+def supprimer(
+    message_id: int,
+    identite: auth.Identite = Depends(identite_courante)
+):
+    msg = crud.get_message(message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message introuvable")
+        
+    # Une chorale ne supprime que ses propres messages.
+    # L'admin peut modérer et supprimer tout message du fil.
+    if identite.type == "chorale":
+        if msg["expediteur_type"] != "chorale" or msg["chorale_id"] != identite.compte_id:
+            raise HTTPException(status_code=403, detail="Accès interdit")
+            
+    res = crud.supprimer_message(message_id)
+    if not res:
+         raise HTTPException(status_code=500, detail="Erreur lors de la suppression")
+    return res
+
+
+@router.post("/{message_id}/reactions")
+def toggle_reaction(
+    message_id: int,
+    emoji: str = Form(...),
+    identite: auth.Identite = Depends(identite_courante)
+):
+    msg = crud.get_message(message_id)
+    if not msg:
+        raise HTTPException(status_code=404, detail="Message introuvable")
+        
+    # Une chorale ne réagit que sur son propre fil
+    if identite.type == "chorale" and msg["chorale_id"] != identite.compte_id:
+        raise HTTPException(status_code=403, detail="Accès interdit")
+        
+    res = crud.toggle_reaction_message(message_id, identite.username, emoji.strip())
+    if not res:
+        raise HTTPException(status_code=500, detail="Erreur de réaction")
+    return res
 
 
 @router.post("/lu")

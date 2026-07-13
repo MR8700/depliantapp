@@ -36,17 +36,25 @@ def _row_to_chant(row) -> schemas.Chant:
         occasions=json.loads(row["occasions"]),
         source_file=row["source_file"],
         confiance=row["confiance"],
+        mots_cles=json.loads(row["mots_cles"]) if "mots_cles" in list(row.keys()) and row["mots_cles"] else [],
+        actif=bool(row["actif"]) if "actif" in list(row.keys()) and row["actif"] is not None else True,
+        favori=bool(row["favori"]) if "favori" in list(row.keys()) and row["favori"] is not None else False,
+        chant_principal=bool(row["chant_principal"]) if "chant_principal" in list(row.keys()) and row["chant_principal"] is not None else False,
+        duree_estimee=row["duree_estimee"] if "duree_estimee" in list(row.keys()) else None,
+        tonalite=row["tonalite"] if "tonalite" in list(row.keys()) else None,
+        remarques=row["remarques"] if "remarques" in list(row.keys()) else None,
     )
 
 
 def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, confiance: float = 1.0) -> schemas.Chant:
     with get_connection() as conn:
-        slug = unique_slug(chant.titre, _existing_slugs(conn))
+        base_slug = chant.slug.strip() if chant.slug and chant.slug.strip() else chant.titre
+        slug = unique_slug(base_slug, _existing_slugs(conn))
         new_id = insert_returning_id(
             conn,
             """
-            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chant.titre,
@@ -59,6 +67,13 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
                 json.dumps(chant.occasions, ensure_ascii=False),
                 source_file,
                 confiance,
+                json.dumps(chant.mots_cles, ensure_ascii=False),
+                1 if chant.actif else 0,
+                1 if chant.favori else 0,
+                1 if chant.chant_principal else 0,
+                chant.duree_estimee,
+                chant.tonalite,
+                chant.remarques,
             ),
         )
         row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
@@ -189,17 +204,28 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
     existing = get_chant(chant_id)
     if not existing:
         return None
+    champs_envoyes = patch.model_dump(exclude_unset=True)
     data = existing.model_dump()
-    for field, value in patch.model_dump(exclude_unset=True).items():
+    for field, value in champs_envoyes.items():
         data[field] = value
     confiance = 1.0 if mark_reviewed else existing.confiance
     with get_connection() as conn:
-        slug = existing.slug
-        if data["titre"] != existing.titre or not slug:
-            slug = unique_slug(data["titre"], _existing_slugs(conn, exclude_id=chant_id))
+        # Le "mot clé" (slug) envoyé explicitement par l'éditeur de chant
+        # prime toujours sur la dérivation automatique, même si le titre n'a
+        # pas changé — c'est exactement ce qui le rend "modifiable" plutôt
+        # que purement automatique. S'il est absent ou vide, on retombe sur
+        # le comportement historique (re-dérivé du titre s'il a changé ou
+        # si le chant n'en avait pas encore).
+        slug_demande = (champs_envoyes.get("slug") or "").strip()
+        if slug_demande:
+            slug = unique_slug(slug_demande, _existing_slugs(conn, exclude_id=chant_id))
+        else:
+            slug = existing.slug
+            if data["titre"] != existing.titre or not slug:
+                slug = unique_slug(data["titre"], _existing_slugs(conn, exclude_id=chant_id))
         conn.execute(
             """
-            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?
+            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?
             WHERE id=?
             """,
             (
@@ -212,6 +238,13 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 data["langue"],
                 json.dumps(data["occasions"], ensure_ascii=False),
                 confiance,
+                json.dumps(data["mots_cles"], ensure_ascii=False),
+                1 if data["actif"] else 0,
+                1 if data["favori"] else 0,
+                1 if data["chant_principal"] else 0,
+                data["duree_estimee"],
+                data["tonalite"],
+                data["remarques"],
                 chant_id,
             ),
         )
@@ -243,6 +276,8 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
         priere_active=bool(row["priere_active"]),
         priere_texte=row["priere_texte"],
         taille_texte_manuelle=row["taille_texte_manuelle"],
+        one_page_mode=bool(row["one_page_mode"]),
+        banniere_active=bool(row["banniere_active"]),
         chorale_id=row["chorale_id"],
         clone_de_id=row["clone_de_id"],
         chorale_nom=row["chorale_nom"],
@@ -254,8 +289,8 @@ def create_feuillet(feuillet: schemas.FeuilletCreate, chorale_id: int, clone_de_
         new_id = insert_returning_id(
             conn,
             "INSERT INTO feuillets "
-            "(date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle, chorale_id, clone_de_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle, one_page_mode, banniere_active, chorale_id, clone_de_id) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 feuillet.date,
                 feuillet.lieu,
@@ -264,6 +299,8 @@ def create_feuillet(feuillet: schemas.FeuilletCreate, chorale_id: int, clone_de_
                 int(feuillet.priere_active),
                 feuillet.priere_texte,
                 feuillet.taille_texte_manuelle,
+                int(feuillet.one_page_mode),
+                int(feuillet.banniere_active),
                 chorale_id,
                 clone_de_id,
             ),
@@ -306,7 +343,7 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, chorale_
         conn.execute(
             f"""
             UPDATE feuillets SET date=?, lieu=?, lectures=?, moments=?, priere_active=?, priere_texte=?,
-                taille_texte_manuelle=?, updated_at={horodatage}
+                taille_texte_manuelle=?, one_page_mode=?, banniere_active=?, updated_at={horodatage}
             WHERE id=?
             """,
             (
@@ -317,6 +354,8 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, chorale_
                 int(feuillet.priere_active),
                 feuillet.priere_texte,
                 feuillet.taille_texte_manuelle,
+                int(feuillet.one_page_mode),
+                int(feuillet.banniere_active),
                 feuillet_id,
             ),
         )
@@ -558,33 +597,113 @@ def list_messages(chorale_id: int) -> list[dict]:
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT id, chorale_id, expediteur_type, texte, "
-            "piece_jointe_content_type, piece_jointe_filename, lu, created_at "
+            "piece_jointe_content_type, piece_jointe_filename, "
+            "LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at "
             "FROM messages WHERE chorale_id = ? ORDER BY created_at ASC",
             (chorale_id,),
         ).fetchall()
         return [dict(r) for r in rows]
 
 
+def get_message(message_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
+            "piece_jointe_filename, LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
 def creer_message(
     chorale_id: int, expediteur_type: str, texte: Optional[str],
     piece_jointe: Optional[tuple[bytes, str, str]] = None,
+    parent_id: Optional[int] = None,
 ) -> dict:
-    """piece_jointe = (donnees, content_type, filename) si une image est
-    jointe, sinon None."""
+    """piece_jointe = (donnees, content_type, filename) si un fichier est
+    joint, sinon None. parent_id = id du message parent en cas de réponse."""
     donnees, content_type, filename = piece_jointe if piece_jointe else (None, None, None)
     with get_connection() as conn:
         message_id = insert_returning_id(
             conn,
             "INSERT INTO messages (chorale_id, expediteur_type, texte, piece_jointe_donnees, "
-            "piece_jointe_content_type, piece_jointe_filename) VALUES (?, ?, ?, ?, ?, ?)",
-            (chorale_id, expediteur_type, texte, db.binary(donnees) if donnees is not None else None, content_type, filename),
+            "piece_jointe_content_type, piece_jointe_filename, parent_id) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (chorale_id, expediteur_type, texte, db.binary(donnees) if donnees is not None else None, content_type, filename, parent_id),
         )
         row = conn.execute(
             "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
-            "piece_jointe_filename, lu, created_at FROM messages WHERE id = ?",
+            "piece_jointe_filename, LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at FROM messages WHERE id = ?",
             (message_id,),
         ).fetchone()
         return dict(row)
+
+
+def modifier_message(message_id: int, texte: str) -> Optional[dict]:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE messages SET texte = ?, modifie = 1 WHERE id = ?",
+            (texte, message_id)
+        )
+        row = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
+            "piece_jointe_filename, LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def supprimer_message(message_id: int) -> Optional[dict]:
+    with get_connection() as conn:
+        conn.execute(
+            "UPDATE messages SET texte = NULL, piece_jointe_donnees = NULL, "
+            "piece_jointe_content_type = NULL, piece_jointe_filename = NULL, "
+            "supprime = 1 WHERE id = ?",
+            (message_id,)
+        )
+        row = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
+            "piece_jointe_filename, LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def toggle_reaction_message(message_id: int, username: str, emoji: str) -> Optional[dict]:
+    with get_connection() as conn:
+        row = conn.execute("SELECT reactions FROM messages WHERE id = ?", (message_id,)).fetchone()
+        if not row:
+            return None
+        reactions_str = row["reactions"] or "{}"
+        try:
+            reactions = json.loads(reactions_str)
+        except Exception:
+            reactions = {}
+        
+        if emoji not in reactions:
+            reactions[emoji] = []
+        
+        if username in reactions[emoji]:
+            reactions[emoji].remove(username)
+            if not reactions[emoji]:
+                del reactions[emoji]
+        else:
+            reactions[emoji].append(username)
+            
+        new_reactions_str = json.dumps(reactions, ensure_ascii=False)
+        conn.execute("UPDATE messages SET reactions = ? WHERE id = ?", (new_reactions_str, message_id))
+        
+        updated_row = conn.execute(
+            "SELECT id, chorale_id, expediteur_type, texte, piece_jointe_content_type, "
+            "piece_jointe_filename, LENGTH(piece_jointe_donnees) AS piece_jointe_size, lu, "
+            "parent_id, reactions, modifie, supprime, created_at FROM messages WHERE id = ?",
+            (message_id,),
+        ).fetchone()
+        return dict(updated_row) if updated_row else None
 
 
 def marquer_lus(chorale_id: int, lecteur_type: str) -> None:

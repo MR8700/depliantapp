@@ -83,17 +83,17 @@ def _check_slot(slot: str) -> None:
 
 def list_medias(type_: Optional[str] = None) -> list[dict]:
     """Métadonnées seules (jamais les octets — voir get_media_bytes), pour
-    le picker de médias : id/type/nom/filename/chorale_id/created_at."""
+    le picker de médias : id/type/nom/filename/content_type/size/chorale_id/created_at."""
     with db.get_connection() as conn:
         if type_:
             rows = conn.execute(
-                "SELECT id, type, nom, filename, content_type, chorale_id, created_at "
+                "SELECT id, type, nom, filename, content_type, LENGTH(donnees) AS size, chorale_id, created_at "
                 "FROM medias WHERE type = ? ORDER BY created_at DESC",
                 (type_,),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT id, type, nom, filename, content_type, chorale_id, created_at "
+                "SELECT id, type, nom, filename, content_type, LENGTH(donnees) AS size, chorale_id, created_at "
                 "FROM medias ORDER BY created_at DESC"
             ).fetchall()
     return [dict(r) for r in rows]

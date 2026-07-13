@@ -11,6 +11,18 @@ class ChantBase(BaseModel):
     code_reference: Optional[str] = None
     langue: str = "fr"
     occasions: list[str] = Field(default_factory=list)
+    # "Mot clé" (identifiant lisible) : automatique à partir du titre par
+    # défaut (voir crud.create_chant/update_chant + slugify.unique_slug),
+    # mais l'éditeur de chant permet de le personnaliser — s'il est fourni
+    # ici (non vide), il prime sur la dérivation automatique.
+    slug: Optional[str] = None
+    mots_cles: list[str] = Field(default_factory=list)
+    actif: bool = True
+    favori: bool = False
+    chant_principal: bool = False
+    duree_estimee: Optional[str] = None
+    tonalite: Optional[str] = None
+    remarques: Optional[str] = None
 
 
 class ChantCreate(ChantBase):
@@ -25,11 +37,18 @@ class ChantUpdate(BaseModel):
     code_reference: Optional[str] = None
     langue: Optional[str] = None
     occasions: Optional[list[str]] = None
+    slug: Optional[str] = None
+    mots_cles: Optional[list[str]] = None
+    actif: Optional[bool] = None
+    favori: Optional[bool] = None
+    chant_principal: Optional[bool] = None
+    duree_estimee: Optional[str] = None
+    tonalite: Optional[str] = None
+    remarques: Optional[str] = None
 
 
 class Chant(ChantBase):
     id: int
-    slug: Optional[str] = None
     source_file: Optional[str] = None
     confiance: float = 1.0
 
@@ -102,6 +121,11 @@ class FeuilletBase(BaseModel):
     l'utilisateur (voir render/typography.py::ECHELLES_CORPS pour les
     bornes) ; si None (par défaut), le moteur choisit automatiquement la
     plus grande taille qui remplit les zones sans déborder."""
+    one_page_mode: bool = False
+    """Si True, réduit le feuillet à 1 seule page paysage en combinant
+    la moitié droite de la page 1 (Couverture) avec la partie gauche de la page 2 (C1/C2)."""
+    banniere_active: bool = True
+    """Si True, affiche la bannière Bon dimanche au bas du feuillet."""
 
 
 class CategoriePersonnalisee(BaseModel):

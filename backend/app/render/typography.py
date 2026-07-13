@@ -69,14 +69,15 @@ def mettre_en_gras_numero(texte_brut: str, numero: int) -> str:
 
 
 def mettre_en_gras_refrain(texte_echappe: str) -> str:
-    """Met en gras le préfixe « Réf : » et les rappels de refrain intégrés
-    au milieu d'un couplet (ex : Kyrie alterné avec « R: »)."""
+    """Met tout le refrain en gras (pas seulement le préfixe « Réf : ») afin
+    qu'il se distingue clairement des couplets sur le feuillet imprimé.
+    Ajoute le préfixe « Réf : » s'il est absent ; le laisse tel quel s'il
+    est déjà présent (ex : rappel « R: » intégré à un Kyrie alterné) — dans
+    les deux cas l'ensemble du texte se retrouve dans une seule paire de
+    balises <b>."""
     if not _MARQUEUR_REF.search(texte_echappe) and not _MARQUEUR_R.search(texte_echappe):
-        texte_echappe = f"<b>Réf :</b> {texte_echappe}"
-    else:
-        texte_echappe = _MARQUEUR_REF.sub(r"<b>\1</b>", texte_echappe)
-        texte_echappe = _MARQUEUR_R.sub(r"\1<b>\2</b>", texte_echappe)
-    return texte_echappe
+        texte_echappe = f"Réf : {texte_echappe}"
+    return f"<b>{texte_echappe}</b>"
 
 
 def construire_styles(taille_texte: float = TAILLE_TEXTE) -> dict:

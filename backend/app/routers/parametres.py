@@ -1,9 +1,10 @@
+import io
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from .. import auth, config
+from .. import auth, config, schemas, crud
 from ..deps import require_chorale
 
 router = APIRouter(prefix="/parametres", tags=["parametres"])
@@ -97,3 +98,79 @@ def retirer_image(slot: str, identite: auth.Identite = Depends(require_chorale))
     if slot not in config.IMAGE_SLOTS:
         raise HTTPException(status_code=404, detail="Emplacement d'image inconnu")
     return config.set_active_media(identite.compte_id, slot, None)
+
+
+@router.post("/preview-pdf")
+def preview_settings_pdf(
+    data: dict,
+    identite: auth.Identite = Depends(require_chorale)
+):
+    """Génère un PDF d'aperçu dynamique basé sur les réglages temporaires fournis
+    dans le corps de la requête, appliqués sur le dernier dépliant de la chorale
+    (ou un dépliant factice)."""
+    # 1. Récupérer le dernier dépliant de la chorale, ou en fabriquer un factice si vide
+    feuillets_existants = crud.list_feuillets(chorale_id=identite.compte_id, limit=1)
+    if feuillets_existants:
+        feuillet = crud.get_feuillet(feuillets_existants[0].id)
+    else:
+        # Création d'un feuillet factice par défaut pour l'aperçu avec des moments typiques de chants
+        moments_factices = [
+            schemas.MomentContenu(moment="Entrée", type="texte_libre", titre_libre="Chant d'Entrée", texte_libre="Refrain :\nPrends Seigneur et reçois,\ntoutes nos vies et nos joies.\n\nCouplet 1 :\nVoici le pain et le vin de nos terres.\nVoici le fruit de notre travail."),
+            schemas.MomentContenu(moment="Kyrie", type="texte_libre", titre_libre="Kyrie eleison", texte_libre="Kyrie eleison, Christe eleison, Kyrie eleison."),
+            schemas.MomentContenu(moment="Offertoire", type="texte_libre", titre_libre="Apporte ton offrande", texte_libre="Refrain :\nApporte ton offrande, devant l'autel,\ncar le Seigneur t'appelle à partager."),
+            schemas.MomentContenu(moment="Communion", type="texte_libre", titre_libre="Pain de Vie", texte_libre="Refrain :\nPain de Vie, Sang de l'Alliance,\nforce et joie de notre marche.\n\nCouplet 1 :\nTu nous donnes ta vie en partage.\nTu nous donnes ton pain pour la route."),
+            schemas.MomentContenu(moment="Envoi", type="texte_libre", titre_libre="Vierge Marie", texte_libre="Refrain :\nRegarde l'étoile, invoque Marie,\nsi tu la suis, tu ne crains rien.")
+        ]
+        feuillet = schemas.Feuillet(
+            id=0,
+            date="2026-07-13",
+            lieu="Paroisse Saint Esprit",
+            lectures=schemas.Lectures(premiere_lecture="1 Co 12, 12-31", psaume="Ps 99", deuxieme_lecture=None, evangile="Lc 4, 14-21"),
+            moments=moments_factices,
+            priere_active=True,
+            priere_texte="Seigneur, nous te prions pour la paix dans notre pays et dans le monde entier.",
+            taille_texte_manuelle=None,
+            one_page_mode=False,
+            banniere_active=True,
+            chorale_id=identite.compte_id
+        )
+
+    # 2. Remplacer one_page_mode, priere_active, priere_texte et banniere_active
+    if "one_page_mode" in data:
+        feuillet.one_page_mode = bool(data["one_page_mode"])
+    if "priere_active" in data:
+        feuillet.priere_active = bool(data["priere_active"])
+    if "priere_texte" in data:
+        feuillet.priere_texte = data["priere_texte"]
+    if "banniere_active" in data:
+        feuillet.banniere_active = bool(data["banniere_active"])
+
+    # 3. Construire le config_dict temporaire
+    config_actuelle = config.get_config(identite.compte_id)
+    config_temporaire = {**config_actuelle, **data}
+
+    # 4. Construire l'images dict temporaire
+    images = {}
+    for slot in config.IMAGE_SLOTS:
+        key = f"{slot}_media_id"
+        media_id = data.get(key) if key in data else config_actuelle.get(key)
+        if media_id:
+            res = config.get_media_bytes(media_id)
+            if res:
+                content, _ = res
+                images[slot] = config.ImageReader(io.BytesIO(content))
+            else:
+                images[slot] = None
+        else:
+            images[slot] = None
+
+    # 5. Rendre le PDF à la volée
+    from ..render.pdf import DepassementImpossible, render_feuillet_pdf_auto
+    try:
+        pdf_bytes, _ = render_feuillet_pdf_auto(feuillet, config_temporaire, images=images)
+    except DepassementImpossible as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={"message": str(exc), "moments_en_cause": exc.moments_en_cause},
+        )
+    return Response(content=pdf_bytes, media_type="application/pdf")
