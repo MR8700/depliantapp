@@ -6320,58 +6320,69 @@ function updateHeaderAndProfileAvatar() {
 async function init() {
   const debutChargement = Date.now();
 
-  const [identiteRes, metaRes] = await Promise.all([
-    api("/auth/status"),
-    api("/meta")
-  ]);
-  IDENTITE = identiteRes;
-  const meta = metaRes;
-
-  updateHeaderAndProfileAvatar();
-
-  document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
-  document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
-  if (IDENTITE.type === "super") {
-    // Le super-admin n'a pas d'espace chorale : ces vues (composition,
-    // dépliants, réglages) supposent toutes une chorale connectée.
-    ["composer", "depliants", "reglages"].forEach((v) => {
-      document.querySelector(`.nav-btn[data-view="${v}"]`).classList.add("hidden");
-    });
-  }
-
-  MOMENTS = meta.moments;
-  CATEGORIES = meta.categories;
-  peuplerSelectsCategories();
-  initBibliothequeControles();
-
-  if (IDENTITE.type === "super") {
-    // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages
-    // propres) : atterrit directement sur l'administration plutôt que sur
-    // la bibliothèque, qui reste néanmoins consultable pour la modération.
-    await Promise.all([
-      actualiserBadgeMessagerie(),
-      actualiserListeBibliotheque(),
-      actualiserAdmin()
+  try {
+    const [identiteRes, metaRes] = await Promise.all([
+      api("/auth/status"),
+      api("/meta")
     ]);
-    changerVue("admin");
-  } else {
-    initComposer();
-    document.getElementById("composer-result").innerHTML = indiceComposerHtml();
-    const [_, __, ___, params] = await Promise.all([
-      actualiserBadgeMessagerie(),
-      actualiserListeBibliotheque(),
-      actualiserEditeur(),
-      api("/parametres")
-    ]);
-    document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
+    IDENTITE = identiteRes;
+    const meta = metaRes;
+
+    updateHeaderAndProfileAvatar();
+
+    document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
+    document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
+    if (IDENTITE.type === "super") {
+      // Le super-admin n'a pas d'espace chorale : ces vues (composition,
+      // dépliants, réglages) supposent toutes une chorale connectée.
+      ["composer", "depliants", "reglages"].forEach((v) => {
+        document.querySelector(`.nav-btn[data-view="${v}"]`).classList.add("hidden");
+      });
+    }
+
+    MOMENTS = meta.moments;
+    CATEGORIES = meta.categories;
+    peuplerSelectsCategories();
+    initBibliothequeControles();
+
+    if (IDENTITE.type === "super") {
+      // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages
+      // propres) : atterrit directement sur l'administration plutôt que sur
+      // la bibliothèque, qui reste néanmoins consultable pour la modération.
+      await Promise.all([
+        actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
+        actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
+        actualiserAdmin().catch(e => console.error("Admin error:", e))
+      ]);
+      changerVue("admin");
+    } else {
+      initComposer();
+      document.getElementById("composer-result").innerHTML = indiceComposerHtml();
+      
+      const promises = [
+        actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
+        actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
+        actualiserEditeur().catch(e => console.error("Editor error:", e)),
+        api("/parametres").catch(e => {
+          console.error("Params error:", e);
+          return { chorale: "DepliantApp" };
+        })
+      ];
+      
+      const [_, __, ___, params] = await Promise.all(promises);
+      document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
+    }
+
+    // Initialisation à partir du hash courant ou de la bibliothèque par défaut
+    gererNavigationHash();
+    initTirerPourRafraichir();
+
+  } catch (err) {
+    console.error("Critical initialization failure:", err);
+  } finally {
+    const tempsRestant = 150 - (Date.now() - debutChargement);
+    setTimeout(masquerSplash, Math.max(0, tempsRestant));
   }
-
-  // Initialisation à partir du hash courant ou de la bibliothèque par défaut
-  gererNavigationHash();
-  initTirerPourRafraichir();
-
-  const tempsRestant = 150 - (Date.now() - debutChargement);
-  setTimeout(masquerSplash, Math.max(0, tempsRestant));
 }
 
 init();
