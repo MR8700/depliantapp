@@ -119,9 +119,7 @@ document.querySelectorAll(".profil-nav-item").forEach((btn) => {
 async function ouvrirProfil() {
   switcherSectionProfil("infos-personnelles");
   
-  // Set avatar initials or logo
-  const avatarEl = document.getElementById("profil-avatar");
-  avatarEl.textContent = (IDENTITE.nom || "?").charAt(0).toUpperCase();
+  updateHeaderAndProfileAvatar();
 
   document.getElementById("profil-info-username").textContent = IDENTITE.username;
   document.getElementById("profil-info-role").textContent = IDENTITE.type === "super" ? "Super-admin" : "Compte chorale";
@@ -161,15 +159,7 @@ async function ouvrirProfil() {
   document.getElementById("p-profil-langue").value = extraInfos.langue || "fr";
   document.getElementById("p-profil-fuseau").value = extraInfos.fuseau || "GMT";
 
-  // Check custom avatar
-  const storedAvatar = localStorage.getItem(`profil_avatar_${IDENTITE.username}`);
-  if (storedAvatar) {
-    avatarEl.innerHTML = `<img src="${storedAvatar}" style="width:100%;height:100%;object-fit:cover;">`;
-    currentProfileAvatarBase64 = storedAvatar;
-  } else if (IDENTITE.type === "chorale" && params.logo_gauche_media_id) {
-    // If chorale has active left logo, use it!
-    avatarEl.innerHTML = `<img src="/parametres/image/logo_gauche?t=${Date.now()}" style="width:100%;height:100%;object-fit:cover;">`;
-  }
+  currentProfileAvatarBase64 = localStorage.getItem(`profil_avatar_${IDENTITE.username}`) || null;
 
   document.getElementById("profil-mdp-form").reset();
   document.getElementById("profil-mdp-status").textContent = "";
@@ -196,17 +186,17 @@ document.getElementById("profil-avatar-input").addEventListener("change", (e) =>
   const reader = new FileReader();
   reader.onload = () => {
     const base64 = reader.result;
-    document.getElementById("profil-avatar").innerHTML = `<img src="${base64}" style="width:100%;height:100%;object-fit:cover;">`;
     currentProfileAvatarBase64 = base64;
     localStorage.setItem(`profil_avatar_${IDENTITE.username}`, base64);
+    updateHeaderAndProfileAvatar();
   };
   reader.readAsDataURL(file);
 });
 
 document.getElementById("btn-profil-avatar-delete").addEventListener("click", () => {
-  document.getElementById("profil-avatar").textContent = (IDENTITE.nom || "?").charAt(0).toUpperCase();
   currentProfileAvatarBase64 = null;
   localStorage.removeItem(`profil_avatar_${IDENTITE.username}`);
+  updateHeaderAndProfileAvatar();
 });
 
 // Show/hide eye password buttons
@@ -337,7 +327,7 @@ document.getElementById("btn-profil-enregistrer").addEventListener("click", asyn
         console.error("Error persisting profile params to DB", err);
       }
     }
-    
+    updateHeaderAndProfileAvatar();
     alert("Profil mis à jour.");
     fermerModale("profil-modal");
 
@@ -6276,15 +6266,69 @@ function initTirerPourRafraichir() {
   });
 }
 
+function updateHeaderAndProfileAvatar() {
+  const badge = document.getElementById("identite-badge");
+  const headerAvatar = document.getElementById("header-user-avatar");
+  const profileAvatar = document.getElementById("profil-avatar");
+  
+  if (!IDENTITE.authenticated) return;
+  
+  // Set badge name
+  let displayName = IDENTITE.type === "super" ? "Super-admin" : IDENTITE.nom;
+  
+  // Check if there are saved extra info for nom_complet
+  const extraInfos = JSON.parse(localStorage.getItem(`profil_extra_${IDENTITE.username}`) || "{}");
+  if (extraInfos.nom_complet) {
+    displayName = extraInfos.nom_complet;
+  }
+  
+  if (badge) badge.textContent = displayName;
+  
+  // Initials
+  const initials = (displayName || "?").charAt(0).toUpperCase();
+  
+  // Avatar image
+  const storedAvatar = localStorage.getItem(`profil_avatar_${IDENTITE.username}`);
+  if (storedAvatar) {
+    const imgHtml = `<img src="${storedAvatar}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+    if (headerAvatar) headerAvatar.innerHTML = imgHtml;
+    if (profileAvatar) profileAvatar.innerHTML = imgHtml;
+  } else {
+    if (headerAvatar) {
+      headerAvatar.innerHTML = "";
+      headerAvatar.textContent = initials;
+    }
+    if (profileAvatar) {
+      profileAvatar.innerHTML = "";
+      profileAvatar.textContent = initials;
+    }
+    
+    // Fallback to chorale logo if active
+    if (IDENTITE.type === "chorale") {
+      api("/parametres").then(params => {
+        if (params && params.logo_gauche_media_id && !localStorage.getItem(`profil_avatar_${IDENTITE.username}`)) {
+          const imgHtml = `<img src="/parametres/image/logo_gauche?t=${Date.now()}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`;
+          if (headerAvatar) headerAvatar.innerHTML = imgHtml;
+          if (profileAvatar) profileAvatar.innerHTML = imgHtml;
+        }
+      }).catch(err => {});
+    }
+  }
+}
+
 // --- init ---
 async function init() {
   const debutChargement = Date.now();
 
-  IDENTITE = await api("/auth/status");
-  const badge = document.getElementById("identite-badge");
-  if (IDENTITE.authenticated) {
-    badge.textContent = IDENTITE.type === "super" ? "Super-admin" : IDENTITE.nom;
-  }
+  const [identiteRes, metaRes] = await Promise.all([
+    api("/auth/status"),
+    api("/meta")
+  ]);
+  IDENTITE = identiteRes;
+  const meta = metaRes;
+
+  updateHeaderAndProfileAvatar();
+
   document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
   document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
   if (IDENTITE.type === "super") {
@@ -6295,35 +6339,38 @@ async function init() {
     });
   }
 
-  const meta = await api("/meta");
   MOMENTS = meta.moments;
   CATEGORIES = meta.categories;
   peuplerSelectsCategories();
   initBibliothequeControles();
-  await actualiserBadgeMessagerie();
 
   if (IDENTITE.type === "super") {
     // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages
     // propres) : atterrit directement sur l'administration plutôt que sur
     // la bibliothèque, qui reste néanmoins consultable pour la modération.
-    await actualiserListeBibliotheque();
-    await actualiserAdmin();
+    await Promise.all([
+      actualiserBadgeMessagerie(),
+      actualiserListeBibliotheque(),
+      actualiserAdmin()
+    ]);
     changerVue("admin");
   } else {
     initComposer();
     document.getElementById("composer-result").innerHTML = indiceComposerHtml();
-    await actualiserListeBibliotheque();
-    await actualiserEditeur();
-    const params = await api("/parametres");
+    const [_, __, ___, params] = await Promise.all([
+      actualiserBadgeMessagerie(),
+      actualiserListeBibliotheque(),
+      actualiserEditeur(),
+      api("/parametres")
+    ]);
     document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
-    document.getElementById("splash-titre").textContent = params.chorale || "DepliantApp";
   }
 
   // Initialisation à partir du hash courant ou de la bibliothèque par défaut
   gererNavigationHash();
   initTirerPourRafraichir();
 
-  const tempsRestant = 700 - (Date.now() - debutChargement);
+  const tempsRestant = 150 - (Date.now() - debutChargement);
   setTimeout(masquerSplash, Math.max(0, tempsRestant));
 }
 

@@ -35,16 +35,16 @@ body.no-scroll {
 }
 .splash.hidden { opacity: 0; pointer-events: none; }
 
-.splash-symbole { animation: splash-respire 1.8s ease-in-out infinite; }
-.splash-symbole svg circle:nth-child(2) { animation: splash-tour 6s linear infinite; transform-origin: 50% 50%; }
+.splash-symbole { animation: splash-respire 1.5s ease-in-out infinite; }
+.splash-symbole svg circle:nth-child(1) { animation: splash-tour 1.2s linear infinite; transform-origin: 50% 50%; }
 
 @keyframes splash-respire {
   0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.08); }
+  50% { transform: scale(1.06); }
 }
 @keyframes splash-tour {
-  from { stroke-dashoffset: 0; }
-  to { stroke-dashoffset: -200; }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .splash-titre { font-size: 1.4rem; font-weight: bold; margin: 0; letter-spacing: 0.5px; }
@@ -77,6 +77,15 @@ header h1 {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 40vw;
+}
+
+.header-user-badge:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+.header-user-badge:hover .header-avatar {
+  border-color: white !important;
+  background: rgba(255, 255, 255, 0.35) !important;
+  transform: scale(1.05);
 }
 
 .btn-hamburger {
