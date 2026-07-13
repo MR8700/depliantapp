@@ -1411,7 +1411,7 @@
 
 <div id="profil-modal" class="modal hidden">
   <div class="modal-content profil-dashboard-modal" style="max-width: 960px; width: 95%; padding: 0; display: flex; border-radius: 16px; overflow: hidden; height: 600px;">
-    <!-- Left Sidebar -->
+    <!-- Left Sidebar (Desktop) -->
     <div class="profil-sidebar" style="width: 240px; background: #f8fafc; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; padding: 20px;">
       <div>
         <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
@@ -1439,11 +1439,28 @@
     <div class="profil-body" style="flex: 1; display: flex; flex-direction: column; background: white;">
       <!-- Header -->
       <div class="profil-body-header" style="padding: 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
-        <div>
-          <h3 id="profil-body-title" style="margin: 0; font-size: 1.25rem; color: #1F4A7C;">Mon profil</h3>
-          <p id="profil-body-subtitle" style="margin: 4px 0 0 0; font-size: 0.85rem; color: #64748b;">Gérez les informations de votre compte.</p>
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <!-- Hamburger menu button visible only on mobile -->
+          <button type="button" id="profil-menu-burger" style="display: none; border: 1px solid #e2e8f0; background: white; font-size: 1.2rem; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: #1F4A7C;">☰ Menu</button>
+          <div>
+            <h3 id="profil-body-title" style="margin: 0; font-size: 1.25rem; color: #1F4A7C;">Mon profil</h3>
+            <p id="profil-body-subtitle" style="margin: 4px 0 0 0; font-size: 0.85rem; color: #64748b;">Gérez les informations de votre compte.</p>
+          </div>
         </div>
         <button type="button" class="modal-close-x" data-close="profil-modal" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">&times;</button>
+      </div>
+
+      <!-- Mobile Dropdown Navigation Menu (hidden by default) -->
+      <div id="profil-menu-dropdown" class="hidden" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 24px; flex-direction: column; gap: 8px;">
+        <button type="button" class="profil-nav-item active" data-section="infos-personnelles" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #1F4A7C; cursor: pointer; border-radius: 8px;">
+          <span>👤</span> Informations
+        </button>
+        <button type="button" class="profil-nav-item" data-section="securite" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+          <span>🔒</span> Sécurité
+        </button>
+        <button type="button" class="profil-nav-item" data-section="infos-compte" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+          <span>ℹ️</span> Infos du compte
+        </button>
       </div>
 
       <!-- Scrollable content -->

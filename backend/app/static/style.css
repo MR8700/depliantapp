@@ -4927,5 +4927,34 @@ input.special-label:focus {
   transform: translateY(-2px);
 }
 
+/* ==========================================================================
+   MON PROFIL RESPONSIVE (👤 Menu Berger sur Mobile)
+   ========================================================================== */
+@media (max-width: 768px) {
+  .profil-dashboard-modal {
+    flex-direction: column !important;
+    height: 90vh !important;
+    max-height: 90vh !important;
+  }
+  .profil-sidebar {
+    display: none !important; /* Masquer la barre latérale sur mobile */
+  }
+  #profil-menu-burger {
+    display: block !important; /* Afficher le bouton hamburger */
+  }
+  #profil-menu-dropdown {
+    display: none;
+  }
+  #profil-menu-dropdown:not(.hidden) {
+    display: flex !important;
+  }
+  .profil-body {
+    height: 100% !important;
+  }
+  .profil-body-content {
+    padding: 16px !important;
+  }
+}
+
 
 

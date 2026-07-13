@@ -113,11 +113,18 @@ function switcherSectionProfil(sectionName) {
 document.querySelectorAll(".profil-nav-item").forEach((btn) => {
   btn.addEventListener("click", () => {
     switcherSectionProfil(btn.dataset.section);
+    document.getElementById("profil-menu-dropdown").classList.add("hidden");
   });
+});
+
+// Gestion du menu burger
+document.getElementById("profil-menu-burger").addEventListener("click", () => {
+  document.getElementById("profil-menu-dropdown").classList.toggle("hidden");
 });
 
 async function ouvrirProfil() {
   switcherSectionProfil("infos-personnelles");
+  document.getElementById("profil-menu-dropdown").classList.add("hidden");
   
   updateHeaderAndProfileAvatar();
 
