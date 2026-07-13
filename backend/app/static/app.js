@@ -395,8 +395,10 @@ document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
 });
 
 function verifierModalesOuvertes() {
-  const ceOuvert = !document.getElementById("chant-editor").classList.contains("hidden");
-  const iwOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
+  const ceEl = document.getElementById("chant-editor");
+  const ceOuvert = ceEl ? !ceEl.classList.contains("hidden") : false;
+  const iwEl = document.getElementById("import-workspace-modal");
+  const iwOuvert = iwEl ? !iwEl.classList.contains("hidden") : false;
   return ceOuvert || iwOuvert;
 }
 
@@ -446,17 +448,30 @@ window.addEventListener("beforeunload", (e) => {
 // Empêche la page principale de défiler pendant qu'une modale (détail/édition
 // de chant, sélecteur de chant) est ouverte par-dessus.
 function syncModalLock() {
-  const editeurOuvert = !document.getElementById("chant-editor").classList.contains("hidden");
-  const pickerOuvert = !document.getElementById("chant-picker").classList.contains("hidden");
-  const detailOuvert = !document.getElementById("chant-detail-modal").classList.contains("hidden");
-  const workspaceOuvert = !document.getElementById("import-workspace-modal").classList.contains("hidden");
-  const tgeOuvert = !document.getElementById("texte-grand-editor").classList.contains("hidden");
+  const edEl = document.getElementById("chant-editor");
+  const editeurOuvert = edEl ? !edEl.classList.contains("hidden") : false;
+  
+  const pkEl = document.getElementById("chant-picker");
+  const pickerOuvert = pkEl ? !pkEl.classList.contains("hidden") : false;
+  
+  const dtEl = document.getElementById("chant-detail-modal");
+  const detailOuvert = dtEl ? !dtEl.classList.contains("hidden") : false;
+  
+  const wsEl = document.getElementById("import-workspace-modal");
+  const workspaceOuvert = wsEl ? !wsEl.classList.contains("hidden") : false;
+  
+  const tgEl = document.getElementById("texte-grand-editor");
+  const tgeOuvert = tgEl ? !tgEl.classList.contains("hidden") : false;
+  
   document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || detailOuvert || workspaceOuvert || tgeOuvert);
 }
 ["chant-editor", "chant-picker", "chant-detail-modal", "import-workspace-modal", "texte-grand-editor"].forEach((id) => {
-  new MutationObserver(syncModalLock).observe(document.getElementById(id), {
-    attributes: true, attributeFilter: ["class"],
-  });
+  const el = document.getElementById(id);
+  if (el) {
+    new MutationObserver(syncModalLock).observe(el, {
+      attributes: true, attributeFilter: ["class"],
+    });
+  }
 });
 
 // --- Modales : ouverture/fermeture animées + support du bouton retour
@@ -471,6 +486,7 @@ const DUREE_TRANSITION_MODALE = 220;
 
 function ouvrirModale(id) {
   const el = document.getElementById(id);
+  if (!el) return;
   if (!el.classList.contains("hidden")) return;
   el.classList.remove("hidden");
   requestAnimationFrame(() => el.classList.add("visible"));
@@ -480,6 +496,7 @@ function ouvrirModale(id) {
 
 function fermerModale(id) {
   const el = document.getElementById(id);
+  if (!el) return;
   if (el.classList.contains("hidden")) return;
   el.classList.remove("visible");
   modalStack = modalStack.filter((m) => m !== id);
