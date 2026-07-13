@@ -56,6 +56,7 @@ def status(request: Request):
         "type": identite.type,
         "compte_id": identite.compte_id,
         "nom": nom,
+        "username": identite.username,
         "must_change_password": bool(compte["must_change_password"]) if compte else False,
     }
 

@@ -6,10 +6,10 @@
 // API en cache risquerait d'afficher des données périmées sans que
 // l'utilisateur s'en rende compte. Le cache ne sert que de secours si le
 // réseau est indisponible, jamais de source principale.
-const CACHE_NAME = "depliantapp-shell-v1";
+const CACHE_NAME = "depliantapp-shell-v2";
 const FICHIERS_COQUILLE = [
-  "/", "/index.html", "/login.html", "/style.css", "/app.js",
-  "/manifest.json", "/icon-192.png", "/icon-512.png",
+  "/", "/index.html", "/login.html", "/style.css?v=2", "/app.js?v=2",
+  "/manifest.json", "/favicon.svg", "/icon-192.png", "/icon-512.png",
 ];
 
 self.addEventListener("install", (event) => {
@@ -29,8 +29,9 @@ self.addEventListener("activate", (event) => {
 });
 
 function estFichierCoquille(url) {
-  const chemin = new URL(url).pathname;
-  return FICHIERS_COQUILLE.includes(chemin);
+  const urlObj = new URL(url);
+  const pathWithSearch = urlObj.pathname + urlObj.search;
+  return FICHIERS_COQUILLE.includes(pathWithSearch) || FICHIERS_COQUILLE.includes(urlObj.pathname);
 }
 
 self.addEventListener("fetch", (event) => {
