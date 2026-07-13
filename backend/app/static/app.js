@@ -530,7 +530,6 @@ window.addEventListener("popstate", () => {
 const FERMETURE_X_DELEGUEE = {
   "chant-editor": "ce-fermer",
   "chant-picker": "picker-close",
-  "chant-detail-modal": "cd-btn-annuler",
   "import-workspace-modal": "iw-btn-annuler",
   "texte-grand-editor": "tge-annuler",
 };
