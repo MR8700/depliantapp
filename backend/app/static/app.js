@@ -5086,25 +5086,40 @@ async function actualiserAdminChorales() {
     const id = Number(el.dataset.id);
     const chorale = chorales.find(c => c.id === id);
     el.querySelector(".btn-reset-mdp").addEventListener("click", async (e) => {
-      if (!confirm(`Réinitialiser le mot de passe de la chorale "${chorale ? chorale.nom : ''}" ? Elle devra en définir un nouveau à sa prochaine connexion.`)) return;
-      const res = await avecChargement(e.currentTarget, () => api(`/chorales/${id}/reset-password`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      }));
-      
-      document.getElementById("reset-modal-nom").textContent = chorale ? chorale.nom : "Chorale";
-      document.getElementById("reset-modal-mdp").textContent = res.mot_de_passe_initial;
-      
-      document.getElementById("btn-copy-reset-mdp").onclick = () => {
-        navigator.clipboard.writeText(res.mot_de_passe_initial);
-        const copyBtn = document.getElementById("btn-copy-reset-mdp");
-        copyBtn.innerHTML = "<span>✓</span> Copié !";
-        setTimeout(() => { copyBtn.innerHTML = "<span>📋</span> Copier"; }, 2000);
-      };
-      
-      ouvrirModale("admin-reset-modal");
-      await actualiserAdminChorales();
+      try {
+        if (!confirm(`Réinitialiser le mot de passe de la chorale "${chorale ? chorale.nom : ''}" ? Elle devra en définir un nouveau à sa prochaine connexion.`)) return;
+        const res = await avecChargement(e.currentTarget, () => api(`/chorales/${id}/reset-password`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({}),
+        }));
+        
+        document.getElementById("reset-modal-nom").textContent = chorale ? chorale.nom : "Chorale";
+        document.getElementById("reset-modal-mdp").textContent = res.mot_de_passe_initial;
+        
+        document.getElementById("btn-copy-reset-mdp").onclick = () => {
+          if (navigator.clipboard) {
+            navigator.clipboard.writeText(res.mot_de_passe_initial);
+          } else {
+            // Fallback pour les contextes non sécurisés (HTTP)
+            const tempEl = document.createElement("textarea");
+            tempEl.value = res.mot_de_passe_initial;
+            document.body.appendChild(tempEl);
+            tempEl.select();
+            document.execCommand("copy");
+            document.body.removeChild(tempEl);
+          }
+          const copyBtn = document.getElementById("btn-copy-reset-mdp");
+          copyBtn.innerHTML = "<span>✓</span> Copié !";
+          setTimeout(() => { copyBtn.innerHTML = "<span>📋</span> Copier"; }, 2000);
+        };
+        
+        ouvrirModale("admin-reset-modal");
+        await actualiserAdminChorales();
+      } catch (err) {
+        console.error("Failed to reset password:", err);
+        alert("Erreur de réinitialisation : " + err.message);
+      }
     });
   });
 }
