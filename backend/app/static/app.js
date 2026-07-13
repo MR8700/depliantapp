@@ -5796,7 +5796,7 @@ window.selectConversation = function(choraleId, choraleNom) {
   });
   
   // En mobile, on bascule vers la zone de chat
-  if (window.innerWidth <= 576) {
+  if (window.innerWidth <= 768) {
     document.querySelector(".messagerie-sidebar").classList.add("inactive-tab");
     document.querySelector(".messagerie-chat-area").classList.add("active-tab");
   }
@@ -6061,6 +6061,15 @@ function initMessagerieEventListeners() {
         infoPanel.classList.add("hidden");
       });
     }
+  }
+
+  // Bouton retour messagerie mobile
+  const btnBackMessagerie = document.getElementById("btn-back-messagerie-mobile");
+  if (btnBackMessagerie) {
+    btnBackMessagerie.addEventListener("click", () => {
+      document.querySelector(".messagerie-sidebar").classList.remove("inactive-tab");
+      document.querySelector(".messagerie-chat-area").classList.remove("active-tab");
+    });
   }
 }
 

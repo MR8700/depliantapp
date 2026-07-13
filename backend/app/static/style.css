@@ -3114,6 +3114,7 @@ input.special-label:focus {
   height: 100%;
   border: none;
   display: block;
+  transform-origin: 0 0 !important;
 }
 
 .preview-controls-bar {
@@ -4084,9 +4085,13 @@ input.special-label:focus {
   }
 }
 
-@media (max-width: 576px) {
+@media (max-width: 768px) {
   .hidden-desktop {
     display: flex !important;
+  }
+  
+  #btn-back-messagerie-mobile {
+    display: block !important;
   }
   
   /* Tabs switching on mobile for settings */
@@ -4143,7 +4148,7 @@ input.special-label:focus {
   display: none;
 }
 
-@media (max-width: 576px) {
+@media (max-width: 768px) {
   .back-mobile-btn {
     display: block;
   }
