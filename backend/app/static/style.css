@@ -105,6 +105,7 @@ header h1 {
   display: flex; flex-direction: column; gap: 8px;
   transform: translateX(-100%); transition: transform 0.2s ease-out;
   box-shadow: 2px 0 12px rgba(0,0,0,0.15);
+  overflow-y: auto;
 }
 .menu-berger.ouvert { transform: translateX(0); }
 
@@ -4960,6 +4961,219 @@ input.special-label:focus {
   }
   .profil-body-content {
     padding: 16px !important;
+  }
+}
+
+@media (max-width: 720px) {
+  .modal {
+    align-items: center !important;
+    padding: 16px !important;
+  }
+  .modal-content {
+    border-radius: 16px !important;
+    padding: 20px 16px 16px !important;
+    max-height: 90vh !important;
+    width: 100% !important;
+    max-width: 95vw !important;
+    transform: scale(0.96) translateY(0) !important;
+  }
+  .modal-content::before {
+    display: none !important;
+  }
+}
+
+@media (max-width: 768px) {
+  /* Global card layout for saas-table */
+  table.saas-table {
+    display: block !important;
+    width: 100% !important;
+    background: transparent !important;
+  }
+  table.saas-table thead {
+    display: none !important;
+  }
+  table.saas-table tbody {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 16px !important;
+    width: 100% !important;
+  }
+  table.saas-table tbody tr {
+    display: block !important;
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 16px !important;
+    padding: 16px !important;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03) !important;
+    position: relative !important;
+    margin-bottom: 0 !important;
+  }
+  table.saas-table tbody tr td {
+    display: inline-block !important;
+    border: none !important;
+    padding: 0 !important;
+    margin-right: 12px !important;
+    margin-bottom: 8px !important;
+    vertical-align: middle !important;
+    width: auto !important;
+  }
+  
+  /* Labeled and positioned elements in saas-table */
+  table.saas-table tbody tr td:has(input[type="checkbox"]) {
+    position: absolute !important;
+    top: 18px !important;
+    right: 16px !important;
+    margin: 0 !important;
+    z-index: 10 !important;
+  }
+  table.saas-table tbody tr td:nth-child(2) {
+    display: block !important;
+    padding-right: 32px !important;
+    margin-bottom: 12px !important;
+    width: 100% !important;
+  }
+  table.saas-table tbody tr td:has(.progress-bar-cell) {
+    display: block !important;
+    width: 100% !important;
+    margin-bottom: 12px !important;
+  }
+  table.saas-table tbody tr td .progress-bar-cell {
+    margin-top: 4px !important;
+  }
+  table.saas-table tbody tr td:last-child {
+    display: block !important;
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 12px !important;
+    margin-top: 8px !important;
+    margin-right: 0 !important;
+    margin-bottom: 0 !important;
+    width: 100% !important;
+  }
+  table.saas-table tbody tr td:last-child > div {
+    justify-content: flex-end !important;
+  }
+
+  /* Library lists linear-to-cards transform */
+  .songs-container.list {
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .songs-container.list .chant-card {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    background: white !important;
+    border: 1px solid var(--bordure) !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+    gap: 12px !important;
+    position: relative !important;
+  }
+  .songs-container.list .chant-card .card-icon-circle {
+    display: none !important;
+  }
+  .songs-container.list .chant-card .card-right-aside {
+    flex-direction: row-reverse !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    width: 100% !important;
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 12px !important;
+    margin-top: 4px !important;
+  }
+  .songs-container.list .chant-card .card-main-content {
+    width: 100% !important;
+  }
+
+  /* Depliants view dots menu and icon group */
+  .depliant-icon-buttons-group {
+    display: none !important;
+  }
+  .depliant-menu-dots-btn {
+    display: flex !important;
+    margin-left: auto !important;
+  }
+
+  /* Collapse button text to icons on mobile */
+  .btn-text {
+    display: none !important;
+  }
+
+  /* Horizontal scrolling filter tabs */
+  .depliants-tabs-wrapper {
+    flex-wrap: nowrap !important;
+    overflow-x: auto !important;
+    padding-bottom: 6px !important;
+    width: 100% !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  .tab-filter-btn {
+    flex-shrink: 0 !important;
+  }
+
+  /* Composer Moments linear table-to-cards list */
+  .moments-table-header, .special-table-header {
+    display: none !important;
+  }
+  .moment-row {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    padding: 16px !important;
+  }
+  .moment-row > div {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  .moment-row .col-order::before {
+    content: "Ordre : " !important;
+    font-size: 0.85rem !important;
+    color: #64748b !important;
+    font-weight: 600 !important;
+    margin-right: 4px !important;
+  }
+  .moment-row .col-name {
+    font-weight: 700 !important;
+    color: #1e3a8a !important;
+    font-size: 1rem !important;
+  }
+  .moment-row .col-actions {
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 12px !important;
+    margin-top: 4px !important;
+    justify-content: flex-end !important;
+  }
+
+  /* Context Menu Popovers positioning bounds */
+  .context-menu-popover {
+    min-width: 180px !important;
+  }
+
+  /* Admin Console Cards styling */
+  .chorale-card, .demande-card, .masque-card {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    background: white !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 16px !important;
+  }
+  .chorale-card .toolbar, .demande-card .toolbar, .masque-card .toolbar {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 12px !important;
+    margin-top: 4px !important;
+  }
+  .chorale-card .toolbar button, .demande-card .toolbar button, .masque-card .toolbar button {
+    width: 100% !important;
+    justify-content: center !important;
   }
 }
 

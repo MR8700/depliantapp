@@ -37,6 +37,7 @@ let apercuTimer = null;
 let importWorkspaceChants = [];
 let editImportIndex = null;
 let dernieresStats = null;
+let editeurChantsCache = [];
 
 // --- Bibliothèque State & Mappings ---
 let vueBibliothequeMode = localStorage.getItem("vueBibliothequeMode") || "list"; // "list" | "grid"
@@ -713,13 +714,95 @@ function etatVideHtml(icone, titre, sousTitre) {
     </li>`;
 }
 
+function afficherIndicateurHorsLigne() {
+  let indicator = document.getElementById("offline-mode-indicator");
+  if (!indicator) {
+    indicator = document.createElement("div");
+    indicator.id = "offline-mode-indicator";
+    indicator.style.cssText = "background: #f59e0b; color: white; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 6px 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 6px;";
+    indicator.innerHTML = "<span>⚠️ Mode hors-ligne actif (connexion faible ou inexistante) — Affichage des données en cache</span>";
+    document.body.appendChild(indicator);
+    document.body.style.paddingTop = "28px";
+  }
+}
+
+function retirerIndicateurHorsLigne() {
+  const indicator = document.getElementById("offline-mode-indicator");
+  if (indicator) {
+    indicator.remove();
+    document.body.style.paddingTop = "0";
+  }
+}
+
+function sauvegarderChantsEnCacheLocaux(chants) {
+  try {
+    let cache = [];
+    const stored = localStorage.getItem("depliantapp_chants_local_db");
+    if (stored) {
+      cache = JSON.parse(stored);
+    }
+    const map = new Map(cache.map(c => [c.id, c]));
+    chants.forEach(c => map.set(c.id, c));
+    localStorage.setItem("depliantapp_chants_local_db", JSON.stringify(Array.from(map.values())));
+  } catch (e) {
+    console.error("Erreur de sauvegarde cache", e);
+  }
+}
+
+function rechercherChantsLocaux(q, categorie, occasion) {
+  try {
+    const stored = localStorage.getItem("depliantapp_chants_local_db");
+    if (!stored) return [];
+    let list = JSON.parse(stored);
+    if (categorie) {
+      list = list.filter(c => c.categorie === categorie);
+    }
+    if (occasion) {
+      const occLower = occasion.toLowerCase();
+      list = list.filter(c => c.occasions && c.occasions.some(o => o.toLowerCase().includes(occLower)));
+    }
+    if (q) {
+      const qLower = q.toLowerCase();
+      list = list.filter(c => {
+        const titreMatch = c.titre && c.titre.toLowerCase().includes(qLower);
+        const refrainMatch = c.refrain && c.refrain.toLowerCase().includes(qLower);
+        const coupletsMatch = c.couplets && c.couplets.some(cp => cp.toLowerCase().includes(qLower));
+        return titreMatch || refrainMatch || coupletsMatch;
+      });
+    }
+    return list;
+  } catch (e) {
+    console.error("Erreur recherche locale", e);
+    return [];
+  }
+}
+
 async function rechercherChants(q, categorie, occasion) {
   const params = new URLSearchParams();
   if (q) params.set("q", q);
   if (categorie) params.set("categorie", categorie);
   if (occasion) params.set("occasion", occasion);
   params.set("limit", "1000");
-  return api(`/chants?${params.toString()}`);
+
+  const url = `/chants?${params.toString()}`;
+  
+  const timeoutPromise = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error("Timeout")), 3500)
+  );
+
+  try {
+    const data = await Promise.race([
+      api(url),
+      timeoutPromise
+    ]);
+    sauvegarderChantsEnCacheLocaux(data);
+    retirerIndicateurHorsLigne();
+    return data;
+  } catch (err) {
+    console.warn("API/Fetch a échoué ou timeout, basculement en mode hors-ligne :", err);
+    afficherIndicateurHorsLigne();
+    return rechercherChantsLocaux(q, categorie, occasion);
+  }
 }
 
 function actualiserBibliothequeHeaderActions() {
@@ -1311,11 +1394,10 @@ function bindMomentCardEvents(row, id) {
   
   const btnEye = row.querySelector(".btn-action-eye");
   if (btnEye) {
-    btnEye.addEventListener("click", async () => {
+    btnEye.addEventListener("click", () => {
       const state = momentsState[id];
       if (state && state.chant_id) {
-        const chant = await api(`/chants/${state.chant_id}`);
-        ouvrirDetailChant(chant);
+        ouvrirDetailsChant(state.chant_id, false);
       }
     });
   }
@@ -1325,8 +1407,7 @@ function bindMomentCardEvents(row, id) {
     btnPencil.addEventListener("click", () => {
       const state = momentsState[id];
       if (state && state.type === "chant" && state.chant_id) {
-        changerVue("editeur");
-        ouvrirEditeurChant(state.chant_id);
+        ouvrirDetailsChant(state.chant_id, true);
       } else {
         if (editPanel) editPanel.classList.toggle("collapsed");
       }
@@ -3330,6 +3411,7 @@ async function actualiserEditeur() {
   
   // Load full chants list (increase limit to 500 to fetch them all)
   const chants = await api(`/chants?limit=500`);
+  editeurChantsCache = chants;
   idsAffichesEditeur = chants.map((c) => c.id);
 
   // 1. Calculate Stats Card values BEFORE filters
@@ -3701,194 +3783,365 @@ function autoGenererMotsClesSiNonModifie() {
   genererMotsCles();
 }
 
-document.getElementById("ce-titre").addEventListener("input", autoGenererMotsClesSiNonModifie);
-document.getElementById("ce-categorie").addEventListener("change", autoGenererMotsClesSiNonModifie);
-document.getElementById("ce-refrain").addEventListener("input", autoGenererMotsClesSiNonModifie);
-document.getElementById("ce-couplets").addEventListener("input", autoGenererMotsClesSiNonModifie);
+let currentDetailChant = null;
+let currentDetailSource = null;
+let currentDetailIndexOrId = null;
 
-document.getElementById("ce-mots-cles").addEventListener("input", (e) => {
-  e.target.dataset.modifieManuel = "1";
-});
-
-document.getElementById("ce-btn-generer-mots").addEventListener("click", () => {
-  const ceMots = document.getElementById("ce-mots-cles");
-  ceMots.dataset.modifieManuel = "";
-  genererMotsCles();
-});
-
-async function ouvrirDetailsChant(id) {
-  const chant = await api(`/chants/${id}`);
+function ouvrirDetailsChantDynamique(chant, source, indexOrId, startInEditMode = false) {
+  currentDetailChant = chant;
+  currentDetailSource = source;
+  currentDetailIndexOrId = indexOrId;
   
-  document.getElementById("det-titre").textContent = chant.titre || "(sans titre)";
-  document.getElementById("det-categorie-badge").textContent = categorieLabel(chant.categorie);
-  document.getElementById("det-auteur").textContent = `Auteur / Compositeur : ${chant.auteur || chant.compositeur || "Inconnu"}`;
-  document.getElementById("det-langue").textContent = chant.langue || "fr";
-  document.getElementById("det-tonalite").textContent = chant.tonalite || "-";
-  document.getElementById("det-duree").textContent = chant.duree_estimee || "-";
-  document.getElementById("det-info-sup").textContent = `Identifiant : #${chant.id} | Slug : ${chant.slug || "-"}`;
-
-  // Refrain Section
-  const refrainSec = document.getElementById("det-refrain-sec");
-  if (chant.refrain) {
-    refrainSec.style.display = "block";
-    document.getElementById("det-refrain").textContent = chant.refrain;
+  if (startInEditMode) {
+    afficherDetailsChantModification();
   } else {
-    refrainSec.style.display = "none";
+    afficherDetailsChantLecture();
   }
-
-  // Couplets Section
-  const coupletsSec = document.getElementById("det-couplets-sec");
-  const coupletsList = document.getElementById("det-couplets-list");
-  if (chant.couplets && chant.couplets.length > 0) {
-    coupletsSec.style.display = "block";
-    coupletsList.innerHTML = chant.couplets.map((c, idx) => `
-      <div style="display:flex; gap:12px;">
-        <span style="font-weight:700; color:#2563eb; font-size:0.95rem;">${idx + 1}.</span>
-        <p style="margin:0; font-size:0.95rem; line-height:1.6; color:#334155; white-space:pre-line;">${escapeHtml(c)}</p>
-      </div>
-    `).join("");
-  } else {
-    coupletsSec.style.display = "none";
-  }
-
-  // Remarques Section
-  const remarquesSec = document.getElementById("det-remarques-sec");
-  if (chant.remarques) {
-    remarquesSec.style.display = "block";
-    document.getElementById("det-remarques").textContent = chant.remarques;
-  } else {
-    remarquesSec.style.display = "none";
-  }
-
-  // Actions
-  const btnPub = document.getElementById("det-btn-public");
-  btnPub.textContent = chant.actif !== false ? "Rendre privé" : "Rendre public";
-  btnPub.onclick = async (e) => {
-    await avecChargement(e.currentTarget, async () => {
-      await api(`/chants/${id}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...chant, actif: !chant.actif }),
-      });
-    });
-    fermerModale("chant-details-modal");
-    actualiserEditeur();
-  };
-
-  document.getElementById("det-btn-supprimer").onclick = async (e) => {
-    if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
-    await avecChargement(e.currentTarget, async () => {
-      if (IDENTITE.type === "super") {
-        await api(`/chants/${id}`, { method: "DELETE" });
-      } else {
-        await api("/moderation/demandes", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type_cible: "chant", cible_id: id }),
-        });
-      }
-    });
-    fermerModale("chant-details-modal");
-    actualiserEditeur();
-  };
-
-  document.getElementById("det-btn-modifier").onclick = () => {
-    fermerModale("chant-details-modal");
-    ouvrirEditeurChant(id);
-  };
-
   ouvrirModale("chant-details-modal");
 }
 
-async function ouvrirEditeurChant(id) {
-  const chant = await api(`/chants/${id}`);
-  document.getElementById("ce-id").value = chant.id;
-  document.getElementById("ce-titre").value = chant.titre || "";
-  const champSlug = document.getElementById("ce-slug");
-  champSlug.value = chant.slug || "";
-  champSlug.dataset.modifieManuel = "1";
-  document.getElementById("ce-categorie").value = chant.categorie;
-  syncChampNouvelleCategorie();
-  document.getElementById("ce-refrain").value = chant.refrain || "";
-  setCoupletsTexte(chant.couplets);
-  document.getElementById("ce-code").value = chant.code_reference || "";
-  document.getElementById("ce-occasions").value = (chant.occasions || []).join(", ");
-  document.getElementById("ce-supprimer").classList.remove("hidden");
+function afficherDetailsChantLecture() {
+  const chant = currentDetailChant;
+  const modalContent = document.querySelector("#chant-details-modal .modal-content");
   
-  // Charger les nouveaux métadonnées
-  document.getElementById("ce-langue").value = chant.langue || "fr";
-  document.getElementById("ce-mots-cles").value = (chant.mots_cles || []).join(", ");
-  document.getElementById("ce-mots-cles").dataset.modifieManuel = (chant.mots_cles && chant.mots_cles.length > 0) ? "1" : "";
-  document.getElementById("ce-actif").checked = chant.actif !== false;
-  document.getElementById("ce-favori").checked = chant.favori === true;
-  document.getElementById("ce-chant-principal").checked = chant.chant_principal === true;
-  document.getElementById("ce-tonalite").value = chant.tonalite || "";
-  document.getElementById("ce-duree-estimee").value = chant.duree_estimee || "";
-  document.getElementById("ce-remarques").value = chant.remarques || "";
-  
-  // Replier la section details
-  document.querySelector(".ce-details").open = false;
+  const coupletsHtml = (chant.couplets || []).map((c, idx) => `
+    <div style="display:flex; gap:12px;">
+      <span style="font-weight:700; color:#2563eb; font-size:0.95rem;">${idx + 1}.</span>
+      <p style="margin:0; font-size:0.95rem; line-height:1.6; color:#334155; white-space:pre-line;">${escapeHtml(c)}</p>
+    </div>
+  `).join("");
 
-  const suggestionEl = document.getElementById("ce-suggestion");
-  suggestionEl.classList.add("hidden");
-  try {
-    const suggestion = await api(`/chants/${id}/suggestion`);
-    if (suggestion && suggestion.categorie !== chant.categorie) {
-      suggestionEl.classList.remove("hidden");
-      suggestionEl.innerHTML = `Catégorie suggérée : <b>${categorieLabel(suggestion.categorie)}</b> (${Math.round(suggestion.score * 100)}%)
-        <button type="button" id="ce-appliquer-suggestion">Appliquer</button>`;
-      document.getElementById("ce-appliquer-suggestion").addEventListener("click", () => {
-        document.getElementById("ce-categorie").value = suggestion.categorie;
-        syncChampNouvelleCategorie();
-        suggestionEl.classList.add("hidden");
+  const vis = chant.actif !== false ? "public" : "prive";
+  const visText = vis === "public" ? "Rendre privé" : "Rendre public";
+  
+  const isImport = currentDetailSource === "import";
+  const scoreBadge = isImport 
+    ? `<span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; margin-right: 8px;">Confiance: ${Math.round((chant.confiance ?? 1) * 100)}%</span>`
+    : "";
+
+  modalContent.innerHTML = `
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 20px; position: relative; flex-shrink: 0;">
+      <div style="display:flex; align-items:center; flex-wrap:wrap;">
+        <span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; margin-right: 8px;">${categorieLabel(chant.categorie)}</span>
+        ${scoreBadge}
+      </div>
+      <h2 style="margin: 0; font-size: 1.4rem; font-weight: 700;">${escapeHtml(chant.titre || "(sans titre)")}</h2>
+      <p style="margin: 4px 0 0 0; font-size: 0.85rem; opacity: 0.9; font-style: italic;">Auteur : ${escapeHtml(chant.auteur || chant.compositeur || "Inconnu")}</p>
+      <button type="button" style="position: absolute; top: 16px; right: 16px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" onclick="fermerModale('chant-details-modal')">&times;</button>
+    </div>
+    
+    <div style="padding: 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto; background: #F8FAFC;">
+      ${chant.refrain ? `
+        <div style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
+          <h4 style="margin: 0 0 8px 0; color: #1e3a8a; font-size: 0.85rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Refrain</h4>
+          <p style="margin: 0; font-size: 0.95rem; line-height: 1.6; color: #1e293b; font-style: italic; white-space: pre-line;">${escapeHtml(chant.refrain)}</p>
+        </div>
+      ` : ""}
+      
+      ${chant.couplets && chant.couplets.length > 0 ? `
+        <div style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
+          <h4 style="margin: 0 0 12px 0; color: #1e3a8a; font-size: 0.85rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Couplets</h4>
+          <div style="display: flex; flex-direction: column; gap: 16px;">${coupletsHtml}</div>
+        </div>
+      ` : ""}
+      
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Langue</span>
+          <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A; text-transform: uppercase;">${escapeHtml(chant.langue || "fr")}</span>
+        </div>
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Tonalité</span>
+          <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">${escapeHtml(chant.tonalite || "-")}</span>
+        </div>
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Durée</span>
+          <span style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">${escapeHtml(chant.duree_estimee || "-")}</span>
+        </div>
+      </div>
+      
+      ${chant.remarques ? `
+        <div style="background: #FFFBEB; border-radius: 12px; padding: 16px; border: 1px solid #FDE68A;">
+          <h4 style="margin: 0 0 6px 0; color: #b45309; font-size: 0.8rem; text-transform: uppercase; font-weight: 700;">Remarques</h4>
+          <p style="margin: 0; font-size: 0.85rem; color: #78350f;">${escapeHtml(chant.remarques)}</p>
+        </div>
+      ` : ""}
+    </div>
+    
+    <div style="background: white; border-top: 1px solid #E2E8F0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; align-items: center; flex-shrink: 0; flex-wrap: wrap;">
+      <span style="font-size: 0.75rem; color: #64748B; margin-right: auto;">ID: #${chant.id || "Nouveau"}</span>
+      ${!isImport ? `
+        <button type="button" id="det-btn-public-dyn" class="btn-secondary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; cursor:pointer;">${visText}</button>
+        <button type="button" id="det-btn-supprimer-dyn" class="btn-danger" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #ef4444; color: white; border: none; cursor: pointer;">Supprimer</button>
+      ` : ""}
+      <button type="button" id="det-btn-modifier-dyn" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #2563eb; color: white; border: none; cursor: pointer;">Modifier</button>
+    </div>
+  `;
+
+  if (!isImport) {
+    document.getElementById("det-btn-public-dyn").addEventListener("click", async (e) => {
+      await avecChargement(e.currentTarget, async () => {
+        const toggledActif = chant.actif === false;
+        await api(`/chants/${chant.id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ actif: toggledActif }),
+        });
+        currentDetailChant.actif = toggledActif;
+        afficherDetailsChantLecture();
+        await actualiserEditeur();
+      });
+    });
+
+    document.getElementById("det-btn-supprimer-dyn").addEventListener("click", async (e) => {
+      if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
+      await avecChargement(e.currentTarget, async () => {
+        if (IDENTITE.type === "super") {
+          await api(`/chants/${chant.id}`, { method: "DELETE" });
+        } else {
+          await api("/moderation/demandes", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ type_cible: "chant", cible_id: chant.id }),
+          });
+        }
+      });
+      fermerModale("chant-details-modal");
+      await actualiserEditeur();
+    });
+  }
+
+  document.getElementById("det-btn-modifier-dyn").addEventListener("click", () => {
+    afficherDetailsChantModification();
+  });
+}
+
+function afficherDetailsChantModification() {
+  const chant = currentDetailChant;
+  const modalContent = document.querySelector("#chant-details-modal .modal-content");
+  
+  const coupletsTexte = (chant.couplets || []).join("\n\n");
+  
+  const categoriesHtml = CATEGORIES.map(c => `
+    <option value="${c.nom}" ${c.nom === chant.categorie ? "selected" : ""}>${c.nom}</option>
+  `).join("");
+  
+  const languesHtml = Object.entries(NOMS_LANGUES).map(([code, name]) => `
+    <option value="${code}" ${code === (chant.langue || "fr") ? "selected" : ""}>${name}</option>
+  `).join("");
+
+  modalContent.innerHTML = `
+    <div style="background: #1e293b; color: white; padding: 20px; position: relative; flex-shrink: 0;">
+      <h2 style="margin: 0; font-size: 1.2rem; font-weight: 700;">Modifier le chant</h2>
+      <button type="button" style="position: absolute; top: 16px; right: 16px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" onclick="fermerModale('chant-details-modal')">&times;</button>
+    </div>
+    
+    <div style="padding: 20px; display: flex; flex-direction: column; gap: 16px; flex: 1; overflow-y: auto; background: white;">
+      <div>
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Titre *</label>
+        <input type="text" id="edit-dyn-titre" value="${escapeHtml(chant.titre || "")}" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;" required>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Catégorie</label>
+          <select id="edit-dyn-categorie" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem; background:white;">
+            ${categoriesHtml}
+          </select>
+        </div>
+        <div>
+          <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Langue</label>
+          <select id="edit-dyn-langue" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem; background:white;">
+            ${languesHtml}
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Auteur / Compositeur</label>
+        <input type="text" id="edit-dyn-auteur" value="${escapeHtml(chant.auteur || chant.compositeur || "")}" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;">
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Refrain</label>
+        <textarea id="edit-dyn-refrain" style="width:100%; height:80px; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem; resize:vertical; font-family:inherit;">${escapeHtml(chant.refrain || "")}</textarea>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Couplets</label>
+        <span style="font-size:0.75rem; color:#64748b; display:block; margin-bottom:4px;">Astuce : Séparez chaque couplet par une ligne vide (des espaces).</span>
+        <textarea id="edit-dyn-couplets" style="width:100%; height:180px; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem; resize:vertical; font-family:inherit;" placeholder="Couplet 1...&#10;&#10;Couplet 2..."></textarea>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:12px;">
+        <div>
+          <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Tonalité</label>
+          <input type="text" id="edit-dyn-tonalite" value="${escapeHtml(chant.tonalite || "")}" placeholder="Ex: Do M" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;">
+        </div>
+        <div>
+          <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Durée estimée</label>
+          <input type="text" id="edit-dyn-duree" value="${escapeHtml(chant.duree_estimee || "")}" placeholder="Ex: 3:30" style="width:100%; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem;">
+        </div>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; font-weight:600; color:#475569; margin-bottom:4px;">Remarques</label>
+        <textarea id="edit-dyn-remarques" style="width:100%; height:60px; padding:8px 12px; border:1px solid #cbd5e1; border-radius:6px; font-size:0.9rem; resize:vertical; font-family:inherit;">${escapeHtml(chant.remarques || "")}</textarea>
+      </div>
+    </div>
+    
+    <div style="background: #f8fafc; border-top: 1px solid #cbd5e1; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; align-items: center; flex-shrink: 0;">
+      <button type="button" id="edit-dyn-btn-annuler" class="btn-secondary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; cursor:pointer;">Annuler</button>
+      <button type="button" id="edit-dyn-btn-enregistrer" class="btn-primary" style="padding: 8px 24px; border-radius: 8px; font-size: 0.85rem; background: #16a34a; color: white; border: none; cursor: pointer; font-weight:600;">Enregistrer</button>
+    </div>
+  `;
+
+  document.getElementById("edit-dyn-couplets").value = coupletsTexte;
+
+  document.getElementById("edit-dyn-btn-annuler").addEventListener("click", () => {
+    if (currentDetailSource === "editeur" && !currentDetailIndexOrId) {
+      fermerModale("chant-details-modal");
+    } else {
+      afficherDetailsChantLecture();
+    }
+  });
+
+  document.getElementById("edit-dyn-btn-enregistrer").addEventListener("click", async (e) => {
+    const titre = document.getElementById("edit-dyn-titre").value.trim();
+    if (!titre) {
+      alert("Le titre est requis.");
+      return;
+    }
+
+    const coupletsBruts = document.getElementById("edit-dyn-couplets").value;
+    const coupletsList = coupletsBruts.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean).map(cleanCoupletPrefix);
+
+    const modifications = {
+      titre: titre,
+      categorie: document.getElementById("edit-dyn-categorie").value,
+      langue: document.getElementById("edit-dyn-langue").value,
+      auteur: document.getElementById("edit-dyn-auteur").value.trim(),
+      compositeur: document.getElementById("edit-dyn-auteur").value.trim(),
+      refrain: document.getElementById("edit-dyn-refrain").value.trim() || null,
+      couplets: coupletsList,
+      tonalite: document.getElementById("edit-dyn-tonalite").value.trim() || null,
+      duree_estimee: document.getElementById("edit-dyn-duree").value.trim() || null,
+      remarques: document.getElementById("edit-dyn-remarques").value.trim() || null,
+    };
+
+    const isImport = currentDetailSource === "import";
+    if (isImport) {
+      const idx = currentDetailIndexOrId;
+      importWorkspaceChants[idx] = {
+        ...importWorkspaceChants[idx],
+        ...modifications,
+      };
+      currentDetailChant = importWorkspaceChants[idx];
+      afficherImportWorkspace(importWorkspaceChants);
+      afficherDetailsChantLecture();
+    } else {
+      await avecChargement(e.currentTarget, async () => {
+        let chantModifie;
+        if (currentDetailIndexOrId) {
+          chantModifie = await api(`/chants/${currentDetailIndexOrId}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(modifications),
+          });
+        } else {
+          chantModifie = await api(`/chants`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(modifications),
+          });
+          currentDetailIndexOrId = chantModifie.id;
+        }
+        currentDetailChant = chantModifie;
+
+        // Synchronize local caches
+        if (window.editeurChantsCache) {
+          const idx = window.editeurChantsCache.findIndex(c => c.id === chantModifie.id);
+          if (idx !== -1) {
+            window.editeurChantsCache[idx] = chantModifie;
+          } else {
+            window.editeurChantsCache.push(chantModifie);
+          }
+        }
+        if (window.listChantsCache) {
+          const idx = window.listChantsCache.findIndex(c => c.id === chantModifie.id);
+          if (idx !== -1) window.listChantsCache[idx] = chantModifie;
+        }
+
+        // Dynamically propagate update to active booklet composer rows
+        Object.keys(momentsState).forEach(momentKey => {
+          const state = momentsState[momentKey];
+          if (state && state.type === "chant" && state.chant_id === chantModifie.id) {
+            state.chant_titre = chantModifie.titre;
+            state.refrain = chantModifie.refrain;
+            state.couplets = chantModifie.couplets;
+            state.total_couplets = chantModifie.couplets ? chantModifie.couplets.length : 0;
+            
+            const row = document.querySelector(`.moment-row[data-moment="${momentKey}"]`);
+            if (row) {
+              renderMomentBody(row, momentKey);
+            }
+          }
+        });
+
+        await actualiserEditeur();
+        if (typeof regenererApercuSiPossible === "function") {
+          regenererApercuSiPossible();
+        }
+        
+        afficherDetailsChantLecture();
       });
     }
-  } catch (e) { }
+  });
+}
 
-  const doublonsEl = document.getElementById("ce-doublons");
-  doublonsEl.classList.add("hidden");
-  try {
-    const doublons = await api(`/chants/${id}/doublons`);
-    if (doublons.length > 0) {
-      doublonsEl.classList.remove("hidden");
-      doublonsEl.innerHTML = "Doublons possibles : " + doublons.map((d) => escapeHtml(d.titre)).join(", ");
-    }
-  } catch (e) { }
+async function ouvrirDetailsChant(id, startInEditMode = false) {
+  let chant = null;
+  if (window.listChantsCache) {
+    chant = window.listChantsCache.find(c => c.id === id);
+  }
+  if (!chant && window.editeurChantsCache) {
+    chant = window.editeurChantsCache.find(c => c.id === id);
+  }
+  
+  if (chant) {
+    ouvrirDetailsChantDynamique(chant, "editeur", id, startInEditMode);
+  } else {
+    chant = await api(`/chants/${id}`);
+    ouvrirDetailsChantDynamique(chant, "editeur", id, startInEditMode);
+  }
+}
 
-  ouvrirModale("chant-editor");
+async function ouvrirEditeurChant(id, isImport = false, importIndex = null) {
+  if (isImport && importIndex !== null) {
+    const chant = importWorkspaceChants[importIndex];
+    ouvrirDetailsChantDynamique(chant, "import", importIndex, true);
+  } else if (id) {
+    ouvrirDetailsChant(id, true);
+  } else {
+    const blankChant = {
+      titre: "",
+      categorie: CATEGORIES[0] || "Autre",
+      langue: "fr",
+      auteur: "",
+      compositeur: "",
+      refrain: "",
+      couplets: [],
+      tonalite: "",
+      duree_estimee: "",
+      remarques: "",
+      actif: true
+    };
+    ouvrirDetailsChantDynamique(blankChant, "editeur", null, true);
+  }
 }
 
 function ouvrirEditeurNouveauChant() {
-  document.getElementById("ce-id").value = "";
-  document.getElementById("ce-titre").value = "";
-  const champSlug = document.getElementById("ce-slug");
-  champSlug.value = "";
-  champSlug.dataset.modifieManuel = "";
-  document.getElementById("ce-categorie").value = CATEGORIES[0] || "";
-  syncChampNouvelleCategorie();
-  document.getElementById("ce-refrain").value = "";
-  setCoupletsTexte([]);
-  document.getElementById("ce-code").value = "";
-  document.getElementById("ce-occasions").value = "";
-  
-  // Réinitialiser les nouveaux champs
-  document.getElementById("ce-langue").value = "fr";
-  document.getElementById("ce-mots-cles").value = "";
-  document.getElementById("ce-mots-cles").dataset.modifieManuel = "";
-  document.getElementById("ce-actif").checked = true;
-  document.getElementById("ce-favori").checked = false;
-  document.getElementById("ce-chant-principal").checked = false;
-  document.getElementById("ce-tonalite").value = "";
-  document.getElementById("ce-duree-estimee").value = "";
-  document.getElementById("ce-remarques").value = "";
-  
-  // Replier la section details
-  document.querySelector(".ce-details").open = false;
-  
-  document.getElementById("ce-suggestion").classList.add("hidden");
-  document.getElementById("ce-doublons").classList.add("hidden");
-  document.getElementById("ce-supprimer").classList.add("hidden");
-  ouvrirModale("chant-editor");
+  ouvrirEditeurChant(null);
 }
 
 document.getElementById("btn-ajouter-chant").addEventListener("click", ouvrirEditeurNouveauChant);
@@ -4276,8 +4529,8 @@ function afficherImportWorkspace(chants) {
     const idx = Number(row.dataset.index);
     const c = chants[idx];
 
-    row.querySelector(".iw-click-target").addEventListener("click", () => ouvrirEditeurImportChant(idx));
-    row.querySelector(".btn-edit-iw").addEventListener("click", () => ouvrirEditeurImportChant(idx));
+    row.querySelector(".iw-click-target").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, false));
+    row.querySelector(".btn-edit-iw").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, true));
     
     row.querySelector(".iw-row-checkbox").addEventListener("change", (e) => {
       c.action = e.target.checked ? null : "ignore";
@@ -4294,7 +4547,7 @@ function afficherImportWorkspace(chants) {
 
     row.querySelector(".btn-details-iw").addEventListener("click", (e) => {
       e.stopPropagation();
-      ouvrirImportDetails(c);
+      ouvrirDetailsChantDynamique(c, "import", idx, false);
     });
   });
 }
@@ -4797,8 +5050,8 @@ async function actualiserDepliants() {
         const popover = document.createElement("div");
         popover.className = "context-menu-popover";
         popover.style.position = "fixed";
-        popover.style.top = `${rect.bottom + window.scrollY}px`;
-        popover.style.left = `${rect.left - 130 + window.scrollX}px`;
+        popover.style.top = `${rect.bottom}px`;
+        popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 190, rect.left - 130))}px`;
 
         const isMine = f.chorale_id === IDENTITE.compte_id;
         const favoris = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");

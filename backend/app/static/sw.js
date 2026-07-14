@@ -36,15 +36,30 @@ function estFichierCoquille(url) {
 
 self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
-  event.respondWith(
-    fetch(event.request)
-      .then((reponse) => {
-        if (reponse.ok && estFichierCoquille(event.request.url)) {
-          const copie = reponse.clone();
-          caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copie));
-        }
-        return reponse;
+
+  const url = event.request.url;
+  if (estFichierCoquille(url)) {
+    // Stratégie Stale-While-Revalidate pour la coquille de l'application
+    event.respondWith(
+      caches.match(event.request).then((cachedResponse) => {
+        const fetchPromise = fetch(event.request)
+          .then((networkResponse) => {
+            if (networkResponse.ok) {
+              const copie = networkResponse.clone();
+              caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copie));
+            }
+            return networkResponse;
+          })
+          .catch(() => {
+            // Ignorer l'échec réseau silencieusement en arrière-plan
+          });
+        return cachedResponse || fetchPromise;
       })
-      .catch(() => caches.match(event.request))
-  );
+    );
+  } else {
+    // Réseau d'abord pour les requêtes dynamiques / API
+    event.respondWith(
+      fetch(event.request).catch(() => caches.match(event.request))
+    );
+  }
 });

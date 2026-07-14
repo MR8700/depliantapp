@@ -12,7 +12,7 @@ from .common import RawChant, segment_paragraphs
 from .parse_doc import iter_paragraphs_doc
 from .parse_docx import iter_paragraphs_docx
 from .parse_notre_modele import segment_notre_modele
-from .parse_pdf import segment_by_font, segment_pdf_paragraphs
+from .parse_pdf import segment_by_font, segment_pdf_paragraphs, detect_pdf_strategy
 
 SUPPORTED_EXTENSIONS = {".doc", ".docx", ".pdf"}
 
@@ -99,16 +99,21 @@ def parse_and_segment(path: Path, categorie_defaut: str = "Autre", word=None) ->
         return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
 
     if suffix == ".pdf":
-        notre_modele = segment_notre_modele(path)
-        if notre_modele:
-            return _appliquer_defaut(notre_modele, categorie_defaut)
+        strat = detect_pdf_strategy(path)
+        if strat == "notre_modele":
+            notre_modele = segment_notre_modele(path)
+            if notre_modele:
+                return _appliquer_defaut(notre_modele, categorie_defaut)
 
-        candidats = [segment_pdf_paragraphs(path)]
-        try:
-            candidats.append(segment_by_font(path))
-        except Exception:
-            pass
-        meilleur = max(candidats, key=_qualite)
-        return _appliquer_defaut(meilleur, categorie_defaut)
+        if strat == "font_based":
+            try:
+                font_res = segment_by_font(path)
+                if font_res:
+                    return _appliquer_defaut(font_res, categorie_defaut)
+            except Exception:
+                pass
+
+        # Stratégie générique par défaut
+        return _appliquer_defaut(segment_pdf_paragraphs(path), categorie_defaut)
 
     raise ValueError(f"Format non supporté : {suffix} (formats acceptés : .doc, .docx, .pdf)")

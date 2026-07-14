@@ -22,6 +22,7 @@ class ImportedChantFinalize(BaseModel):
     categorie: str
     occasions: List[str]
     confiance: float
+    langue: Optional[str] = "fr"
 
 
 class FinalizeImportPayload(BaseModel):
@@ -33,6 +34,7 @@ async def upload_carnet(
     fichier: UploadFile,
     categorie_defaut: str = Form("Autre"),
     occasions: str = Form(""),
+    langue: str = Form("fr"),
 ):
     suffix = Path(fichier.filename).suffix.lower()
     if suffix not in SUPPORTED_EXTENSIONS:
@@ -49,10 +51,16 @@ async def upload_carnet(
         except Exception as exc:
             raise HTTPException(status_code=422, detail=f"Échec de l'analyse du fichier : {exc}") from exc
 
+    # Charger les candidats de la base de données une seule fois
+    from ..db import get_connection
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id, titre FROM chants").fetchall()
+    candidates = [{"id": r["id"], "titre": r["titre"]} for r in rows]
+
     parsed_chants = []
     for categorie, raw in resultats:
         # Recherche de doublons potentiels dans la base
-        doublons = duplicates.find_duplicates(raw.titre or "")
+        doublons = duplicates.find_duplicates(raw.titre or "", candidates=candidates)
         parsed_chants.append({
             "titre": raw.titre or "",
             "refrain": raw.refrain or "",
@@ -61,6 +69,7 @@ async def upload_carnet(
             "confiance": raw.confiance,
             "categorie": categorie,
             "occasions": occasions_list,
+            "langue": langue,
             "doublons": doublons,
             "avertissements": raw.avertissements,
         })
@@ -86,6 +95,7 @@ async def finalize_import(payload: FinalizeImportPayload):
                 couplets=item.couplets,
                 code_reference=item.code_reference,
                 occasions=item.occasions,
+                langue=item.langue or "fr",
             )
             crud.create_chant(chant, source_file="import_workspace", confiance=item.confiance)
             saved_count += 1
@@ -97,6 +107,7 @@ async def finalize_import(payload: FinalizeImportPayload):
                 couplets=item.couplets,
                 code_reference=item.code_reference,
                 occasions=item.occasions,
+                langue=item.langue,
             )
             crud.update_chant(item.replace_id, patch, mark_reviewed=True)
             replaced_count += 1

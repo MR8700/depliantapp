@@ -5,7 +5,7 @@ from typing import Optional
 
 import fitz
 
-from .common import RawChant, VERSE_RE, finalize, normaliser, segment_paragraphs, split_inline_verses
+from .common import RawChant, VERSE_RE, finalize, normaliser, segment_paragraphs, split_inline_verses, SECTION_KEYWORDS
 
 _NUMERO_PAGE_RE = re.compile(r"^\d{1,4}$")
 # Ligne de sommaire à points de suite ("ENTREE.......................... 02")
@@ -232,6 +232,70 @@ def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str,
 
         flush()
         return results
+    finally:
+        doc.close()
+
+
+def detect_pdf_strategy(path: Path) -> str:
+    """Parcourt de manière avancée et ultra-rapide le début, le milieu et la fin
+    du document PDF pour détecter le meilleur parseur à appliquer.
+    Retourne: 'notre_modele' | 'font_based' | 'generic'
+    """
+    doc = fitz.open(path)
+    try:
+        n = doc.page_count
+        if n == 0:
+            return "generic"
+        
+        check_pages = [0]
+        if n > 2:
+            check_pages.append(n // 2)
+        if n > 1:
+            check_pages.append(n - 1)
+            
+        # 1. Test 'notre_modele' (A4 Paysage, max 2 pages, et mots-clés de section liturgique)
+        is_landscape_a4 = True
+        for p_idx in check_pages:
+            p = doc[p_idx]
+            # ReportLab landscape A4 = 841.89 x 595.27 points
+            if abs(p.rect.width - 841.89) > 10.0 or abs(p.rect.height - 595.27) > 10.0:
+                is_landscape_a4 = False
+                break
+                
+        if is_landscape_a4 and n <= 2:
+            sections_found = 0
+            for p_idx in check_pages:
+                for block in doc[p_idx].get_text("dict")["blocks"]:
+                    for line in block.get("lines", []):
+                        spans = line.get("spans", [])
+                        text = "".join(s["text"] for s in spans).strip()
+                        tout_gras = bool(spans) and all("Bold" in s.get("font", "") for s in spans)
+                        if tout_gras and text.upper() == text and text in SECTION_KEYWORDS:
+                            sections_found += 1
+            if sections_found >= 1: # Si au moins une section liturgique typique est trouvée
+                return "notre_modele"
+                
+        # 2. Test 'font_based' (Titre en police >= 17pt)
+        has_large_fonts = False
+        for p_idx in check_pages:
+            for block in doc[p_idx].get_text("dict")["blocks"]:
+                for line in block.get("lines", []):
+                    spans = line.get("spans", [])
+                    for s in spans:
+                        if s.get("size", 0) >= 17.0:
+                            has_large_fonts = True
+                            break
+                    if has_large_fonts:
+                        break
+                if has_large_fonts:
+                    break
+                    
+        if has_large_fonts:
+            return "font_based"
+            
+        return "generic"
+    except Exception:
+        return "generic"
     finally:
         doc.close()
 
