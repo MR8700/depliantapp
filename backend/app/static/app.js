@@ -713,16 +713,26 @@ function etatVideHtml(icone, titre, sousTitre) {
       ${sousTitre ? `<p class="etat-vide-sous-titre">${sousTitre}</p>` : ""}
     </li>`;
 }
+let offlineIndicatorDismissed = false;
 
 function afficherIndicateurHorsLigne() {
+  if (offlineIndicatorDismissed) return;
   let indicator = document.getElementById("offline-mode-indicator");
   if (!indicator) {
     indicator = document.createElement("div");
     indicator.id = "offline-mode-indicator";
-    indicator.style.cssText = "background: #f59e0b; color: white; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 6px 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: center; gap: 6px;";
-    indicator.innerHTML = "<span>⚠️ Mode hors-ligne actif (connexion faible ou inexistante) — Affichage des données en cache</span>";
+    indicator.style.cssText = "background: #f59e0b; color: white; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 6px 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; gap: 12px;";
+    indicator.innerHTML = `
+      <span style="flex: 1; text-align: center;">⚠️ Mode hors-ligne actif (connexion faible ou inexistante) — Affichage des données en cache</span>
+      <button type="button" id="close-offline-indicator" style="background: none; border: none; color: white; font-size: 1.25rem; cursor: pointer; font-weight: bold; padding: 0 4px; line-height: 1;">&times;</button>
+    `;
     document.body.appendChild(indicator);
-    document.body.style.paddingTop = "28px";
+    document.body.style.paddingTop = `${indicator.offsetHeight || 28}px`;
+    
+    document.getElementById("close-offline-indicator").addEventListener("click", () => {
+      offlineIndicatorDismissed = true;
+      retirerIndicateurHorsLigne();
+    });
   }
 }
 
