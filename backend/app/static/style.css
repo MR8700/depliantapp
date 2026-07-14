@@ -4941,8 +4941,11 @@ input.special-label:focus {
 @media (max-width: 768px) {
   .profil-dashboard-modal {
     flex-direction: column !important;
-    height: 90vh !important;
-    max-height: 90vh !important;
+    height: 95vh !important;
+    max-height: 95vh !important;
+    width: 96vw !important;
+    max-width: 96vw !important;
+    border-radius: 12px !important;
   }
   .profil-sidebar {
     display: none !important; /* Masquer la barre latérale sur mobile */
@@ -4960,7 +4963,71 @@ input.special-label:focus {
     height: 100% !important;
   }
   .profil-body-content {
-    padding: 16px !important;
+    padding: 12px !important;
+  }
+  
+  /* Stacking form rows on mobile */
+  .profil-body-content form .form-row {
+    flex-direction: column !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .profil-body-content form label {
+    font-size: 0.82rem !important;
+    gap: 4px !important;
+    width: 100% !important;
+  }
+  .profil-body-content form label input,
+  .profil-body-content form label select {
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+    border-radius: 8px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Password field structure */
+  .profil-body-content .champ-mdp {
+    border-radius: 8px !important;
+  }
+  .profil-body-content .champ-mdp input {
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* Profile header adjustments */
+  .profil-body-header {
+    padding: 12px 16px !important;
+  }
+  .profil-body-header h3 {
+    font-size: 1.1rem !important;
+  }
+  .profil-body-header p {
+    font-size: 0.78rem !important;
+  }
+
+  /* Profile footer styling */
+  .profil-body-footer {
+    flex-direction: column-reverse !important;
+    padding: 12px 16px !important;
+    gap: 8px !important;
+  }
+  .profil-body-footer button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px !important;
+    font-size: 0.88rem !important;
+  }
+
+  /* Avatar adjustments */
+  .profil-body-content div:has(> #profil-avatar) {
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+  #profil-avatar {
+    width: 64px !important;
+    height: 64px !important;
+    font-size: 1.5rem !important;
   }
 }
 
@@ -5174,6 +5241,363 @@ input.special-label:focus {
   .chorale-card .toolbar button, .demande-card .toolbar button, .masque-card .toolbar button {
     width: 100% !important;
     justify-content: center !important;
+  }
+
+  /* Library Header responsive adaptation */
+  .library-header {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+  }
+  .library-title-row {
+    justify-content: space-between !important;
+    width: 100% !important;
+  }
+  .library-main-title {
+    font-size: 1.25rem !important;
+  }
+  .library-header-actions {
+    width: 100% !important;
+  }
+  .library-header-actions button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+  }
+
+  /* Library Filters Cards on mobile */
+  .library-filters-card {
+    padding: 12px !important;
+    margin-bottom: 12px !important;
+    border-radius: 12px !important;
+  }
+  .filters-main-row {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+  }
+  .filters-main-row select,
+  .filters-main-row button {
+    flex: none !important;
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+  }
+  .filters-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .filters-grid label {
+    font-size: 0.85rem !important;
+    width: 100% !important;
+  }
+  .filters-grid input,
+  .filters-grid select {
+    padding: 10px !important;
+    font-size: 0.9rem !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+
+  /* Library Toolbar on mobile */
+  .library-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    margin-bottom: 12px !important;
+  }
+  .view-toggle-buttons {
+    width: 100% !important;
+    display: flex !important;
+  }
+  .view-toggle-buttons button {
+    flex: 1 !important;
+    justify-content: center !important;
+    padding: 8px !important;
+    font-size: 0.85rem !important;
+  }
+  .sort-and-limit-row {
+    width: 100% !important;
+  }
+  .sort-selector {
+    width: 100% !important;
+    display: flex !important;
+  }
+  .sort-selector select {
+    flex: 1 !important;
+    padding: 8px !important;
+    font-size: 0.85rem !important;
+  }
+
+  /* Grid view cards on mobile */
+  .view-mode-grid .songs-container {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .view-mode-grid .songs-container .chant-card {
+    min-height: auto !important;
+    padding: 12px !important;
+    border-radius: 12px !important;
+    gap: 10px !important;
+  }
+  .view-mode-grid .card-icon-circle {
+    display: none !important;
+  }
+  .view-mode-grid .card-right-aside {
+    flex-direction: row-reverse !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    width: 100% !important;
+    border-top: 1px solid #f1f5f9 !important;
+    padding-top: 12px !important;
+    margin-top: 4px !important;
+  }
+
+  /* Chant Card global typography on mobile (both list and grid) */
+  .chant-card {
+    padding: 12px !important;
+  }
+  .chant-card .card-title {
+    font-size: 0.95rem !important;
+    font-weight: 700 !important;
+  }
+  .chant-card .card-refrain-apercu {
+    font-size: 0.82rem !important;
+    line-height: 1.4 !important;
+    color: #475569 !important;
+  }
+  .chant-card .card-meta-line {
+    font-size: 0.76rem !important;
+    color: #64748b !important;
+  }
+  .chant-card .card-status-badge {
+    font-size: 0.7rem !important;
+    padding: 3px 8px !important;
+  }
+
+  /* Card Action buttons on mobile */
+  .btn-card-action {
+    width: 32px !important;
+    height: 32px !important;
+    font-size: 0.95rem !important;
+  }
+
+  /* Pagination on mobile */
+  .library-pagination-row {
+    flex-direction: column !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding-top: 12px !important;
+    margin-top: 16px !important;
+  }
+  .pagination-pages {
+    justify-content: center !important;
+    width: 100% !important;
+    flex-wrap: wrap !important;
+    gap: 6px !important;
+  }
+  .btn-page {
+    padding: 5px 10px !important;
+    font-size: 0.8rem !important;
+    min-width: 28px !important;
+  }
+
+  /* Editor view adaptations on mobile */
+  .editeur-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-top: 12px !important;
+  }
+  .editeur-stat-card {
+    padding: 10px !important;
+    gap: 10px !important;
+    border-radius: 10px !important;
+  }
+  .stat-icon {
+    font-size: 1.2rem !important;
+    width: 32px !important;
+    height: 32px !important;
+    border-radius: 8px !important;
+  }
+  .stat-value {
+    font-size: 1.05rem !important;
+  }
+  .editeur-toolbar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 10px !important;
+    margin-top: 16px !important;
+  }
+  .editeur-search-wrapper {
+    width: 100% !important;
+  }
+  .editeur-search-wrapper input {
+    width: 100% !important;
+    box-sizing: border-box !important;
+  }
+  #btn-open-filters-drawer {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+  .bulk-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 10px !important;
+    padding: 12px !important;
+    border-radius: 10px !important;
+  }
+  .bulk-actions-group {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  .bulk-actions-group label {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 4px !important;
+  }
+  .bulk-actions-group select {
+    width: 100% !important;
+    padding: 8px !important;
+  }
+  .bulk-actions-group button {
+    width: 100% !important;
+    justify-content: center !important;
+  }
+
+  /* Import page modifications on mobile */
+  .saas-stats-grid {
+    grid-template-columns: 1fr 1fr !important;
+    gap: 10px !important;
+    margin-bottom: 16px !important;
+  }
+  .saas-stats-grid .stat-metric-card {
+    padding: 10px !important;
+  }
+  .saas-stats-grid .stat-metric-card > div:first-child {
+    font-size: 0.68rem !important;
+  }
+  .saas-stats-grid .stat-metric-card > div:last-child {
+    font-size: 1.35rem !important;
+  }
+  #import-result > div {
+    padding: 12px !important;
+    border-radius: 12px !important;
+  }
+  #import-result > div > div:first-child {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    margin-bottom: 16px !important;
+    padding-bottom: 12px !important;
+  }
+  #import-result > div > div:first-child div:last-child {
+    flex-direction: column !important;
+    gap: 8px !important;
+    width: 100% !important;
+  }
+  #import-result > div > div:first-child div:last-child button {
+    width: 100% !important;
+    justify-content: center !important;
+    padding: 10px !important;
+  }
+
+  /* Composer page mobile forms */
+  .composer-card-fieldset {
+    padding: 12px !important;
+    margin-bottom: 16px !important;
+    border-radius: 12px !important;
+  }
+  .celebration-info-row {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  .celebration-info-row label {
+    font-size: 0.85rem !important;
+  }
+  .celebration-info-row input {
+    padding: 10px !important;
+    font-size: 0.95rem !important;
+  }
+  .lectures-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .lecture-field-group label {
+    font-size: 0.85rem !important;
+  }
+  .lecture-field-group input {
+    padding: 10px !important;
+    font-size: 0.95rem !important;
+  }
+
+  /* Song Picker dialogue (chant-picker) */
+  #chant-picker .modal-content {
+    padding: 16px !important;
+    border-radius: 12px !important;
+  }
+  #chant-picker .toolbar {
+    flex-direction: column !important;
+    gap: 8px !important;
+    align-items: stretch !important;
+  }
+  #chant-picker .toolbar input,
+  #chant-picker .toolbar select,
+  #chant-picker .toolbar button {
+    width: 100% !important;
+    padding: 10px !important;
+    box-sizing: border-box !important;
+    font-size: 0.9rem !important;
+  }
+  #picker-list {
+    max-height: 45vh !important;
+    overflow-y: auto !important;
+    padding: 0 !important;
+    margin: 8px 0 0 0 !important;
+    list-style: none !important;
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  #picker-list li {
+    padding: 10px 12px !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 8px !important;
+    background: #f8fafc !important;
+    font-size: 0.88rem !important;
+    cursor: pointer !important;
+  }
+
+  /* Feuillets / Dépliants view */
+  .depliants-actions-bar {
+    flex-direction: column !important;
+    align-items: stretch !important;
+    gap: 12px !important;
+    padding: 10px !important;
+  }
+  .depliants-search-wrapper {
+    width: 100% !important;
+  }
+  .depliants-sort-row {
+    justify-content: flex-start !important;
+    width: 100% !important;
+    margin-top: 12px !important;
+  }
+  .depliants-sort-row select {
+    flex: 1 !important;
+  }
+  .depliants-grid {
+    grid-template-columns: 1fr !important;
+    gap: 12px !important;
+  }
+  .depliant-card {
+    border-radius: 12px !important;
+    padding: 12px !important;
   }
 }
 
