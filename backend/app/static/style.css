@@ -1157,7 +1157,9 @@ button[type="submit"], #btn-generer {
     padding: 24px 32px 80px !important;
   }
   .modal {
-    left: 240px !important;
+    left: 0 !important;
+    padding-left: 240px !important;
+    box-sizing: border-box !important;
   }
 }
 

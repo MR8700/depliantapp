@@ -5077,7 +5077,7 @@ function choraleCardHtml(chorale) {
       <div class="chant-titre">${escapeHtml(chorale.nom)}</div>
       <div class="chant-meta">Identifiant : ${escapeHtml(chorale.username)}${chorale.must_change_password ? " — mot de passe pas encore défini" : ""}</div>
       <div class="toolbar">
-        <button type="button" class="btn-reset-mdp">Réinitialiser le mot de passe</button>
+        <button type="button" class="btn-secondary btn-reset-mdp" style="font-size: 0.8rem; padding: 6px 12px;">Réinitialiser le mot de passe</button>
       </div>
     </li>`;
 }

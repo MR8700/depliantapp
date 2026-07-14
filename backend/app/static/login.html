@@ -52,6 +52,14 @@
     line-height: 1; cursor: pointer; color: var(--gris);
   }
   .btn-voyant-mdp:hover { background: none; color: var(--bleu); }
+  
+  /* Spinner */
+  .spinner {
+    display: inline-block; width: 13px; height: 13px; margin-right: 6px;
+    border: 2px solid rgba(255,255,255,0.5); border-top-color: currentColor;
+    border-radius: 50%; vertical-align: middle; animation: spinner-rotation 0.7s linear infinite;
+  }
+  @keyframes spinner-rotation { to { transform: rotate(360deg); } }
 </style>
 </head>
 <body>
@@ -117,6 +125,19 @@ document.querySelectorAll(".btn-voyant-mdp").forEach((btn) => {
   });
 });
 
+async function avecChargement(bouton, fn) {
+  if (!bouton || bouton.disabled) return fn();
+  const contenuOriginal = bouton.innerHTML;
+  bouton.disabled = true;
+  bouton.innerHTML = `<span class="spinner" aria-hidden="true"></span>${contenuOriginal}`;
+  try {
+    return await fn();
+  } finally {
+    bouton.disabled = false;
+    bouton.innerHTML = contenuOriginal;
+  }
+}
+
 let dernierMotDePasseSaisi = "";
 
 document.getElementById("form-login").addEventListener("submit", async (e) => {
@@ -124,8 +145,9 @@ document.getElementById("form-login").addEventListener("submit", async (e) => {
   masquerErreur("login-erreur");
   const username = document.getElementById("login-username").value;
   const password = document.getElementById("login-password").value;
+  const submitBtn = e.target.querySelector('button[type="submit"]');
   try {
-    const data = await api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) });
+    const data = await avecChargement(submitBtn, () => api("/auth/login", { method: "POST", body: JSON.stringify({ username, password }) }));
     if (data.must_change_password) {
       dernierMotDePasseSaisi = password;
       document.getElementById("form-login").classList.add("hidden");
@@ -149,11 +171,12 @@ document.getElementById("form-changement").addEventListener("submit", async (e) 
     afficherErreur("chg-erreur", "Les deux mots de passe ne correspondent pas.");
     return;
   }
+  const submitBtn = e.target.querySelector('button[type="submit"]');
   try {
-    await api("/auth/change-password", {
+    await avecChargement(submitBtn, () => api("/auth/change-password", {
       method: "POST",
       body: JSON.stringify({ mot_de_passe_actuel: actuel, nouveau_mot_de_passe: nouveau }),
-    });
+    }));
     window.location.href = "/";
   } catch (err) {
     afficherErreur("chg-erreur", err.message);
