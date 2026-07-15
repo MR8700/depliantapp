@@ -288,6 +288,9 @@ CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_
 CREATE TABLE IF NOT EXISTS categories_personnalisees (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nom TEXT NOT NULL UNIQUE,
+    cree_par INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    motif_rejet TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 """
@@ -366,6 +369,9 @@ CREATE TABLE IF NOT EXISTS auth (
 CREATE TABLE IF NOT EXISTS categories_personnalisees (
     id SERIAL PRIMARY KEY,
     nom TEXT NOT NULL UNIQUE,
+    cree_par INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    motif_rejet TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -519,6 +525,15 @@ def _init_sqlite() -> None:
         if "supprime" not in colonnes_messages:
             conn.execute("ALTER TABLE messages ADD COLUMN supprime INTEGER NOT NULL DEFAULT 0")
 
+        colonnes_categories = {row["name"] for row in conn.execute("PRAGMA table_info(categories_personnalisees)").fetchall()}
+        if colonnes_categories:
+            if "cree_par" not in colonnes_categories:
+                conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN cree_par INTEGER REFERENCES chorales(id)")
+            if "statut" not in colonnes_categories:
+                conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN statut TEXT NOT NULL DEFAULT 'en_attente'")
+            if "motif_rejet" not in colonnes_categories:
+                conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN motif_rejet TEXT")
+
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
@@ -605,6 +620,12 @@ def _migrer_vers_multi_chorale(conn) -> None:
 def _init_postgres() -> None:
     with get_connection() as conn:
         _renommer_tables_legacy_postgres(conn)
+        
+        # Postgres category moderation columns migration
+        conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS cree_par INTEGER REFERENCES chorales(id)")
+        conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'en_attente'")
+        conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS motif_rejet TEXT")
+
         conn.executescript(SCHEMA_POSTGRES)
 
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()

@@ -749,19 +749,28 @@ def get_piece_jointe_message(message_id: int) -> Optional[tuple[bytes, str, int]
 
 # --- Catégories personnalisées ---
 
-def list_categories_personnalisees() -> list[str]:
+def list_categories_personnalisees(chorale_id: Optional[int] = None) -> list[str]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT nom FROM categories_personnalisees ORDER BY nom").fetchall()
+        if chorale_id is not None:
+            rows = conn.execute(
+                "SELECT nom FROM categories_personnalisees WHERE statut = 'valide' OR (cree_par = ? AND statut = 'en_attente') ORDER BY nom",
+                (chorale_id,)
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT nom FROM categories_personnalisees WHERE statut = 'valide' ORDER BY nom"
+            ).fetchall()
         return [r["nom"] for r in rows]
 
 
-def ajouter_categorie_personnalisee(nom: str) -> str:
+def ajouter_categorie_personnalisee(nom: str, cree_par: Optional[int] = None, statut: str = "en_attente") -> str:
     nom = nom.strip()
-    requete = (
-        "INSERT INTO categories_personnalisees (nom) VALUES (?) ON CONFLICT (nom) DO NOTHING"
-        if db.BACKEND == "postgres" else
-        "INSERT OR IGNORE INTO categories_personnalisees (nom) VALUES (?)"
-    )
     with get_connection() as conn:
-        conn.execute(requete, (nom,))
+        existing = conn.execute("SELECT nom, statut, cree_par FROM categories_personnalisees WHERE nom = ?", (nom,)).fetchone()
+        if existing:
+            return nom
+        requete = (
+            "INSERT INTO categories_personnalisees (nom, cree_par, statut) VALUES (?, ?, ?)"
+        )
+        conn.execute(requete, (nom, cree_par, statut))
     return nom

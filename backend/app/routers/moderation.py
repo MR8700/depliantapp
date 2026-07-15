@@ -72,3 +72,45 @@ def restaurer(masque_id: int, _identite: auth.Identite = Depends(require_superad
     if not crud.restaurer_masque(masque_id):
         raise HTTPException(status_code=404, detail="Masque introuvable")
     return {"ok": True}
+
+
+@router.get("/categories")
+def list_categories_moderation(statut: Optional[str] = "en_attente", _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT cp.id, cp.nom, cp.statut, cp.motif_rejet, cp.created_at, c.nom as chorale_nom "
+            "FROM categories_personnalisees cp "
+            "LEFT JOIN chorales c ON cp.cree_par = c.id "
+            "WHERE cp.statut = ? ORDER BY cp.created_at DESC",
+            (statut,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+class RejetCategoriePayload(BaseModel):
+    motif: str
+
+
+@router.post("/categories/{id}/valider")
+def valider_categorie(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        conn.execute("UPDATE categories_personnalisees SET statut = 'valide', motif_rejet = NULL WHERE id = ?", (id,))
+    return {"ok": True}
+
+
+@router.post("/categories/{id}/rejeter")
+def rejeter_categorie(id: int, payload: RejetCategoriePayload, _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        cp = conn.execute("SELECT nom, cree_par FROM categories_personnalisees WHERE id = ?", (id,)).fetchone()
+        if not cp:
+            raise HTTPException(status_code=404, detail="Catégorie introuvable")
+        conn.execute("UPDATE categories_personnalisees SET statut = 'rejete', motif_rejet = ? WHERE id = ?", (payload.motif, id))
+        
+        # Send system notification message to the creator chorale
+        if cp["cree_par"]:
+            crud.creer_message(
+                chorale_id=cp["cree_par"],
+                expediteur_type="super",
+                texte=f"Votre demande d'ajout de la catégorie '{cp['nom']}' a été rejetée par l'administrateur. Motif : {payload.motif}"
+            )
+    return {"ok": True}

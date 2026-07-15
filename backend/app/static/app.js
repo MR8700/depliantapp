@@ -3933,7 +3933,7 @@ function afficherDetailsChantModification() {
   const coupletsTexte = (chant.couplets || []).join("\n\n");
   
   const categoriesHtml = CATEGORIES.map(c => `
-    <option value="${c.nom}" ${c.nom === chant.categorie ? "selected" : ""}>${c.nom}</option>
+    <option value="${c}" ${c === chant.categorie ? "selected" : ""}>${categorieLabel(c)}</option>
   `).join("");
   
   const languesHtml = Object.entries(NOMS_LANGUES).map(([code, name]) => `
@@ -4007,6 +4007,39 @@ function afficherDetailsChantModification() {
   `;
 
   document.getElementById("edit-dyn-couplets").value = coupletsTexte;
+
+  // Prompt category creation on selecting "Autre"
+  const dynSelectCat = document.getElementById("edit-dyn-categorie");
+  if (dynSelectCat) {
+    dynSelectCat.addEventListener("change", async () => {
+      if (dynSelectCat.value === "Autre") {
+        const nouvelle = prompt("Saisissez le nom de la nouvelle catégorie liturgique à créer :");
+        if (nouvelle && nouvelle.trim()) {
+          const nomNettoye = nouvelle.trim();
+          try {
+            const res = await api("/categories", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ nom: nomNettoye }),
+            });
+            CATEGORIES = res.categories;
+            
+            // Re-populate and select newly created category
+            dynSelectCat.innerHTML = CATEGORIES.map(c => `
+              <option value="${c}" ${c === nomNettoye ? "selected" : ""}>${categorieLabel(c)}</option>
+            `).join("");
+            
+            alert(`La catégorie "${nomNettoye}" a été créée et envoyée à l'administrateur pour validation. Elle est utilisable immédiatement.`);
+          } catch (err) {
+            alert("Erreur de création de la catégorie: " + err.message);
+            dynSelectCat.value = CATEGORIES[0] || "";
+          }
+        } else {
+          dynSelectCat.value = CATEGORIES[0] || "";
+        }
+      }
+    });
+  }
 
   document.getElementById("edit-dyn-btn-annuler").addEventListener("click", () => {
     if (currentDetailSource === "editeur" && !currentDetailIndexOrId) {
@@ -5463,6 +5496,55 @@ async function actualiserAdmin() {
   await actualiserAdminChorales();
   await actualiserAdminDemandes();
   await actualiserAdminMasques();
+  await actualiserAdminCategories();
+}
+
+function adminCategorieCardHtml(cat) {
+  return `
+    <li class="demande-card" data-id="${cat.id}">
+      <div class="chant-titre" style="font-weight: 600;">Catégorie : <span style="color: #1F4A7C;">${escapeHtml(cat.nom)}</span></div>
+      <div class="chant-meta" style="font-size: 0.8rem; color: #64748B;">Créée par : ${escapeHtml(cat.chorale_nom || "Système")}</div>
+      <div class="toolbar" style="margin-top: 8px; display: flex; gap: 8px;">
+        <button type="button" class="btn-valider" style="background: #16a34a; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: white; border: none; cursor: pointer;">Valider</button>
+        <button type="button" class="btn-rejeter" style="background: #dc2626; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: white; border: none; cursor: pointer;">Rejeter</button>
+      </div>
+    </li>`;
+}
+
+async function actualiserAdminCategories() {
+  const categories = await api("/moderation/categories?statut=en_attente");
+  const list = document.getElementById("admin-categories-list");
+  if (!list) return;
+  list.innerHTML = categories.length
+    ? categories.map(adminCategorieCardHtml).join("")
+    : `<p class="hint">Aucune catégorie en attente de validation.</p>`;
+  
+  list.querySelectorAll(".demande-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    el.querySelector(".btn-valider").addEventListener("click", async (e) => {
+      if (!confirm("Valider cette catégorie pour tout le monde ?")) return;
+      await avecChargement(e.currentTarget, () => api(`/moderation/categories/${id}/valider`, { method: "POST" }));
+      await actualiserAdminCategories();
+      // Force reload category list on metadata cache
+      const res = await api("/meta");
+      CATEGORIES = res.categories;
+    });
+    
+    el.querySelector(".btn-rejeter").addEventListener("click", async (e) => {
+      const motif = prompt("Saisissez le motif de rejet (qui sera envoyé par message au créateur) :");
+      if (motif === null) return; // Cancelled
+      if (!motif.trim()) {
+        alert("Le motif de rejet est obligatoire.");
+        return;
+      }
+      await avecChargement(e.currentTarget, () => api(`/moderation/categories/${id}/rejeter`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ motif: motif.trim() })
+      }));
+      await actualiserAdminCategories();
+    });
+  });
 }
 
 // --- Statistiques ---

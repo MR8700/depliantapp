@@ -129,27 +129,36 @@ def health():
     return {"status": "ok"}
 
 
-def _categories_completes() -> list[str]:
+from typing import Optional
+from fastapi import Depends
+from .deps import identite_courante
+
+def _categories_completes(chorale_id: Optional[int] = None) -> list[str]:
     """Liste fixe (constants.py) + catégories ajoutées via "Autre" -> saisie
     libre, persistées en base — "Autre" reste toujours en dernier, comme
     choix de repli pour en créer une nouvelle."""
     fixes = [c for c in CATEGORIES_CHANTS if c != "Autre"]
-    personnalisees = [c for c in crud.list_categories_personnalisees() if c not in fixes]
+    personnalisees = [c for c in crud.list_categories_personnalisees(chorale_id) if c not in fixes]
     return fixes + personnalisees + ["Autre"]
 
 
 @app.get("/meta")
-def meta():
-    return {"moments": MOMENTS_LITURGIQUES, "categories": _categories_completes()}
+def meta(identite: auth.Identite = Depends(identite_courante)):
+    chorale_id = identite.compte_id if identite.type == "chorale" else None
+    return {"moments": MOMENTS_LITURGIQUES, "categories": _categories_completes(chorale_id)}
 
 
 @app.post("/categories")
-def ajouter_categorie(payload: schemas.CategoriePersonnalisee):
+def ajouter_categorie(payload: schemas.CategoriePersonnalisee, identite: auth.Identite = Depends(identite_courante)):
     nom = payload.nom.strip()
     if not nom or nom == "Autre":
         raise HTTPException(status_code=400, detail="Nom de catégorie invalide")
-    crud.ajouter_categorie_personnalisee(nom)
-    return {"categories": _categories_completes()}
+    
+    cree_par = identite.compte_id if identite.type == "chorale" else None
+    statut = "valide" if identite.type == "super" else "en_attente"
+    
+    crud.ajouter_categorie_personnalisee(nom, cree_par, statut)
+    return {"categories": _categories_completes(cree_par)}
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
