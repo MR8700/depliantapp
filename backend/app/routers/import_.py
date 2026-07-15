@@ -37,10 +37,39 @@ async def upload_carnet(
     langue: str = Form("fr"),
 ):
     suffix = Path(fichier.filename).suffix.lower()
-    if suffix not in SUPPORTED_EXTENSIONS:
+    if suffix != ".json" and suffix not in SUPPORTED_EXTENSIONS:
         raise HTTPException(status_code=400, detail=f"Format non supporté : {suffix}")
 
     occasions_list = [o.strip() for o in occasions.split(",") if o.strip()]
+
+    if suffix == ".json":
+        import json
+        try:
+            content = await fichier.read()
+            data = json.loads(content)
+            if not isinstance(data, list):
+                raise ValueError("Le fichier JSON doit être une liste de chants")
+            parsed_chants = []
+            for item in data:
+                parsed_chants.append({
+                    "titre": item.get("titre") or "",
+                    "refrain": item.get("refrain") or "",
+                    "couplets": item.get("couplets") or [],
+                    "code_reference": item.get("code_reference") or item.get("slug") or "",
+                    "confiance": item.get("confiance") or 1.0,
+                    "categorie": item.get("categorie") or "Autre",
+                    "langue": item.get("langue") or "fr",
+                    "auteur": item.get("auteur") or "",
+                    "compositeur": item.get("compositeur") or "",
+                    "tonalite": item.get("tonalite") or "",
+                    "duree_estimee": item.get("duree_estimee") or "",
+                    "remarques": item.get("remarques") or "",
+                    "actif": item.get("actif") != False,
+                    "doublons": []
+                })
+            return parsed_chants
+        except Exception as exc:
+            raise HTTPException(status_code=400, detail=f"Fichier de sauvegarde JSON invalide : {exc}")
 
     with tempfile.TemporaryDirectory() as tmp:
         tmp_path = Path(tmp) / fichier.filename

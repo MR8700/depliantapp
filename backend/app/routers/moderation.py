@@ -12,6 +12,7 @@ router = APIRouter(prefix="/moderation", tags=["moderation"])
 class DemandeSuppressionCreation(BaseModel):
     type_cible: str  # "chant" | "feuillet"
     cible_id: int
+    raison: str
 
 
 def _apercu_cible(type_cible: str, cible_id: int) -> Optional[dict]:
@@ -33,7 +34,7 @@ def creer_demande(payload: DemandeSuppressionCreation, identite: auth.Identite =
     )
     if not cible_existe:
         raise HTTPException(status_code=404, detail="Ressource introuvable")
-    demande = crud.creer_demande_suppression(payload.type_cible, payload.cible_id, identite.compte_id)
+    demande = crud.creer_demande_suppression(payload.type_cible, payload.cible_id, identite.compte_id, payload.raison)
     return demande
 
 
@@ -56,6 +57,20 @@ def valider(demande_id: int, _identite: auth.Identite = Depends(require_superadm
 def annuler(demande_id: int, _identite: auth.Identite = Depends(require_superadmin)):
     if not crud.annuler_demande_suppression(demande_id):
         raise HTTPException(status_code=404, detail="Demande introuvable ou déjà traitée")
+    return {"ok": True}
+
+
+@router.post("/demandes/{demande_id}/remettre_en_attente")
+def remettre_en_attente(demande_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    from ..db import get_connection
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM demandes_suppression WHERE id = ?", (demande_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Demande introuvable")
+        conn.execute(
+            "UPDATE demandes_suppression SET statut = 'en_attente', traite_at = NULL WHERE id = ?",
+            (demande_id,),
+        )
     return {"ok": True}
 
 

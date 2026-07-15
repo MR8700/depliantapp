@@ -161,10 +161,10 @@ async function ouvrirProfil() {
 
   // Retrieve parameters (Nom, Paroisse, Telephone)
   let params = { chorale: "", paroisse: "", contact: "" };
-  if (IDENTITE.type === "chorale") {
+  if (IDENTITE.type === "chorale" || IDENTITE.type === "super") {
     try {
       params = await api("/parametres");
-      document.getElementById("p-profil-nom-chorale").value = params.chorale || "";
+      document.getElementById("p-profil-nom-chorale").value = params.chorale || (IDENTITE.type === "super" ? "Application" : "");
       document.getElementById("p-profil-paroisse").value = params.paroisse || "";
       document.getElementById("p-profil-telephone").value = params.contact || "";
     } catch (e) {
@@ -329,8 +329,8 @@ document.getElementById("btn-profil-enregistrer").addEventListener("click", asyn
       fuseau: fuseau
     }));
 
-    // If chorale, persist standard params in the backend database too!
-    if (IDENTITE.type === "chorale") {
+    // If chorale or super-admin, persist standard params in the backend database too!
+    if (IDENTITE.type === "chorale" || IDENTITE.type === "super") {
       try {
         const curParams = await api("/parametres");
         await api("/parametres", {
@@ -670,13 +670,22 @@ function chantCardHtml(chant) {
   
   let actionButtonsHtml = "";
   if (IDENTITE && IDENTITE.type === "super") {
-    actionButtonsHtml = `
-      <div class="card-actions-wrapper" onclick="event.stopPropagation();">
-        <button type="button" class="btn-card-action btn-action-voir" title="Voir les détails">👁</button>
-        <button type="button" class="btn-card-action btn-action-modifier" title="Modifier">✏</button>
-        <button type="button" class="btn-card-action btn-action-dupliquer" title="Dupliquer">📄</button>
-      </div>
-    `;
+    if (pickerTargetMoment) {
+      actionButtonsHtml = `
+        <div class="card-actions-wrapper" onclick="event.stopPropagation();">
+          <button type="button" class="btn-card-action btn-action-voir" title="Voir les détails">👁</button>
+          <button type="button" class="btn-card-action btn-action-ajouter" title="Ajouter au dépliant">➕</button>
+        </div>
+      `;
+    } else {
+      actionButtonsHtml = `
+        <div class="card-actions-wrapper" onclick="event.stopPropagation();">
+          <button type="button" class="btn-card-action btn-action-voir" title="Voir les détails">👁</button>
+          <button type="button" class="btn-card-action btn-action-modifier" title="Modifier">✏</button>
+          <button type="button" class="btn-card-action btn-action-dupliquer" title="Dupliquer">📄</button>
+        </div>
+      `;
+    }
   } else {
     const favIcon = chant.favori ? "★" : "☆";
     const addBtnHtml = pickerTargetMoment ? `<button type="button" class="btn-card-action btn-action-ajouter" title="Ajouter au dépliant">➕</button>` : "";
@@ -2255,14 +2264,37 @@ async function toggleFavoriChant(chant) {
   }
 }
 
+function demanderMotifSuppression() {
+  const raison = prompt("Saisissez la raison/motif de cette demande de suppression (obligatoire) :");
+  if (raison === null) return null; // Annulé
+  if (!raison.trim()) {
+    alert("Le motif de suppression est obligatoire.");
+    return null;
+  }
+  return raison.trim();
+}
+
 async function supprimerChantDetail(id) {
   if (!id) return;
-  if (!confirm("Demander la suppression de ce chant ? Il disparaîtra immédiatement de ta bibliothèque ; la décision finale revient au super-admin.")) return;
+  if (IDENTITE.type === "super") {
+    if (!confirm("Voulez-vous supprimer définitivement ce chant de la bibliothèque ?")) return;
+    try {
+      await api(`/chants/${id}`, { method: "DELETE" });
+      alert("Chant supprimé définitivement !");
+      await actualiserEditeur();
+      await actualiserListeBibliotheque();
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+    }
+    return;
+  }
+  const raison = demanderMotifSuppression();
+  if (!raison) return;
   try {
     await api("/moderation/demandes", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type_cible: "chant", cible_id: Number(id) }),
+      body: JSON.stringify({ type_cible: "chant", cible_id: Number(id), raison: raison }),
     });
     alert("Demande de suppression envoyée !");
     await actualiserEditeur();
@@ -3339,27 +3371,27 @@ function initEditeurListenersOnce() {
   document.getElementById("bulk-supprimer").addEventListener("click", async (e) => {
     if (IDENTITE.type === "super") {
       if (!confirm(`Supprimer définitivement ${selectionEditeur.size} chant(s) sélectionnés ?`)) return;
-    } else {
-      if (!confirm(`Demander la suppression de ${selectionEditeur.size} chant(s) sélectionnés ?`)) return;
-    }
-    await avecChargement(e.currentTarget, async () => {
-      if (IDENTITE.type === "super") {
+      await avecChargement(e.currentTarget, async () => {
         await api("/chants/bulk_delete", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ ids: [...selectionEditeur] }),
         });
-      } else {
+      });
+    } else {
+      const raison = demanderMotifSuppression();
+      if (!raison) return;
+      await avecChargement(e.currentTarget, async () => {
         // Send moderation request for each
         for (const id of selectionEditeur) {
           await api("/moderation/demandes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type_cible: "chant", cible_id: id }),
+            body: JSON.stringify({ type_cible: "chant", cible_id: id, raison: raison }),
           });
         }
-      }
-    });
+      });
+    }
     selectionEditeur.clear();
     majBulkBar();
     await actualiserEditeur();
@@ -3563,18 +3595,22 @@ async function actualiserEditeur() {
 
     // Action Supprimer
     row.querySelector(".btn-delete-song").addEventListener("click", async (e) => {
-      if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
-      await avecChargement(e.currentTarget, async () => {
-        if (IDENTITE.type === "super") {
+      if (IDENTITE.type === "super") {
+        if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
+        await avecChargement(e.currentTarget, async () => {
           await api(`/chants/${id}`, { method: "DELETE" });
-        } else {
+        });
+      } else {
+        const raison = demanderMotifSuppression();
+        if (!raison) return;
+        await avecChargement(e.currentTarget, async () => {
           await api("/moderation/demandes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type_cible: "chant", cible_id: id }),
+            body: JSON.stringify({ type_cible: "chant", cible_id: id, raison: raison }),
           });
-        }
-      });
+        });
+      }
       await actualiserEditeur();
     });
 
@@ -3924,18 +3960,22 @@ function afficherDetailsChantLecture() {
     });
 
     document.getElementById("det-btn-supprimer-dyn").addEventListener("click", async (e) => {
-      if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
-      await avecChargement(e.currentTarget, async () => {
-        if (IDENTITE.type === "super") {
+      if (IDENTITE.type === "super") {
+        if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
+        await avecChargement(e.currentTarget, async () => {
           await api(`/chants/${chant.id}`, { method: "DELETE" });
-        } else {
+        });
+      } else {
+        const raison = demanderMotifSuppression();
+        if (!raison) return;
+        await avecChargement(e.currentTarget, async () => {
           await api("/moderation/demandes", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type_cible: "chant", cible_id: chant.id }),
+            body: JSON.stringify({ type_cible: "chant", cible_id: chant.id, raison: raison }),
           });
-        }
-      });
+        });
+      }
       fermerModale("chant-details-modal");
       await actualiserEditeur();
     });
@@ -4300,12 +4340,18 @@ document.getElementById("chant-editor-form").addEventListener("submit", async (e
 document.getElementById("ce-supprimer").addEventListener("click", async (e) => {
   const id = document.getElementById("ce-id").value;
   if (!id) return;
-  if (!confirm("Demander la suppression de ce chant ? Il disparaîtra immédiatement de ta bibliothèque ; la décision finale revient au super-admin.")) return;
-  await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ type_cible: "chant", cible_id: Number(id) }),
-  }));
+  if (IDENTITE.type === "super") {
+    if (!confirm("Voulez-vous supprimer définitivement ce chant de la bibliothèque ?")) return;
+    await avecChargement(e.currentTarget, () => api(`/chants/${id}`, { method: "DELETE" }));
+  } else {
+    const raison = demanderMotifSuppression();
+    if (!raison) return;
+    await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type_cible: "chant", cible_id: Number(id), raison: raison }),
+    }));
+  }
   fermerModale("chant-editor");
   await actualiserEditeur();
   await actualiserListeBibliotheque();
@@ -4770,10 +4816,24 @@ document.getElementById("btn-reset-bibliotheque").addEventListener("click", asyn
     statusEl.textContent = "Tape exactement SUPPRIMER dans le champ pour confirmer.";
     return;
   }
-  if (!confirm("Vraiment tout supprimer ? Cette action est irréversible.")) return;
+  if (!confirm("Vraiment tout supprimer ? Un export de sauvegarde automatique va être téléchargé sur ton appareil avant la suppression définitive.")) return;
   try {
+    statusEl.textContent = "Génération de la sauvegarde...";
+    // Fetch all chants for backup
+    const backupChants = await api("/chants?limit=100000");
+    const dataStr = JSON.stringify(backupChants, null, 2);
+    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
+    
+    const exportFileDefaultName = 'depliantapp_dataset_export.json';
+    
+    const linkElement = document.createElement('a');
+    linkElement.setAttribute('href', dataUri);
+    linkElement.setAttribute('download', exportFileDefaultName);
+    linkElement.click();
+    
+    statusEl.textContent = "Suppression en cours...";
     const res = await avecChargement(e.currentTarget, () => api(`/chants/all?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE" }));
-    statusEl.textContent = `${res.deleted} chant(s) supprimé(s). Bibliothèque vide.`;
+    statusEl.textContent = `${res.deleted} chant(s) supprimé(s). Bibliothèque vide. Sauvegarde téléchargée.`;
     document.getElementById("reset-confirmation").value = "";
     await actualiserListeBibliotheque();
     await actualiserEditeur();
@@ -4803,7 +4863,7 @@ function depliantCardHtml(feuillet) {
   const dateAffichee = formaterDateAffichage(feuillet.date);
   const sousTitre = feuillet.lieu ? `${escapeHtml(dateAffichee)} — ${escapeHtml(feuillet.lieu)}` : escapeHtml(dateAffichee);
   const pdfUrl = `/feuillets/${feuillet.id}/pdf`;
-  const estAMoi = feuillet.chorale_id === IDENTITE.compte_id;
+  const estAMoi = feuillet.chorale_id === (IDENTITE.type === "chorale" ? IDENTITE.compte_id : 0) || IDENTITE.type === "super";
   const attribution = !estAMoi && feuillet.chorale_nom
     ? `<div class="depliant-card-attribution">Composé par ${escapeHtml(feuillet.chorale_nom)}</div>` : "";
   
@@ -5091,12 +5151,18 @@ async function actualiserDepliants() {
       const btnDel = card.querySelector('[data-action="supprimer"]');
       if (btnDel) {
         btnDel.addEventListener("click", async (e) => {
-          if (!confirm("Voulez-vous supprimer ce feuillet ? Cette action est irréversible.")) return;
-          await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type_cible: "feuillet", cible_id: id }),
-          }));
+          if (IDENTITE.type === "super") {
+            if (!confirm("Voulez-vous supprimer définitivement ce feuillet ?")) return;
+            await avecChargement(e.currentTarget, () => api(`/feuillets/${id}`, { method: "DELETE" }));
+          } else {
+            const raison = demanderMotifSuppression();
+            if (!raison) return;
+            await avecChargement(e.currentTarget, () => api("/moderation/demandes", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type_cible: "feuillet", cible_id: id, raison: raison }),
+            }));
+          }
           await actualiserDepliants();
         });
       }
@@ -5116,7 +5182,7 @@ async function actualiserDepliants() {
         popover.style.top = `${rect.bottom}px`;
         popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 190, rect.left - 130))}px`;
 
-        const isMine = f.chorale_id === IDENTITE.compte_id;
+        const isMine = f.chorale_id === (IDENTITE.type === "chorale" ? IDENTITE.compte_id : 0) || IDENTITE.type === "super";
         const favoris = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");
         const inFavs = favoris.includes(id);
 
@@ -5165,15 +5231,22 @@ async function actualiserDepliants() {
             } else if (action === "download-docx") {
               alert("Bientôt disponible — L'export Word sera activé lors d'une prochaine mise à jour.");
             } else if (action === "supprimer") {
-              if (confirm("Supprimer ce feuillet ?")) {
-                await api("/moderation/demandes", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ type_cible: "feuillet", cible_id: id }),
-                });
-                actualiserDepliants();
+              if (IDENTITE.type === "super") {
+                if (confirm("Supprimer ce feuillet définitivement ?")) {
+                  await api(`/feuillets/${id}`, { method: "DELETE" });
+                  actualiserDepliants();
+                }
+              } else {
+                const raison = demanderMotifSuppression();
+                if (raison) {
+                  await api("/moderation/demandes", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ type_cible: "feuillet", cible_id: id, raison: raison }),
+                  });
+                  actualiserDepliants();
+                }
               }
-            }
           });
         });
 
@@ -5450,10 +5523,16 @@ function demandeCardHtml(demande) {
   const apercu = demande.apercu
     ? (demande.type_cible === "chant" ? escapeHtml(demande.apercu.titre) : `${escapeHtml(demande.apercu.date)}${demande.apercu.lieu ? " — " + escapeHtml(demande.apercu.lieu) : ""}`)
     : "(ressource déjà supprimée entre-temps)";
+  const raisonHtml = demande.raison
+    ? `<div class="demande-raison" style="margin-top: 6px; font-size: 0.85rem; color: #dc2626; font-style: italic; background: #fef2f2; padding: 6px 10px; border-radius: 6px; border-left: 3px solid #ef4444;">
+         <strong>Motif de suppression :</strong> ${escapeHtml(demande.raison)}
+       </div>`
+    : "";
   return `
     <li class="demande-card" data-id="${demande.id}">
       <div class="chant-titre">${demande.type_cible === "chant" ? "Chant" : "Dépliant"} : ${apercu}</div>
       <div class="chant-meta">Demandé par ${escapeHtml(demande.chorale_nom)}</div>
+      ${raisonHtml}
       <div class="toolbar">
         <button type="button" class="btn-valider btn-effacer">Valider (supprimer définitivement)</button>
         <button type="button" class="btn-annuler-demande">Annuler (conserver)</button>
@@ -5461,12 +5540,38 @@ function demandeCardHtml(demande) {
     </li>`;
 }
 
+function demandeIgnoreeCardHtml(demande) {
+  const apercu = demande.apercu
+    ? (demande.type_cible === "chant" ? escapeHtml(demande.apercu.titre) : `${escapeHtml(demande.apercu.date)}${demande.apercu.lieu ? " — " + escapeHtml(demande.apercu.lieu) : ""}`)
+    : "(ressource déjà supprimée entre-temps)";
+  const raisonHtml = demande.raison
+    ? `<div class="demande-raison" style="margin-top: 6px; font-size: 0.85rem; color: #dc2626; font-style: italic; background: #fef2f2; padding: 6px 10px; border-radius: 6px; border-left: 3px solid #ef4444;">
+         <strong>Motif de suppression :</strong> ${escapeHtml(demande.raison)}
+       </div>`
+    : "";
+  return `
+    <li class="demande-card" data-id="${demande.id}" style="opacity: 0.8; border-color: #cbd5e1;">
+      <div class="chant-titre">${demande.type_cible === "chant" ? "Chant" : "Dépliant"} : ${apercu} <span style="font-size: 0.75rem; background: #64748b; color: white; padding: 2px 6px; border-radius: 4px; margin-left: 6px;">Ignorée</span></div>
+      <div class="chant-meta">Demandé par ${escapeHtml(demande.chorale_nom)}</div>
+      ${raisonHtml}
+      <div class="toolbar" style="margin-top: 8px;">
+        <button type="button" class="btn-valider btn-effacer" style="font-size: 0.8rem; padding: 4px 8px;">Valider (supprimer définitivement)</button>
+        <button type="button" class="btn-restaurer-etat" style="font-size: 0.8rem; padding: 4px 8px; background: #e2e8f0; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; color: #334155;">Restaurer l'état (remettre en attente)</button>
+      </div>
+    </li>`;
+}
+
 async function actualiserAdminDemandes() {
-  const demandes = await api("/moderation/demandes?statut=en_attente");
+  const [demandes, ignorees] = await Promise.all([
+    api("/moderation/demandes?statut=en_attente"),
+    api("/moderation/demandes?statut=annulee")
+  ]);
+
   const list = document.getElementById("admin-demandes-list");
   list.innerHTML = demandes.length
     ? demandes.map(demandeCardHtml).join("")
     : `<p class="hint">Aucune demande en attente.</p>`;
+
   list.querySelectorAll(".demande-card").forEach((el) => {
     const id = Number(el.dataset.id);
     el.querySelector(".btn-valider").addEventListener("click", async (e) => {
@@ -5474,6 +5579,8 @@ async function actualiserAdminDemandes() {
       await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/valider`, { method: "POST" }));
       await actualiserAdminDemandes();
       await actualiserAdminMasques();
+      await actualiserListeBibliotheque();
+      await actualiserEditeur();
     });
     el.querySelector(".btn-annuler-demande").addEventListener("click", async (e) => {
       await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/annuler`, { method: "POST" }));
@@ -5481,6 +5588,30 @@ async function actualiserAdminDemandes() {
       await actualiserAdminMasques();
     });
   });
+
+  const listIgnorees = document.getElementById("admin-demandes-ignorees-list");
+  if (listIgnorees) {
+    listIgnorees.innerHTML = ignorees.length
+      ? ignorees.map(demandeIgnoreeCardHtml).join("")
+      : `<p class="hint">Aucune demande ignorée.</p>`;
+
+    listIgnorees.querySelectorAll(".demande-card").forEach((el) => {
+      const id = Number(el.dataset.id);
+      el.querySelector(".btn-valider").addEventListener("click", async (e) => {
+        if (!confirm("Supprimer définitivement cette ressource pour toutes les chorales ? Action irréversible.")) return;
+        await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/valider`, { method: "POST" }));
+        await actualiserAdminDemandes();
+        await actualiserAdminMasques();
+        await actualiserListeBibliotheque();
+        await actualiserEditeur();
+      });
+      el.querySelector(".btn-restaurer-etat").addEventListener("click", async (e) => {
+        await avecChargement(e.currentTarget, () => api(`/moderation/demandes/${id}/remettre_en_attente`, { method: "POST" }));
+        await actualiserAdminDemandes();
+        await actualiserAdminMasques();
+      });
+    });
+  }
 }
 
 function masqueCardHtml(masque) {
@@ -6756,45 +6887,36 @@ async function init() {
 
     document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
     document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
-    if (IDENTITE.type === "super") {
-      // Le super-admin n'a pas d'espace chorale : ces vues (composition,
-      // dépliants, réglages) supposent toutes une chorale connectée.
-      ["composer", "depliants", "reglages"].forEach((v) => {
-        document.querySelector(`.nav-btn[data-view="${v}"]`).classList.add("hidden");
-      });
-    }
 
     MOMENTS = meta.moments;
     CATEGORIES = meta.categories;
     peuplerSelectsCategories();
     initBibliothequeControles();
 
+    initComposer();
+    document.getElementById("composer-result").innerHTML = indiceComposerHtml();
+
+    const promises = [
+      actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
+      actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
+      api("/parametres").catch(e => {
+        console.error("Params error:", e);
+        return { chorale: "DepliantApp" };
+      })
+    ];
+
     if (IDENTITE.type === "super") {
-      // Le super-admin n'a pas d'espace chorale (pas de dépliants/réglages
-      // propres) : atterrit directement sur l'administration plutôt que sur
-      // la bibliothèque, qui reste néanmoins consultable pour la modération.
-      await Promise.all([
-        actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
-        actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
-        actualiserAdmin().catch(e => console.error("Admin error:", e))
-      ]);
-      changerVue("admin");
+      promises.push(actualiserAdmin().catch(e => console.error("Admin error:", e)));
     } else {
-      initComposer();
-      document.getElementById("composer-result").innerHTML = indiceComposerHtml();
-      
-      const promises = [
-        actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
-        actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
-        actualiserEditeur().catch(e => console.error("Editor error:", e)),
-        api("/parametres").catch(e => {
-          console.error("Params error:", e);
-          return { chorale: "DepliantApp" };
-        })
-      ];
-      
-      const [_, __, ___, params] = await Promise.all(promises);
-      document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
+      promises.push(actualiserEditeur().catch(e => console.error("Editor error:", e)));
+    }
+
+    const results = await Promise.all(promises);
+    const params = results[2];
+    document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
+
+    if (IDENTITE.type === "super" && !window.location.hash) {
+      changerVue("admin");
     }
 
     // Initialisation à partir du hash courant ou de la bibliothèque par défaut

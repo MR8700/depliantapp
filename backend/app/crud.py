@@ -406,12 +406,12 @@ def delete_feuillet(feuillet_id: int) -> bool:
 # get_chant/list_feuillets/get_feuillet), en attendant la décision du
 # super-admin.
 
-def creer_demande_suppression(type_cible: str, cible_id: int, chorale_demandeuse_id: int) -> dict:
+def creer_demande_suppression(type_cible: str, cible_id: int, chorale_demandeuse_id: int, raison: str) -> dict:
     with get_connection() as conn:
         demande_id = insert_returning_id(
             conn,
-            "INSERT INTO demandes_suppression (type_cible, cible_id, chorale_demandeuse_id) VALUES (?, ?, ?)",
-            (type_cible, cible_id, chorale_demandeuse_id),
+            "INSERT INTO demandes_suppression (type_cible, cible_id, chorale_demandeuse_id, raison) VALUES (?, ?, ?, ?)",
+            (type_cible, cible_id, chorale_demandeuse_id, raison),
         )
         conn.execute(
             "INSERT INTO masques_chorale (chorale_id, type_cible, cible_id) VALUES (?, ?, ?) "

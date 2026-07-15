@@ -241,6 +241,7 @@ CREATE TABLE IF NOT EXISTS demandes_suppression (
     cible_id INTEGER NOT NULL,
     chorale_demandeuse_id INTEGER NOT NULL REFERENCES chorales(id),
     statut TEXT NOT NULL DEFAULT 'en_attente',
+    raison TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     traite_at TEXT
 );
@@ -406,6 +407,7 @@ CREATE TABLE IF NOT EXISTS demandes_suppression (
     cible_id INTEGER NOT NULL,
     chorale_demandeuse_id INTEGER NOT NULL REFERENCES chorales(id),
     statut TEXT NOT NULL DEFAULT 'en_attente',
+    raison TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     traite_at TIMESTAMP
 );
@@ -534,6 +536,10 @@ def _init_sqlite() -> None:
             if "motif_rejet" not in colonnes_categories:
                 conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN motif_rejet TEXT")
 
+        colonnes_demandes = {row["name"] for row in conn.execute("PRAGMA table_info(demandes_suppression)").fetchall()}
+        if colonnes_demandes and "raison" not in colonnes_demandes:
+            conn.execute("ALTER TABLE demandes_suppression ADD COLUMN raison TEXT")
+
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
@@ -625,6 +631,7 @@ def _init_postgres() -> None:
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS cree_par INTEGER REFERENCES chorales(id)")
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'en_attente'")
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS motif_rejet TEXT")
+        conn.execute("ALTER TABLE demandes_suppression ADD COLUMN IF NOT EXISTS raison TEXT")
 
         conn.executescript(SCHEMA_POSTGRES)
 

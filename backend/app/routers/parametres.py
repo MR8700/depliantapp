@@ -5,19 +5,21 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from .. import auth, config, schemas, crud
-from ..deps import require_chorale
+from ..deps import identite_courante
 
 router = APIRouter(prefix="/parametres", tags=["parametres"])
 
 
 @router.get("")
-def read_parametres(identite: auth.Identite = Depends(require_chorale)):
-    return config.get_config(identite.compte_id)
+def read_parametres(identite: auth.Identite = Depends(identite_courante)):
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.get_config(chorale_id)
 
 
 @router.put("")
-def write_parametres(data: dict, identite: auth.Identite = Depends(require_chorale)):
-    return config.save_config(identite.compte_id, data)
+def write_parametres(data: dict, identite: auth.Identite = Depends(identite_courante)):
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.save_config(chorale_id, data)
 
 
 # --- Pool partagé de médias (logos, bannières) : voir config.py -----------
@@ -39,19 +41,20 @@ def lire_media(media_id: int):
 
 
 @router.post("/medias")
-async def uploader_media(type: str, fichier: UploadFile, identite: auth.Identite = Depends(require_chorale)):
+async def uploader_media(type: str, fichier: UploadFile, identite: auth.Identite = Depends(identite_courante)):
     if type not in ("logo", "banniere"):
         raise HTTPException(status_code=400, detail="Type de média inconnu")
     if not (fichier.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     contenu = await fichier.read()
-    return config.upload_media(identite.compte_id, type, fichier.filename, contenu, fichier.content_type)
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.upload_media(chorale_id, type, fichier.filename, contenu, fichier.content_type)
 
 
 # --- Emplacements actifs de LA chorale connectée (logo_gauche/logo_droit/banniere_bas) ---
 
 @router.post("/image/{slot}")
-async def uploader_et_activer_image(slot: str, fichier: UploadFile, identite: auth.Identite = Depends(require_chorale)):
+async def uploader_et_activer_image(slot: str, fichier: UploadFile, identite: auth.Identite = Depends(identite_courante)):
     """Uploade une nouvelle image dans le pool partagé ET l'active
     immédiatement pour cette chorale — flux le plus simple (équivalent de
     l'ancien remplacement direct). Pour réutiliser une image déjà présente
@@ -61,11 +64,12 @@ async def uploader_et_activer_image(slot: str, fichier: UploadFile, identite: au
     if not (fichier.content_type or "").startswith("image/"):
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     contenu = await fichier.read()
-    return config.upload_and_activate_image(identite.compte_id, slot, fichier.filename, contenu, fichier.content_type)
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.upload_and_activate_image(chorale_id, slot, fichier.filename, contenu, fichier.content_type)
 
 
 @router.post("/image/{slot}/activer")
-def activer_image(slot: str, payload: dict, identite: auth.Identite = Depends(require_chorale)):
+def activer_image(slot: str, payload: dict, identite: auth.Identite = Depends(identite_courante)):
     """Choisit, pour cet emplacement, une image déjà présente dans le pool
     partagé (uploadée par n'importe quelle chorale) plutôt que d'en
     uploader une nouvelle."""
@@ -74,14 +78,16 @@ def activer_image(slot: str, payload: dict, identite: auth.Identite = Depends(re
     media_id = payload.get("media_id")
     if not media_id or not config.get_media_bytes(media_id):
         raise HTTPException(status_code=404, detail="Image introuvable dans le pool partagé")
-    return config.set_active_media(identite.compte_id, slot, media_id)
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.set_active_media(chorale_id, slot, media_id)
 
 
 @router.get("/image/{slot}")
-def lire_image_active(slot: str, identite: auth.Identite = Depends(require_chorale)):
+def lire_image_active(slot: str, identite: auth.Identite = Depends(identite_courante)):
     if slot not in config.IMAGE_SLOTS:
         raise HTTPException(status_code=404, detail="Emplacement d'image inconnu")
-    media_id = config.get_config(identite.compte_id).get(f"{slot}_media_id")
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    media_id = config.get_config(chorale_id).get(f"{slot}_media_id")
     if not media_id:
         raise HTTPException(status_code=404, detail="Aucune image définie")
     resultat = config.get_media_bytes(media_id)
@@ -92,24 +98,26 @@ def lire_image_active(slot: str, identite: auth.Identite = Depends(require_chora
 
 
 @router.delete("/image/{slot}")
-def retirer_image(slot: str, identite: auth.Identite = Depends(require_chorale)):
+def retirer_image(slot: str, identite: auth.Identite = Depends(identite_courante)):
     """Ne retire l'image QUE pour cette chorale (désélectionne
     l'emplacement) — l'image reste dans le pool partagé pour les autres."""
     if slot not in config.IMAGE_SLOTS:
         raise HTTPException(status_code=404, detail="Emplacement d'image inconnu")
-    return config.set_active_media(identite.compte_id, slot, None)
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return config.set_active_media(chorale_id, slot, None)
 
 
 @router.post("/preview-pdf")
 def preview_settings_pdf(
     data: dict,
-    identite: auth.Identite = Depends(require_chorale)
+    identite: auth.Identite = Depends(identite_courante)
 ):
     """Génère un PDF d'aperçu dynamique basé sur les réglages temporaires fournis
     dans le corps de la requête, appliqués sur le dernier dépliant de la chorale
     (ou un dépliant factice)."""
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
     # 1. Récupérer le dernier dépliant de la chorale, ou en fabriquer un factice si vide
-    feuillets_existants = crud.list_feuillets(chorale_id=identite.compte_id, limit=1)
+    feuillets_existants = crud.list_feuillets(chorale_id=chorale_id, limit=1)
     if feuillets_existants:
         feuillet = crud.get_feuillet(feuillets_existants[0].id)
     else:
@@ -132,7 +140,7 @@ def preview_settings_pdf(
             taille_texte_manuelle=None,
             one_page_mode=False,
             banniere_active=True,
-            chorale_id=identite.compte_id
+            chorale_id=chorale_id
         )
 
     # 2. Remplacer one_page_mode, priere_active, priere_texte et banniere_active
@@ -146,7 +154,7 @@ def preview_settings_pdf(
         feuillet.banniere_active = bool(data["banniere_active"])
 
     # 3. Construire le config_dict temporaire
-    config_actuelle = config.get_config(identite.compte_id)
+    config_actuelle = config.get_config(chorale_id)
     config_temporaire = {**config_actuelle, **data}
 
     # 4. Construire l'images dict temporaire

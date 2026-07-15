@@ -2,26 +2,28 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
 from .. import auth, config, crud, schemas
-from ..deps import identite_courante, require_chorale, require_superadmin
+from ..deps import identite_courante, require_superadmin
 from ..render.pdf import DepassementImpossible, render_feuillet_pdf_auto
 
 router = APIRouter(prefix="/feuillets", tags=["feuillets"])
 
 
 @router.get("", response_model=list[schemas.Feuillet])
-def list_feuillets(mine: bool = False, limit: int = 50, offset: int = 0, identite: auth.Identite = Depends(require_chorale)):
+def list_feuillets(mine: bool = False, limit: int = 50, offset: int = 0, identite: auth.Identite = Depends(identite_courante)):
     """mine=True -> uniquement les dépliants de la chorale connectée ("Mes
     dépliants") ; mine=False (défaut) -> tous les dépliants, toutes
     chorales confondues ("Parcourir"), avec l'attribution "composé par X".
     Dans les deux cas, les dépliants que cette chorale a masqués (demande
     de suppression en cours ou refusée) restent invisibles pour elle."""
-    chorale_id = identite.compte_id if mine else None
-    return crud.list_feuillets(chorale_id=chorale_id, limit=limit, offset=offset, chorale_id_appelant=identite.compte_id)
+    chorale_id_appelant = identite.compte_id if identite.type == "chorale" else 0
+    chorale_id = chorale_id_appelant if mine else None
+    return crud.list_feuillets(chorale_id=chorale_id, limit=limit, offset=offset, chorale_id_appelant=chorale_id_appelant)
 
 
 @router.post("", response_model=schemas.Feuillet)
-def create_feuillet(feuillet: schemas.FeuilletCreate, identite: auth.Identite = Depends(require_chorale)):
-    return crud.create_feuillet(feuillet, chorale_id=identite.compte_id)
+def create_feuillet(feuillet: schemas.FeuilletCreate, identite: auth.Identite = Depends(identite_courante)):
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return crud.create_feuillet(feuillet, chorale_id=chorale_id)
 
 
 @router.get("/{feuillet_id}", response_model=schemas.Feuillet)
@@ -30,7 +32,7 @@ def get_feuillet(feuillet_id: int, identite: auth.Identite = Depends(identite_co
     dépliants sont cherchables/consultables par toutes les chorales, sauf
     ceux que L'APPELANTE a masqués (le super-admin voit tout, nécessaire
     pour la modération)."""
-    chorale_id_appelant = identite.compte_id if identite.type == "chorale" else None
+    chorale_id_appelant = identite.compte_id if identite.type == "chorale" else 0
     feuillet = crud.get_feuillet(feuillet_id, chorale_id_appelant=chorale_id_appelant)
     if not feuillet:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
@@ -38,12 +40,13 @@ def get_feuillet(feuillet_id: int, identite: auth.Identite = Depends(identite_co
 
 
 @router.put("/{feuillet_id}", response_model=schemas.Feuillet)
-def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, identite: auth.Identite = Depends(require_chorale)):
+def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, identite: auth.Identite = Depends(identite_courante)):
     """Si le dépliant appartient à la chorale connectée, mise à jour en
     place. Sinon, un CLONE est créé pour elle (voir crud.update_feuillet) —
     la réponse peut donc porter un id différent de `feuillet_id` : le
     frontend doit adopter ce nouvel id."""
-    updated = crud.update_feuillet(feuillet_id, feuillet, chorale_id=identite.compte_id)
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    updated = crud.update_feuillet(feuillet_id, feuillet, chorale_id=chorale_id)
     if not updated:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
     return updated

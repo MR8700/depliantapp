@@ -99,6 +99,14 @@ def ensure_default_account() -> None:
     est malgré tout affiché une seule fois dans les logs de démarrage et
     écrit dans DATA_DIR/mot_de_passe_initial.txt, à changer dès que possible."""
     with get_connection() as conn:
+        # Crée le compte placeholder chorale id=0 pour l'application / admin
+        # (permet de stocker des livrets liturgiques et réglages au niveau global/application
+        # en respectant toutes les contraintes de clés étrangères)
+        conn.execute(
+            "INSERT INTO chorales (id, nom, username, password_hash, must_change_password) "
+            "VALUES (0, 'Application', 'admin-app-settings-placeholder', '', 0) "
+            "ON CONFLICT(id) DO NOTHING"
+        )
         existe = conn.execute("SELECT 1 FROM auth WHERE id = 1").fetchone()
         if existe:
             return
@@ -172,7 +180,7 @@ def get_chorale_by_username(username: str) -> Optional[dict]:
 
 def list_chorales() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT id, nom, username, must_change_password, created_at FROM chorales ORDER BY nom").fetchall()
+        rows = conn.execute("SELECT id, nom, username, must_change_password, created_at FROM chorales WHERE id <> 0 ORDER BY nom").fetchall()
         return [dict(r) for r in rows]
 
 
