@@ -16,6 +16,20 @@ const LABELS_MOMENTS = {
   Sortie: "Sortie",
 };
 
+function recalculerDimensionsGlobales() {
+  const vh = window.innerHeight * 0.01;
+  const vw = window.innerWidth * 0.01;
+  document.documentElement.style.setProperty('--vh', `${vh}px`);
+  document.documentElement.style.setProperty('--vw', `${vw}px`);
+  
+  // Dynamic safe width for drawers
+  const widthTiroir = Math.min(420, window.innerWidth);
+  document.documentElement.style.setProperty('--largeur-tiroir', `${widthTiroir}px`);
+}
+window.addEventListener('resize', recalculerDimensionsGlobales);
+window.addEventListener('orientationchange', recalculerDimensionsGlobales);
+recalculerDimensionsGlobales();
+
 // --- Appli installable (PWA) : icône sur l'écran d'accueil, lancement en
 // plein écran. Le service worker ne met en cache que la coquille statique
 // (voir sw.js) — jamais les données, toujours récupérées en direct.
@@ -721,15 +735,21 @@ function afficherIndicateurHorsLigne() {
   if (!indicator) {
     indicator = document.createElement("div");
     indicator.id = "offline-mode-indicator";
-    indicator.style.cssText = "background: #f59e0b; color: white; text-align: center; font-size: 0.75rem; font-weight: 600; padding: 6px 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); display: flex; align-items: center; justify-content: space-between; gap: 12px;";
+    indicator.style.cssText = "background: #f59e0b; color: white; text-align: center; font-size: 0.72rem; font-weight: 600; padding: 8px 36px 8px 12px; position: fixed; top: 0; left: 0; right: 0; z-index: 10000; box-shadow: 0 2px 4px rgba(0,0,0,0.1); box-sizing: border-box; line-height: 1.3;";
     indicator.innerHTML = `
-      <span style="flex: 1; text-align: center;">⚠️ Mode hors-ligne actif (connexion faible ou inexistante) — Affichage des données en cache</span>
-      <button type="button" id="close-offline-indicator" style="background: none; border: none; color: white; font-size: 1.25rem; cursor: pointer; font-weight: bold; padding: 0 4px; line-height: 1;">&times;</button>
+      <span style="display: block; width: 100%; white-space: normal; text-align: center;">⚠️ Mode hors-ligne actif (connexion faible ou inexistante) — Affichage des données en cache</span>
+      <button type="button" id="close-offline-indicator" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.15); border: none; color: white; font-size: 1.1rem; cursor: pointer; font-weight: bold; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; z-index: 10001;">&times;</button>
     `;
     document.body.appendChild(indicator);
-    document.body.style.paddingTop = `${indicator.offsetHeight || 28}px`;
     
-    document.getElementById("close-offline-indicator").addEventListener("click", () => {
+    // Defer padding layout assignment to let the browser compute offsetHeight
+    setTimeout(() => {
+      const computedHeight = indicator.offsetHeight || 42;
+      document.body.style.paddingTop = `${computedHeight}px`;
+    }, 50);
+    
+    document.getElementById("close-offline-indicator").addEventListener("click", (e) => {
+      e.stopPropagation();
       offlineIndicatorDismissed = true;
       retirerIndicateurHorsLigne();
     });
