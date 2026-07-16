@@ -6405,7 +6405,7 @@ input.special-label:focus {
     padding: 16px !important;
   }
 
-  .moment-row>div {
+  .moment-row>div:not(.moment-color-stripe) {
     display: flex !important;
     align-items: center !important;
     gap: 8px !important;
