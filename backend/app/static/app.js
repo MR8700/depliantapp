@@ -1490,6 +1490,7 @@ function bindMomentCardEvents(row, id) {
       } else {
         if (editPanel) editPanel.classList.add("collapsed");
       }
+      renderMomentBody(row, id);
       regenererApercuSiPossible();
     });
   });
@@ -1514,7 +1515,10 @@ function bindMomentCardEvents(row, id) {
       if (state && state.type === "chant" && state.chant_id) {
         ouvrirDetailsChant(state.chant_id, true);
       } else {
-        if (editPanel) editPanel.classList.toggle("collapsed");
+        if (editPanel) {
+          editPanel.classList.toggle("collapsed");
+          renderMomentBody(row, id);
+        }
       }
     });
   });
@@ -1600,6 +1604,7 @@ function bindMomentCardEvents(row, id) {
     if (btnClose) {
       btnClose.addEventListener("click", () => {
         editPanel.classList.add("collapsed");
+        renderMomentBody(row, id);
       });
     }
     
@@ -1678,9 +1683,13 @@ function renderMomentBody(row, moment) {
     
   } else if (state.type === "texte_libre") {
     const isFilled = !!(state.texte_libre || state.titre_libre);
+    const editPanel = row.querySelector(".moment-edit-panel");
+    const isCollapsed = editPanel ? editPanel.classList.contains("collapsed") : true;
+    const arrow = isCollapsed ? "▼" : "▲";
+
     colSelection.innerHTML = `
       <button type="button" class="btn-add-manual">
-        ✏️ ${isFilled ? "Modifier le texte" : "Saisir le texte"}
+        ✏️ ${isFilled ? "Modifier le texte" : "Saisir le texte"} ${arrow}
       </button>
     `;
     colResume.innerHTML = isFilled 
@@ -1688,7 +1697,6 @@ function renderMomentBody(row, moment) {
       : `<span class="text-muted">Vide</span>`;
       
     // Sync values to edit panel inputs
-    const editPanel = row.querySelector(".moment-edit-panel");
     if (editPanel) {
       let refrainVal = "";
       let coupletsVal = state.texte_libre || "";
@@ -1714,9 +1722,9 @@ function renderMomentBody(row, moment) {
     const btnAddManual = colSelection.querySelector(".btn-add-manual");
     if (btnAddManual) {
       btnAddManual.addEventListener("click", () => {
-        const editPanel = row.querySelector(".moment-edit-panel");
         if (editPanel) {
           editPanel.classList.toggle("collapsed");
+          renderMomentBody(row, moment);
         }
       });
     }

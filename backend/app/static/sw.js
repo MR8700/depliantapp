@@ -6,9 +6,9 @@
 // API en cache risquerait d'afficher des données périmées sans que
 // l'utilisateur s'en rende compte. Le cache ne sert que de secours si le
 // réseau est indisponible, jamais de source principale.
-const CACHE_NAME = "depliantapp-shell-v8";
+const CACHE_NAME = "depliantapp-shell-v9";
 const FICHIERS_COQUILLE = [
-  "/", "/index.html", "/login.html", "/style.css?v=8", "/app.js?v=8",
+  "/", "/index.html", "/login.html", "/style.css?v=9", "/app.js?v=9",
   "/manifest.json", "/favicon.svg", "/icon-192.png", "/icon-512.png",
 ];
 
