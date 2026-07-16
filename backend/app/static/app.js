@@ -5049,6 +5049,27 @@ async function actualiserDepliants() {
   const mineList = filtered.filter((f) => f.chorale_id === IDENTITE.compte_id);
   const publicsList = filtered.filter((f) => f.chorale_id !== IDENTITE.compte_id);
 
+  // Restore DOM wrappers if they were overwritten by empty state
+  if (filtered.length > 0) {
+    const groupsContainer = document.querySelector(".depliants-groups-container");
+    if (!document.getElementById("depliants-mine-list") && groupsContainer) {
+      groupsContainer.innerHTML = `
+        <div id="group-mine-container" class="depliants-group-section">
+          <div class="group-header">
+            <h3>⭐ MES CRÉATIONS <span id="group-mine-badge" class="group-badge">0</span></h3>
+          </div>
+          <ul id="depliants-mine-list" class="depliants-grid"></ul>
+        </div>
+        <div id="group-publics-container" class="depliants-group-section">
+          <div class="group-header">
+            <h3>👥 FEUILLETS PUBLICS <span id="group-publics-badge" class="group-badge">0</span></h3>
+          </div>
+          <ul id="depliants-publics-list" class="depliants-grid"></ul>
+        </div>
+      `;
+    }
+  }
+
   // Group count badges
   document.getElementById("group-mine-badge").textContent = mineList.length;
   document.getElementById("group-publics-badge").textContent = publicsList.length;
@@ -5082,28 +5103,6 @@ async function actualiserDepliants() {
     } else {
       container.innerHTML = etatVideHtml("🔍", "Aucun dépliant ne correspond à vos filtres",
         "Essayez de modifier votre recherche ou vos critères de tri.");
-    }
-  } else {
-    // If not empty, restore default structural wrappers if they were overwritten by empty state
-    const groupsContainer = document.querySelector(".depliants-groups-container");
-    if (!document.getElementById("depliants-mine-list")) {
-      groupsContainer.innerHTML = `
-        <div id="group-mine-container" class="depliants-group-section">
-          <div class="group-header">
-            <h3>⭐ MES CRÉATIONS <span id="group-mine-badge" class="group-badge">0</span></h3>
-          </div>
-          <ul id="depliants-mine-list" class="depliants-grid"></ul>
-        </div>
-        <div id="group-publics-container" class="depliants-group-section">
-          <div class="group-header">
-            <h3>👥 FEUILLETS PUBLICS <span id="group-publics-badge" class="group-badge">0</span></h3>
-          </div>
-          <ul id="depliants-publics-list" class="depliants-grid"></ul>
-        </div>
-      `;
-      // Run actualiser again to populate them
-      actualiserDepliants();
-      return;
     }
   }
 
