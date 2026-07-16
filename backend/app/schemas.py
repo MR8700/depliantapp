@@ -147,3 +147,4 @@ class Feuillet(FeuilletBase):
     chorale_nom: Optional[str] = None
     """Nom de la chorale propriétaire — jointure en lecture seule, pour
     l'affichage "composé par X" ; jamais stocké tel quel en base."""
+    created_at: Optional[str] = None

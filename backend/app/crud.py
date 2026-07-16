@@ -281,6 +281,7 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
         chorale_id=row["chorale_id"],
         clone_de_id=row["clone_de_id"],
         chorale_nom=row["chorale_nom"],
+        created_at=str(row["created_at"]) if row["created_at"] is not None else None,
     )
 
 

@@ -5356,12 +5356,23 @@ async function renommerDepliant(id, ancienneDate) {
 function voirInfosDepliant(f) {
   const format = f.one_page_mode ? "1 page paysage" : "2 pages paysage";
   const nbChants = f.moments ? f.moments.filter(m => m.type === "chant").length : 0;
+  
+  let dateCreationStr = "Non précisé";
+  if (f.created_at) {
+    try {
+      const isoStr = f.created_at.replace(" ", "T");
+      dateCreationStr = new Date(isoStr).toLocaleDateString("fr-FR");
+    } catch (e) {
+      dateCreationStr = "Date invalide";
+    }
+  }
+
   alert(`Fiche technique du feuillet :
 -------------------------------------
 Titre/Date : ${formaterDateAffichage(f.date)}
 Lieu : ${f.lieu || "Non précisé"}
 Auteur/Chorale : ${f.chorale_nom || "Ma chorale"}
-Créé le : ${new Date(f.created_at).toLocaleDateString("fr-FR")}
+Créé le : ${dateCreationStr}
 Format du feuillet : ${format}
 Nombre de chants : ${nbChants} chant(s)
 Visibilité : Public (Communauté)`);
