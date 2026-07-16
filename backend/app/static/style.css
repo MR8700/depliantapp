@@ -7604,4 +7604,58 @@ input.special-label:focus {
   #btn-menu {
     display: none !important; /* Hamburger button is replaced by Bottom Nav Profil */
   }
+
+  /* Mobile style for Widgets checkboxes */
+  .widgets-selection-grid {
+    grid-template-columns: 1fr !important;
+    gap: 10px !important;
+  }
+  
+  .widgets-selection-grid .checkbox-row {
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 14px !important;
+    padding: 14px 18px !important;
+    gap: 14px !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    display: flex !important;
+    align-items: center !important;
+    margin-bottom: 0 !important;
+  }
+  
+  .widgets-selection-grid .checkbox-slider {
+    width: 44px !important;
+    height: 24px !important;
+    border-radius: 12px !important;
+  }
+  
+  .widgets-selection-grid .checkbox-slider::before {
+    width: 18px !important;
+    height: 18px !important;
+    top: 3px !important;
+    left: 3px !important;
+  }
+  
+  .widgets-selection-grid input[type="checkbox"]:checked + .checkbox-slider::before {
+    transform: translateX(20px) !important;
+  }
+
+  .widgets-selection-grid input[type="checkbox"]:checked + .checkbox-slider {
+    background: #22c55e !important; /* Green active toggles */
+  }
+
+  .checkbox-label {
+    font-size: 0.92rem !important;
+    color: #1e293b !important;
+    font-weight: 600 !important;
+    line-height: 1.35 !important;
+  }
+
+  .checkbox-label small {
+    font-size: 0.76rem !important;
+    color: #64748b !important;
+    font-weight: normal !important;
+    margin-top: 2px !important;
+  }
 }
