@@ -4959,6 +4959,45 @@ function initDepliantsListenersOnce() {
   }
 }
 
+async function chargerApercuPdf(container, id) {
+  try {
+    const res = await fetch(`/feuillets/${id}/pdf`);
+    if (res.status === 200) {
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      container.innerHTML = `<iframe src="${objUrl}#toolbar=0&navpanes=0&scrollbar=0" class="depliant-pdf-thumbnail" loading="lazy"></iframe>`;
+    } else if (res.status === 409) {
+      const errData = await res.json();
+      let msg = "Le contenu déborde du feuillet.";
+      if (errData && errData.detail && errData.detail.message) {
+        msg = errData.detail.message;
+      }
+      container.innerHTML = `
+        <div class="pdf-thumbnail-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:16px; text-align:center; color:#b91c1c; background:#fef2f2; font-size:0.8rem; border-radius:8px; border:1px solid #fee2e2; box-sizing:border-box;">
+          <span style="font-size:1.8rem; margin-bottom:6px;">⚠️</span>
+          <strong style="margin-bottom:4px; font-weight:600; color:#991b1b;">Débordement de texte</strong>
+          <span style="font-size:0.75rem; color:#7f1d1d; line-height:1.3; overflow-y:auto; max-height:80px; width:100%; word-break:break-word;">${escapeHtml(msg)}</span>
+        </div>
+      `;
+    } else {
+      container.innerHTML = `
+        <div class="pdf-thumbnail-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:16px; text-align:center; color:#475569; background:#f8fafc; font-size:0.8rem; border-radius:8px; box-sizing:border-box;">
+          <span style="font-size:1.8rem; margin-bottom:6px;">📄</span>
+          <span>Aperçu non disponible</span>
+        </div>
+      `;
+    }
+  } catch (err) {
+    console.error("Erreur chargement aperçu:", err);
+    container.innerHTML = `
+      <div class="pdf-thumbnail-error" style="display:flex; flex-direction:column; align-items:center; justify-content:center; height:100%; padding:16px; text-align:center; color:#475569; background:#f8fafc; font-size:0.8rem; border-radius:8px; box-sizing:border-box;">
+        <span style="font-size:1.8rem; margin-bottom:6px;">📄</span>
+        <span>Aperçu non disponible</span>
+      </div>
+    `;
+  }
+}
+
 async function actualiserDepliants() {
   initDepliantsListenersOnce();
   
@@ -5117,9 +5156,8 @@ async function actualiserDepliants() {
       // Lazy load iframe on hover (prevent server freeze)
       card.addEventListener("mouseenter", () => {
         const container = card.querySelector(".depliant-thumbnail-container");
-        if (container && !container.querySelector("iframe")) {
-          const src = container.dataset.src;
-          container.innerHTML = `<iframe src="${src}" class="depliant-pdf-thumbnail" loading="lazy"></iframe>`;
+        if (container && !container.querySelector("iframe") && !container.querySelector(".pdf-thumbnail-error")) {
+          chargerApercuPdf(container, id);
         }
       });
 
@@ -5361,21 +5399,78 @@ function voirInfosDepliant(f) {
   if (f.created_at) {
     try {
       const isoStr = f.created_at.replace(" ", "T");
-      dateCreationStr = new Date(isoStr).toLocaleDateString("fr-FR");
+      dateCreationStr = new Date(isoStr).toLocaleDateString("fr-FR", {
+        year: "numeric", month: "long", day: "numeric"
+      });
     } catch (e) {
       dateCreationStr = "Date invalide";
     }
   }
 
-  alert(`Fiche technique du feuillet :
--------------------------------------
-Titre/Date : ${formaterDateAffichage(f.date)}
-Lieu : ${f.lieu || "Non précisé"}
-Auteur/Chorale : ${f.chorale_nom || "Ma chorale"}
-Créé le : ${dateCreationStr}
-Format du feuillet : ${format}
-Nombre de chants : ${nbChants} chant(s)
-Visibilité : Public (Communauté)`);
+  // Remove existing modal if any
+  const existing = document.getElementById("depliant-info-modal");
+  if (existing) existing.remove();
+
+  const modal = document.createElement("div");
+  modal.id = "depliant-info-modal";
+  modal.className = "modale-overlay active";
+  modal.style.zIndex = "10000";
+
+  modal.innerHTML = `
+    <div class="modale-contenu" style="max-width: 500px; padding: 24px; border-radius: 16px; background: white; box-shadow: 0 20px 25px -5px rgba(0,0,0,0.1), 0 10px 10px -5px rgba(0,0,0,0.04);">
+      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px; border-bottom: 1px solid #f1f5f9; padding-bottom: 12px;">
+        <h3 style="margin: 0; font-size: 1.25rem; color: #1e293b; display: flex; align-items: center; gap: 8px;">
+          ℹ️ Fiche technique du feuillet
+        </h3>
+        <button type="button" class="close-info-modal" style="background: none; border: none; font-size: 1.25rem; color: #94a3b8; cursor: pointer; padding: 4px;">✕</button>
+      </div>
+      
+      <div style="display: flex; flex-direction: column; gap: 14px; color: #334155; font-size: 0.9rem; line-height: 1.5;">
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Titre / Date</span>
+          <span style="font-weight: 600; color: #0f172a;">${escapeHtml(formaterDateAffichage(f.date))}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Lieu</span>
+          <span style="font-weight: 600; color: #0f172a;">${escapeHtml(f.lieu || "Non précisé")}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Auteur / Chorale</span>
+          <span style="font-weight: 600; color: #0f172a;">${escapeHtml(f.chorale_nom || "Ma chorale")}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Créé le</span>
+          <span style="font-weight: 600; color: #0f172a;">${escapeHtml(dateCreationStr)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Format</span>
+          <span style="font-weight: 600; color: #0f172a;">${escapeHtml(format)}</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Nombre de chants</span>
+          <span style="font-weight: 600; color: #0f172a;">${nbChants} chant(s)</span>
+        </div>
+        <div style="display: flex; justify-content: space-between; border-bottom: 1px dashed #f1f5f9; padding-bottom: 8px;">
+          <span style="color: #64748b; font-weight: 500;">Visibilité</span>
+          <span style="font-weight: 600; color: #0284c7; background: #f0f9ff; padding: 2px 8px; border-radius: 4px; font-size: 0.8rem;">Public (Communauté)</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 24px; display: flex; justify-content: flex-end;">
+        <button type="button" class="close-info-modal btn-primary" style="padding: 8px 20px; border: none; border-radius: 8px; font-weight: 600; background: #1F4A7C; color: white; cursor: pointer;">
+          Fermer
+        </button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  const closeHandler = () => modal.remove();
+  modal.querySelectorAll(".close-info-modal").forEach(el => el.addEventListener("click", closeHandler));
+  modal.addEventListener("click", (e) => {
+    if (e.target === modal) closeHandler();
+  });
 }
 
 async function modifierDepliant(id) {
