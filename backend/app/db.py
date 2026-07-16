@@ -651,7 +651,18 @@ def _init_postgres() -> None:
 @contextmanager
 def get_connection():
     if BACKEND == "postgres":
-        conn = psycopg2.connect(DATABASE_URL)
+        import time
+        max_retries = 5
+        delay = 1.0
+        for attempt in range(max_retries):
+            try:
+                conn = psycopg2.connect(DATABASE_URL)
+                break
+            except psycopg2.OperationalError as e:
+                if attempt == max_retries - 1:
+                    raise e
+                time.sleep(delay)
+                delay *= 2
         wrapped = _PgConnWrapper(conn)
         try:
             yield wrapped
