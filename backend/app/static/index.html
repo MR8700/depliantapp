@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>DepliantApp</title>
-<link rel="stylesheet" href="/style.css?v=7">
+<link rel="stylesheet" href="/style.css?v=8">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#1a3c6e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -182,48 +182,58 @@
       <div class="composer-form-column">
         <form id="feuillet-form">
           <!-- Carte 1: Informations de la célébration -->
-          <fieldset class="composer-card-fieldset">
-            <legend>Informations de la célébration</legend>
-            <div class="celebration-info-row">
-              <label class="req-label">Date * <input id="f-date" type="date" required></label>
-              <label>Lieu <input id="f-lieu" type="text" placeholder="Paroisse Saint Pierre…"></label>
-              <label>Célébration <input id="f-type-celebration" type="text" placeholder="Temps ordinaire…"></label>
-              <label>Président <input id="f-president" type="text" placeholder="Père…"></label>
-              <label>Animateur <input id="f-animateur" type="text" placeholder="Nom…"></label>
-              <label>Chorale <input id="f-chorale-info" type="text" placeholder="Nom…"></label>
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">ℹ️ Informations de la célébration</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="celebration-info-row">
+                <label class="req-label">Date * <input id="f-date" type="date" required></label>
+                <label>Lieu <input id="f-lieu" type="text" placeholder="Paroisse Saint Pierre…"></label>
+                <label>Célébration <input id="f-type-celebration" type="text" placeholder="Temps ordinaire…"></label>
+                <label>Président <input id="f-president" type="text" placeholder="Père…"></label>
+                <label>Animateur <input id="f-animateur" type="text" placeholder="Nom…"></label>
+                <label>Chorale <input id="f-chorale-info" type="text" placeholder="Nom…"></label>
+              </div>
             </div>
           </fieldset>
 
           <!-- Carte 2: Lectures du jour -->
-          <fieldset class="composer-card-fieldset">
-            <legend>Lectures du jour</legend>
-            <div class="lectures-grid">
-              <div class="lecture-field-group">
-                <label>1ère lecture</label>
-                <div class="input-with-search">
-                  <input id="f-lecture1" type="text" placeholder="Ex: Actes 15,1-2.22-29">
-                  <button type="button" class="btn-search-lecture" data-target="f-lecture1" title="Rechercher dans la bibliothèque">📚</button>
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">📖 Lecture du jour</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="lectures-grid">
+                <div class="lecture-field-group">
+                  <label>1ère lecture</label>
+                  <div class="input-with-search">
+                    <input id="f-lecture1" type="text" placeholder="Ex: Actes 15,1-2.22-29">
+                    <button type="button" class="btn-search-lecture" data-target="f-lecture1" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
                 </div>
-              </div>
-              <div class="lecture-field-group">
-                <label>Psaume</label>
-                <div class="input-with-search">
-                  <input id="f-psaume" type="text" placeholder="Ex: Psaume 66 (67)">
-                  <button type="button" class="btn-search-lecture" data-target="f-psaume" title="Rechercher dans la bibliothèque">📚</button>
+                <div class="lecture-field-group">
+                  <label>Psaume</label>
+                  <div class="input-with-search">
+                    <input id="f-psaume" type="text" placeholder="Ex: Psaume 66 (67)">
+                    <button type="button" class="btn-search-lecture" data-target="f-psaume" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
                 </div>
-              </div>
-              <div class="lecture-field-group">
-                <label>2ème lecture</label>
-                <div class="input-with-search">
-                  <input id="f-lecture2" type="text" placeholder="Ex: Apocalypse 21">
-                  <button type="button" class="btn-search-lecture" data-target="f-lecture2" title="Rechercher dans la bibliothèque">📚</button>
+                <div class="lecture-field-group">
+                  <label>2ème lecture</label>
+                  <div class="input-with-search">
+                    <input id="f-lecture2" type="text" placeholder="Ex: Apocalypse 21">
+                    <button type="button" class="btn-search-lecture" data-target="f-lecture2" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
                 </div>
-              </div>
-              <div class="lecture-field-group">
-                <label>Évangile</label>
-                <div class="input-with-search">
-                  <input id="f-evangile" type="text" placeholder="Ex: Jean 14,23-29">
-                  <button type="button" class="btn-search-lecture" data-target="f-evangile" title="Rechercher dans la bibliothèque">📚</button>
+                <div class="lecture-field-group">
+                  <label>Évangile</label>
+                  <div class="input-with-search">
+                    <input id="f-evangile" type="text" placeholder="Ex: Jean 14,23-29">
+                    <button type="button" class="btn-search-lecture" data-target="f-evangile" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -278,40 +288,45 @@
           </fieldset>
 
           <!-- Carte 5: Widgets -->
-          <fieldset class="composer-card-fieldset">
-            <legend>Widgets</legend>
-            <div class="widgets-selection-grid">
-              <label class="checkbox-row">
-                <input id="f-priere-active" type="checkbox">
-                <span class="checkbox-slider"></span>
-                <span class="checkbox-label">Prière pour le Burkina Faso <small>occupe la dernière colonne G2 de la page 1</small></span>
-              </label>
-              <label class="checkbox-row">
-                <input id="f-widget-info-chorale" type="checkbox">
-                <span class="checkbox-slider"></span>
-                <span class="checkbox-label">Informations de la chorale</span>
-              </label>
-              <label class="checkbox-row">
-                <input id="f-one-page-mode" type="checkbox">
-                <span class="checkbox-slider"></span>
-                <span class="checkbox-label">Feuillet 1 page <small>A4 paysage unique (Couverture + Chants côte à côte)</small></span>
-              </label>
-              <label class="checkbox-row">
-                <input id="f-banniere-active" type="checkbox">
-                <span class="checkbox-slider"></span>
-                <span class="checkbox-label">Bannière Bon dimanche</span>
-              </label>
-              <label class="checkbox-row">
-                <input id="f-widget-ref-bibles" type="checkbox">
-                <span class="checkbox-slider"></span>
-                <span class="checkbox-label">Afficher les références bibliques</span>
-              </label>
-            </div>
-            
-            <div class="widget-textarea-group">
-              <label>Texte personnalisé de la Prière (facultatif)
-                <textarea id="f-priere-texte" rows="3" placeholder="Laisser vide pour utiliser le texte par défaut (Prière pour le Burkina Faso)"></textarea>
-              </label>
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">⚙️ Widgets PDF</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="widgets-selection-grid">
+                <label class="checkbox-row">
+                  <input id="f-priere-active" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Prière pour le Burkina Faso <small>occupe la dernière colonne G2 de la page 1</small></span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-widget-info-chorale" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Informations de la chorale</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-one-page-mode" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Feuillet 1 page <small>A4 paysage unique (Couverture + Chants côte à côte)</small></span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-banniere-active" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Bannière Bon dimanche</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-widget-ref-bibles" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Afficher les références bibliques</span>
+                </label>
+              </div>
+              
+              <div class="widget-textarea-group">
+                <label>Texte personnalisé de la Prière (facultatif)
+                  <textarea id="f-priere-texte" rows="3" placeholder="Laisser vide pour utiliser le texte par défaut (Prière pour le Burkina Faso)"></textarea>
+                </label>
+              </div>
             </div>
           </fieldset>
 
@@ -325,6 +340,7 @@
         <div class="preview-header-row">
           <h3 class="preview-title">Aperçu du feuillet</h3>
           <span class="preview-badge-sync">🟢 Aperçu synchronisé</span>
+          <button type="button" id="btn-close-mobile-preview" class="btn-close-preview-sheet" title="Fermer l'aperçu">✕</button>
         </div>
         <div class="preview-toolbar" id="preview-custom-toolbar">
           <button type="button" id="pv-btn-zoom-out" class="btn-pv-tool" title="Zoom -">－</button>
@@ -359,6 +375,12 @@
         <button type="button" id="btn-submit-composer" class="btn-primary" title="Créer le feuillet"><span>✨</span> <span class="btn-text">Créer le feuillet</span></button>
       </div>
     </div>
+
+    <!-- Floating Action Button for Mobile PDF Preview -->
+    <button type="button" id="btn-mobile-pdf-preview" class="btn-fab-preview no-print">
+      <span class="fab-icon">👁</span>
+      <span class="fab-text">Aperçu PDF</span>
+    </button>
   </section>
 
   <!-- Les dépliants -->
@@ -1670,8 +1692,103 @@
   </div>
 </div>
 
+<!-- Bottom Navigation globale pour mobile -->
+<nav class="mobile-bottom-nav no-print">
+  <button type="button" class="bottom-nav-item" data-target-view="profil">
+    <span class="bottom-nav-icon">👤</span>
+    <span class="bottom-nav-label">Mon profil</span>
+  </button>
+  <button type="button" class="bottom-nav-item" data-target-view="bibliotheque">
+    <span class="bottom-nav-icon">📚</span>
+    <span class="bottom-nav-label">Bibliothèque</span>
+  </button>
+  <button type="button" class="bottom-nav-item composer-item" data-target-view="composer">
+    <div class="composer-icon-wrapper">
+      <span class="bottom-nav-icon">✏️</span>
+    </div>
+    <span class="bottom-nav-label">Composer</span>
+  </button>
+  <button type="button" class="bottom-nav-item" data-target-view="depliants">
+    <span class="bottom-nav-icon">📄</span>
+    <span class="bottom-nav-label">Les dépliants</span>
+  </button>
+  <button type="button" class="bottom-nav-item" id="btn-bottom-extras">
+    <span class="bottom-nav-icon">⋯</span>
+    <span class="bottom-nav-label">Extras</span>
+  </button>
+</nav>
+
+<!-- Tiroir Bottom Sheet pour Extras -->
+<div id="bottom-sheet-extras" class="bottom-sheet-overlay hidden no-print">
+  <div class="bottom-sheet-backdrop"></div>
+  <div class="bottom-sheet-drawer">
+    <div class="bottom-sheet-header">
+      <h4>Autres fonctionnalités</h4>
+      <button type="button" class="btn-close-extras">✕</button>
+    </div>
+    <div class="bottom-sheet-menu-grid">
+      <button type="button" class="extra-menu-item" data-target-view="editeur">
+        <span class="extra-icon">🎵</span>
+        <span class="extra-label">Éditeur</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="importer">
+        <span class="extra-icon">📥</span>
+        <span class="extra-label">Importer</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="reglages">
+        <span class="extra-icon">⚙️</span>
+        <span class="extra-label">Réglages</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="messagerie">
+        <span class="extra-icon">✉️</span>
+        <span class="extra-label">Messagerie</span>
+      </button>
+      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="statistiques">
+        <span class="extra-icon">📊</span>
+        <span class="extra-label">Stats</span>
+      </button>
+      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="admin">
+        <span class="extra-icon">🔑</span>
+        <span class="extra-label">Administration</span>
+      </button>
+      <button type="button" class="extra-menu-item btn-logout-action" style="grid-column: span 2; color: #ef4444; border-top: 1px solid #f1f5f9; margin-top: 8px; padding-top: 12px; font-weight: bold;">
+        <span class="extra-icon">🚪</span>
+        <span class="extra-label">Se déconnecter</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Tiroir Bottom Sheet pour les actions d'une carte de moment -->
+<div id="bottom-sheet-card-actions" class="bottom-sheet-overlay hidden no-print">
+  <div class="bottom-sheet-backdrop"></div>
+  <div class="bottom-sheet-drawer">
+    <div class="bottom-sheet-header">
+      <h4 id="card-actions-sheet-title">Actions sur le moment</h4>
+      <button type="button" class="btn-close-card-actions">✕</button>
+    </div>
+    <div class="bottom-sheet-menu-list">
+      <button type="button" class="sheet-action-item" id="sheet-action-book">
+        <span class="action-icon">📖</span> Choisir dans la bibliothèque
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-eye">
+        <span class="action-icon">👁</span> Prévisualiser le chant
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-pencil">
+        <span class="action-icon">✏</span> Modifier le chant/texte
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-trash" style="color: #ef4444;">
+        <span class="action-icon">🗑</span> Vider ce moment
+      </button>
+      <button type="button" class="sheet-action-item btn-close-card-actions" style="border-top: 1px solid #f1f5f9; margin-top: 8px; font-weight: bold; color: #64748b;">
+        Annuler
+      </button>
+    </div>
+  </div>
+</div>
+
 <!-- Import workspace rendered inline in view-importer -->
 
-<script src="/app.js?v=7"></script>
+<script src="/app.js?v=8"></script>
 </body>
 </html>

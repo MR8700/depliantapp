@@ -397,6 +397,19 @@ function afficherVueDirect(nomVue) {
   const viewEl = document.getElementById(`view-${nomVue}`);
   if (viewEl) viewEl.classList.add("active");
   
+  // Sync Bottom Navigation items
+  document.querySelectorAll(".bottom-nav-item").forEach((b) => b.classList.remove("active"));
+  const bBtn = document.querySelector(`.bottom-nav-item[data-target-view="${nomVue}"]`);
+  if (bBtn) {
+    bBtn.classList.add("active");
+  } else {
+    const extraViews = ["editeur", "importer", "reglages", "messagerie", "admin", "statistiques"];
+    if (extraViews.includes(nomVue)) {
+      const extBtn = document.getElementById("btn-bottom-extras");
+      if (extBtn) extBtn.classList.add("active");
+    }
+  }
+
   if (nomVue === "reglages") chargerParametres();
   if (nomVue === "editeur") actualiserEditeur();
   if (nomVue === "depliants") actualiserDepliants();
@@ -1245,6 +1258,16 @@ function momentRowHtml(moment, index) {
     <div class="moment-row" data-moment="${moment}" draggable="true">
       <div class="moment-color-stripe" style="background-color: ${color};"></div>
       
+      <!-- [MOBILE ONLY] Card Header -->
+      <div class="moment-card-header no-print">
+        <div class="moment-card-header-left">
+          <span class="moment-drag-handle" title="Déplacer" style="cursor: grab; margin-right: 4px;">☰</span>
+          <span class="moment-badge-index">#${index + 1}</span>
+          <span class="moment-card-title" style="color: ${color};">${label}</span>
+        </div>
+        <button type="button" class="btn-moment-dots" data-moment="${moment}">⋮</button>
+      </div>
+
       <!-- Column 1: Order -->
       <div class="col-order">
         <input type="number" class="moment-ordre-input" value="${index * 10}" step="1">
@@ -1287,6 +1310,23 @@ function momentRowHtml(moment, index) {
         <span class="moment-drag-handle" title="Déplacer">☰</span>
       </div>
       
+      <!-- [MOBILE ONLY] Widgets indicators row -->
+      <div class="moment-row-widgets-row no-print">
+        <span class="moment-widgets-title">Widgets</span>
+        <div class="moment-widgets-icons" id="widgets-row-${moment}"></div>
+        <span class="moment-widgets-status" id="widgets-status-${moment}">0 actif</span>
+      </div>
+
+      <!-- [MOBILE ONLY] Footer Actions -->
+      <div class="moment-card-footer no-print">
+        <div class="moment-card-selection-box" id="selection-box-${moment}"></div>
+        <div class="moment-card-action-buttons">
+          <button type="button" class="btn-card-icon btn-action-book" title="Choisir de la bibliothèque">📖</button>
+          <button type="button" class="btn-card-icon btn-action-eye" title="Aperçu du chant">👁</button>
+          <button type="button" class="btn-card-icon btn-action-trash" title="Vider ce moment">🗑</button>
+        </div>
+      </div>
+
       <!-- Collapsible Edit Panel (full width spanned in grid) -->
       <div class="moment-edit-panel collapsed" id="edit-panel-${moment}">
         <div class="edit-panel-grid">
@@ -1315,10 +1355,21 @@ function momentRowHtml(moment, index) {
 
 function specialRowHtml(id, state) {
   const color = "#546e7a";
+  const label = state.label || "Chant spécial";
   return `
     <div class="moment-row special-row" data-moment="${id}">
       <div class="moment-color-stripe" style="background-color: ${color};"></div>
       
+      <!-- [MOBILE ONLY] Card Header -->
+      <div class="moment-card-header no-print">
+        <div class="moment-card-header-left">
+          <span class="moment-drag-handle" title="Déplacer" style="cursor: grab; margin-right: 4px;">☰</span>
+          <span class="moment-badge-index">★</span>
+          <span class="moment-card-title" style="color: ${color};">${label}</span>
+        </div>
+        <button type="button" class="btn-moment-dots" data-moment="${id}">⋮</button>
+      </div>
+
       <!-- Column 1: Order -->
       <div class="col-order">
         <input type="number" class="moment-ordre-input" value="${state.ordre}" step="1">
@@ -1356,6 +1407,23 @@ function specialRowHtml(id, state) {
         <button type="button" class="btn-card-icon btn-action-book" title="Choisir de la bibliothèque">📚</button>
         <button type="button" class="btn-card-icon btn-supprimer-special" title="Supprimer le chant spécial">🗑</button>
         <span class="moment-drag-handle" title="Déplacer">☰</span>
+      </div>
+
+      <!-- [MOBILE ONLY] Widgets indicators row -->
+      <div class="moment-row-widgets-row no-print">
+        <span class="moment-widgets-title">Widgets</span>
+        <div class="moment-widgets-icons" id="widgets-row-${id}"></div>
+        <span class="moment-widgets-status" id="widgets-status-${id}">0 actif</span>
+      </div>
+
+      <!-- [MOBILE ONLY] Footer Actions -->
+      <div class="moment-card-footer no-print">
+        <div class="moment-card-selection-box" id="selection-box-${id}"></div>
+        <div class="moment-card-action-buttons">
+          <button type="button" class="btn-card-icon btn-action-book" title="Choisir de la bibliothèque">📖</button>
+          <button type="button" class="btn-card-icon btn-action-eye" title="Aperçu du chant">👁</button>
+          <button type="button" class="btn-card-icon btn-supprimer-special" title="Supprimer le chant spécial">🗑</button>
+        </div>
       </div>
       
       <!-- Collapsible Edit Panel (full width spanned in grid) -->
@@ -1431,18 +1499,16 @@ function bindMomentCardEvents(row, id) {
     regenererApercuSiPossible();
   });
   
-  const btnEye = row.querySelector(".btn-action-eye");
-  if (btnEye) {
+  row.querySelectorAll(".btn-action-eye").forEach((btnEye) => {
     btnEye.addEventListener("click", () => {
       const state = momentsState[id];
       if (state && state.chant_id) {
         ouvrirDetailsChant(state.chant_id, false);
       }
     });
-  }
+  });
   
-  const btnPencil = row.querySelector(".btn-action-pencil");
-  if (btnPencil) {
+  row.querySelectorAll(".btn-action-pencil").forEach((btnPencil) => {
     btnPencil.addEventListener("click", () => {
       const state = momentsState[id];
       if (state && state.type === "chant" && state.chant_id) {
@@ -1451,30 +1517,34 @@ function bindMomentCardEvents(row, id) {
         if (editPanel) editPanel.classList.toggle("collapsed");
       }
     });
-  }
+  });
   
-  const btnBook = row.querySelector(".btn-action-book");
-  if (btnBook) {
+  row.querySelectorAll(".btn-action-book").forEach((btnBook) => {
     btnBook.addEventListener("click", () => ouvrirPicker(id));
-  }
+  });
   
-  const btnTrash = row.querySelector(".btn-action-trash");
-  if (btnTrash) {
+  row.querySelectorAll(".btn-action-trash").forEach((btnTrash) => {
     btnTrash.addEventListener("click", () => {
       momentsState[id] = { type: "aucun", ordre: momentsState[id].ordre };
       if (editPanel) editPanel.classList.add("collapsed");
       renderMomentBody(row, id);
       regenererApercuSiPossible();
     });
-  }
+  });
   
-  const btnDeleteSpecial = row.querySelector(".btn-supprimer-special");
-  if (btnDeleteSpecial) {
+  row.querySelectorAll(".btn-supprimer-special").forEach((btnDeleteSpecial) => {
     btnDeleteSpecial.addEventListener("click", () => {
       delete momentsState[id];
       row.remove();
       regenererApercuSiPossible();
       actualiserStatsBottomBar();
+    });
+  });
+
+  const btnDots = row.querySelector(".btn-moment-dots");
+  if (btnDots) {
+    btnDots.addEventListener("click", () => {
+      ouvrirCardActionsSheet(id, row);
     });
   }
   
@@ -1673,6 +1743,54 @@ function renderMomentBody(row, moment) {
     }
   }
   
+  // Mobile UI updates inside renderMomentBody
+  const wIconsEl = row.querySelector(".moment-widgets-icons");
+  const wStatusEl = row.querySelector(".moment-widgets-status");
+  if (wIconsEl && wStatusEl) {
+    const hasTitle = !!(state.chant_titre || state.titre_libre);
+    const isVisible = state.type !== "aucun";
+    const hasLimit = !!((state.couplet_limit !== null && state.couplet_limit !== undefined) || state.type === "texte_libre");
+    const hasRef = !!(state.code_reference);
+    
+    let activeCount = 0;
+    if (hasTitle) activeCount++;
+    if (isVisible) activeCount++;
+    if (hasLimit) activeCount++;
+    if (hasRef) activeCount++;
+    
+    wIconsEl.innerHTML = `
+      <span class="widget-chip-indicator ${hasTitle ? 'active' : ''}" title="Titre">T</span>
+      <span class="widget-chip-indicator ${isVisible ? 'active' : ''}" title="Visibilité">👁</span>
+      <span class="widget-chip-indicator ${hasLimit ? 'active' : ''}" title="Couplets / Textes">✂️</span>
+      <span class="widget-chip-indicator ${hasRef ? 'active' : ''}" title="Code Référence">🔗</span>
+    `;
+    wStatusEl.textContent = `${activeCount} actif${activeCount > 1 ? 's' : ''}`;
+  }
+
+  const cardSelBox = row.querySelector(".moment-card-selection-box");
+  if (cardSelBox) {
+    cardSelBox.innerHTML = colSelection.innerHTML;
+    // Re-bind click handlers for mobile triggers
+    const mobileTrigger = cardSelBox.querySelector(".select-song-trigger");
+    if (mobileTrigger) {
+      mobileTrigger.addEventListener("click", () => ouvrirPicker(moment));
+    }
+    const mobileSelectLimite = cardSelBox.querySelector(".select-couplet-limite");
+    if (mobileSelectLimite) mobileSelectLimite.addEventListener("change", () => {
+      momentsState[moment].couplet_limit = mobileSelectLimite.value ? Number(mobileSelectLimite.value) : null;
+      regenererApercuSiPossible();
+    });
+    const mobileBtnAddManual = cardSelBox.querySelector(".btn-add-manual");
+    if (mobileBtnAddManual) {
+      mobileBtnAddManual.addEventListener("click", () => {
+        const editPanel = row.querySelector(".moment-edit-panel");
+        if (editPanel) {
+          editPanel.classList.toggle("collapsed");
+        }
+      });
+    }
+  }
+
   actualiserStatsBottomBar();
 }
 
@@ -7017,6 +7135,174 @@ function updateHeaderAndProfileAvatar() {
   }
 }
 
+function ouvrirCardActionsSheet(id, row) {
+  const sheet = document.getElementById("bottom-sheet-card-actions");
+  if (!sheet) return;
+  
+  const state = momentsState[id] || { type: "aucun" };
+  const isSpecial = id.startsWith("special-");
+  const label = isSpecial ? (state.label || "Chant spécial") : (LABELS_MOMENTS[id] || id);
+  
+  document.getElementById("card-actions-sheet-title").textContent = `Actions : ${label}`;
+  
+  // Show/Hide preview action
+  const actionEye = document.getElementById("sheet-action-eye");
+  if (state.type === "chant" && state.chant_id) {
+    actionEye.style.display = "flex";
+  } else {
+    actionEye.style.display = "none";
+  }
+
+  // Setup click listeners
+  const bookBtn = document.getElementById("sheet-action-book");
+  const eyeBtn = document.getElementById("sheet-action-eye");
+  const pencilBtn = document.getElementById("sheet-action-pencil");
+  const trashBtn = document.getElementById("sheet-action-trash");
+  
+  const replaceEl = (el) => {
+    const clone = el.cloneNode(true);
+    el.parentNode.replaceChild(clone, el);
+    return clone;
+  };
+  
+  const cleanBook = replaceEl(bookBtn);
+  const cleanEye = replaceEl(eyeBtn);
+  const cleanPencil = replaceEl(pencilBtn);
+  const cleanTrash = replaceEl(trashBtn);
+  
+  cleanBook.addEventListener("click", () => {
+    sheet.classList.add("hidden");
+    ouvrirPicker(id);
+  });
+  
+  cleanEye.addEventListener("click", () => {
+    sheet.classList.add("hidden");
+    if (state.chant_id) ouvrirDetailsChant(state.chant_id, false);
+  });
+  
+  cleanPencil.addEventListener("click", () => {
+    sheet.classList.add("hidden");
+    if (state.type === "chant" && state.chant_id) {
+      ouvrirDetailsChant(state.chant_id, true);
+    } else {
+      const editPanel = row.querySelector(".moment-edit-panel");
+      if (editPanel) editPanel.classList.remove("collapsed");
+    }
+  });
+  
+  cleanTrash.addEventListener("click", () => {
+    sheet.classList.add("hidden");
+    if (isSpecial) {
+      delete momentsState[id];
+      row.remove();
+      regenererApercuSiPossible();
+      actualiserStatsBottomBar();
+    } else {
+      momentsState[id] = { type: "aucun", ordre: momentsState[id].ordre };
+      const editPanel = row.querySelector(".moment-edit-panel");
+      if (editPanel) editPanel.classList.add("collapsed");
+      renderMomentBody(row, id);
+      regenererApercuSiPossible();
+    }
+  });
+  
+  sheet.classList.remove("hidden");
+}
+
+function initMobileLayout() {
+  // 1. Bottom Navigation Switch
+  document.querySelectorAll(".bottom-nav-item[data-target-view]").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const view = btn.getAttribute("data-target-view");
+      if (view === "profil") {
+        ouvrirProfil();
+      } else {
+        changerVue(view);
+      }
+    });
+  });
+
+  // 2. Extras Drawer Toggles
+  const btnExtras = document.getElementById("btn-bottom-extras");
+  const sheetExtras = document.getElementById("bottom-sheet-extras");
+  if (btnExtras && sheetExtras) {
+    btnExtras.addEventListener("click", () => {
+      sheetExtras.classList.remove("hidden");
+    });
+    
+    const closeExtras = () => sheetExtras.classList.add("hidden");
+    sheetExtras.querySelector(".bottom-sheet-backdrop").addEventListener("click", closeExtras);
+    sheetExtras.querySelector(".btn-close-extras").addEventListener("click", closeExtras);
+    
+    sheetExtras.querySelectorAll(".extra-menu-item[data-target-view]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const view = btn.getAttribute("data-target-view");
+        closeExtras();
+        changerVue(view);
+      });
+    });
+
+    const logoutBtn = sheetExtras.querySelector(".btn-logout-action");
+    if (logoutBtn) {
+      logoutBtn.addEventListener("click", () => {
+        closeExtras();
+        const mainLogout = document.getElementById("btn-deconnexion");
+        if (mainLogout) mainLogout.click();
+      });
+    }
+  }
+
+  // 3. Card Actions Drawer Dismiss
+  const sheetCardActions = document.getElementById("bottom-sheet-card-actions");
+  if (sheetCardActions) {
+    const closeCard = () => sheetCardActions.classList.add("hidden");
+    sheetCardActions.querySelector(".bottom-sheet-backdrop").addEventListener("click", closeCard);
+    sheetCardActions.querySelectorAll(".btn-close-card-actions").forEach(el => el.addEventListener("click", closeCard));
+  }
+
+  // 4. Accordions toggle
+  document.querySelectorAll(".accordion-header").forEach(hdr => {
+    hdr.addEventListener("click", () => {
+      const parent = hdr.closest(".accordion-fieldset");
+      if (parent) {
+        parent.classList.toggle("collapsed");
+      }
+    });
+  });
+
+  // By default collapse them on mobile for clean startup
+  if (window.innerWidth <= 768) {
+    document.querySelectorAll(".accordion-fieldset").forEach(fieldset => {
+      fieldset.classList.add("collapsed");
+    });
+  }
+
+  // 5. FAB Preview Button
+  const btnFab = document.getElementById("btn-mobile-pdf-preview");
+  const pvCol = document.querySelector(".composer-preview-column");
+  if (btnFab && pvCol) {
+    btnFab.addEventListener("click", () => {
+      pvCol.classList.add("active");
+      const refreshBtn = document.getElementById("pv-btn-refresh");
+      if (refreshBtn) refreshBtn.click();
+    });
+  }
+  
+  const btnClosePv = document.getElementById("btn-close-mobile-preview");
+  if (btnClosePv && pvCol) {
+    btnClosePv.addEventListener("click", () => {
+      pvCol.classList.remove("active");
+    });
+  }
+
+  // Admin and super roles sync in extras grid
+  if (IDENTITE) {
+    document.querySelectorAll(".id-admin-only").forEach(el => {
+      el.classList.toggle("hidden", IDENTITE.type !== "super");
+    });
+  }
+}
+
 // --- init ---
 async function init() {
   const debutChargement = Date.now();
@@ -7041,6 +7327,7 @@ async function init() {
 
     initComposer();
     document.getElementById("composer-result").innerHTML = indiceComposerHtml();
+    initMobileLayout();
 
     const promises = [
       actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),

@@ -6975,3 +6975,633 @@ input.special-label:focus {
     width: 100% !important;
   }
 }
+
+/* Mobile-only elements hidden on desktop */
+.moment-card-header,
+.moment-row-widgets-row,
+.moment-card-footer,
+.btn-fab-preview,
+.mobile-bottom-nav,
+.btn-close-preview-sheet {
+  display: none !important;
+}
+
+/* Mobile Overrides (v7/v8) - Overhaul Mobile-First Experience */
+@media (max-width: 768px) {
+  /* Global Bottom Navigation */
+  .mobile-bottom-nav {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 60px !important;
+    background: #ffffff !important;
+    border-top: 1px solid #e2e8f0 !important;
+    box-shadow: 0 -4px 12px rgba(0, 0, 0, 0.05) !important;
+    z-index: 10000 !important;
+    justify-content: space-around !important;
+    align-items: center !important;
+    padding-bottom: env(safe-area-inset-bottom, 0px) !important;
+    box-sizing: border-box !important;
+  }
+  
+  .bottom-nav-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: none !important;
+    border: none !important;
+    color: #64748b !important;
+    font-size: 0.72rem !important;
+    font-weight: 500 !important;
+    cursor: pointer !important;
+    flex: 1 !important;
+    height: 100% !important;
+    gap: 2px !important;
+    transition: all 0.2s ease !important;
+    padding: 0 !important;
+  }
+  
+  .bottom-nav-item .bottom-nav-icon {
+    font-size: 1.25rem !important;
+    transition: transform 0.2s ease !important;
+  }
+  
+  .bottom-nav-item:active .bottom-nav-icon {
+    transform: scale(0.85) !important;
+  }
+  
+  .bottom-nav-item.active {
+    color: #1f4a7c !important;
+    font-weight: 700 !important;
+  }
+  
+  .bottom-nav-item.composer-item {
+    position: relative !important;
+    top: -12px !important;
+    height: 72px !important;
+  }
+  
+  .bottom-nav-item.composer-item .composer-icon-wrapper {
+    background: #1f4a7c !important;
+    color: white !important;
+    width: 50px !important;
+    height: 50px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    box-shadow: 0 4px 10px rgba(31, 74, 124, 0.3) !important;
+    border: 3px solid #ffffff !important;
+    transition: transform 0.2s ease !important;
+  }
+  
+  .bottom-nav-item.composer-item:active .composer-icon-wrapper {
+    transform: scale(0.9) !important;
+  }
+  
+  .bottom-nav-item.composer-item .bottom-nav-icon {
+    font-size: 1.35rem !important;
+    color: white !important;
+  }
+  
+  .bottom-nav-item.composer-item .bottom-nav-label {
+    margin-top: 2px !important;
+  }
+
+  /* Bottom Sheets Overlays and Backdrops */
+  .bottom-sheet-overlay {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 12000 !important;
+    display: flex !important;
+    flex-direction: column !important;
+    justify-content: flex-end !important;
+    transition: visibility 0.3s !important;
+  }
+  
+  .bottom-sheet-overlay.hidden {
+    visibility: hidden !important;
+    pointer-events: none !important;
+  }
+  
+  .bottom-sheet-backdrop {
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
+    background: rgba(15, 23, 42, 0.4) !important;
+    backdrop-filter: blur(2px) !important;
+    transition: opacity 0.3s ease !important;
+    opacity: 0 !important;
+  }
+  
+  .bottom-sheet-overlay:not(.hidden) .bottom-sheet-backdrop {
+    opacity: 1 !important;
+  }
+  
+  .bottom-sheet-drawer {
+    position: relative !important;
+    background: #ffffff !important;
+    border-top-left-radius: 20px !important;
+    border-top-right-radius: 20px !important;
+    padding: 20px 24px 32px 24px !important;
+    box-shadow: 0 -10px 25px rgba(0, 0, 0, 0.1) !important;
+    width: 100% !important;
+    box-sizing: border-box !important;
+    transform: translateY(100%) !important;
+    transition: transform 0.3s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+    max-height: 80vh !important;
+    overflow-y: auto !important;
+  }
+  
+  .bottom-sheet-overlay:not(.hidden) .bottom-sheet-drawer {
+    transform: translateY(0) !important;
+  }
+  
+  .bottom-sheet-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    padding-bottom: 12px !important;
+    margin-bottom: 16px !important;
+  }
+  
+  .bottom-sheet-header h4 {
+    margin: 0 !important;
+    font-size: 1.05rem !important;
+    font-weight: 700 !important;
+    color: #0f172a !important;
+  }
+  
+  .btn-close-extras, .btn-close-card-actions {
+    background: #f1f5f9 !important;
+    border: none !important;
+    font-size: 0.95rem !important;
+    font-weight: bold !important;
+    color: #64748b !important;
+    width: 28px !important;
+    height: 28px !important;
+    border-radius: 50% !important;
+    cursor: pointer !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+  
+  /* Extras Bottom Sheet Menu Grid */
+  .bottom-sheet-menu-grid {
+    display: grid !important;
+    grid-template-columns: 1fr 1fr !important;
+    gap: 12px !important;
+  }
+  
+  .extra-menu-item {
+    display: flex !important;
+    flex-direction: column !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 14px !important;
+    font-size: 0.82rem !important;
+    font-weight: 600 !important;
+    color: #334155 !important;
+    cursor: pointer !important;
+    gap: 6px !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .extra-menu-item:active {
+    background: #f1f5f9 !important;
+    transform: scale(0.97) !important;
+  }
+  
+  .extra-menu-item .extra-icon {
+    font-size: 1.5rem !important;
+  }
+
+  /* Card Actions Bottom Sheet List */
+  .bottom-sheet-menu-list {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 8px !important;
+  }
+  
+  .sheet-action-item {
+    display: flex !important;
+    align-items: center !important;
+    gap: 12px !important;
+    padding: 14px 18px !important;
+    background: #f8fafc !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 10px !important;
+    font-size: 0.9rem !important;
+    font-weight: 600 !important;
+    color: #334155 !important;
+    width: 100% !important;
+    text-align: left !important;
+    cursor: pointer !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .sheet-action-item:active {
+    background: #f1f5f9 !important;
+  }
+  
+  .sheet-action-item .action-icon {
+    font-size: 1.2rem !important;
+  }
+
+  /* Collapsible Accordion Fieldsets */
+  .accordion-fieldset {
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    border-radius: 14px !important;
+    padding: 0 !important;
+    margin-bottom: 12px !important;
+    overflow: hidden !important;
+    box-shadow: 0 2px 5px rgba(0,0,0,0.02) !important;
+  }
+  
+  .accordion-header {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    width: 100% !important;
+    padding: 14px 18px !important;
+    box-sizing: border-box !important;
+    cursor: pointer !important;
+    background: #f8fafc !important;
+    margin: 0 !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    font-weight: bold !important;
+    color: #1f4a7c !important;
+    font-size: 0.92rem !important;
+  }
+  
+  .accordion-header .accordion-chevron {
+    font-size: 0.75rem !important;
+    color: #64748b !important;
+    transition: transform 0.2s ease !important;
+  }
+  
+  .accordion-fieldset.collapsed .accordion-chevron {
+    transform: rotate(-90deg) !important;
+  }
+  
+  .accordion-fieldset.collapsed .accordion-header {
+    border-bottom: none !important;
+  }
+  
+  .accordion-content {
+    padding: 16px 18px !important;
+    box-sizing: border-box !important;
+    transition: max-height 0.25s ease-out, opacity 0.2s ease !important;
+    max-height: 2000px !important;
+    opacity: 1 !important;
+  }
+  
+  .accordion-fieldset.collapsed .accordion-content {
+    max-height: 0 !important;
+    padding: 0 !important;
+    opacity: 0 !important;
+    overflow: hidden !important;
+    pointer-events: none !important;
+  }
+  
+  .celebration-info-row, .lectures-grid {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 12px !important;
+  }
+
+  /* Floating Action Button (FAB) */
+  .btn-fab-preview {
+    display: flex !important;
+    position: fixed !important;
+    bottom: 80px !important;
+    right: 20px !important;
+    background: #1f4a7c !important;
+    color: #ffffff !important;
+    border: none !important;
+    border-radius: 28px !important;
+    padding: 0 20px !important;
+    height: 50px !important;
+    align-items: center !important;
+    justify-content: center !important;
+    gap: 8px !important;
+    box-shadow: 0 4px 14px rgba(31, 74, 124, 0.4) !important;
+    z-index: 9999 !important;
+    font-weight: bold !important;
+    font-size: 0.88rem !important;
+    cursor: pointer !important;
+    transition: transform 0.2s ease, opacity 0.2s ease !important;
+  }
+  
+  .btn-fab-preview:active {
+    transform: scale(0.95) !important;
+  }
+  
+  .btn-fab-preview .fab-icon {
+    font-size: 1.2rem !important;
+  }
+
+  /* PDF Preview Sheet on Mobile */
+  .composer-preview-column {
+    display: none !important;
+    position: fixed !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    z-index: 13000 !important;
+    background: #ffffff !important;
+    flex-direction: column !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    box-sizing: border-box !important;
+  }
+  
+  .composer-preview-column.active {
+    display: flex !important;
+    animation: slideUpPreview 0.25s cubic-bezier(0.25, 0.8, 0.25, 1) !important;
+  }
+  
+  @keyframes slideUpPreview {
+    from { transform: translateY(100%); }
+    to { transform: translateY(0); }
+  }
+  
+  .composer-preview-column .preview-header-row {
+    display: flex !important;
+    justify-content: space-between !important;
+    align-items: center !important;
+    padding: 16px 20px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    margin: 0 !important;
+    background: #f8fafc !important;
+  }
+  
+  .composer-preview-column .preview-title {
+    margin: 0 !important;
+    font-size: 1rem !important;
+    font-weight: 700 !important;
+  }
+  
+  .composer-preview-column .preview-badge-sync {
+    font-size: 0.72rem !important;
+  }
+  
+  .btn-close-preview-sheet {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: #f1f5f9 !important;
+    border: none !important;
+    width: 30px !important;
+    height: 30px !important;
+    border-radius: 50% !important;
+    font-size: 1rem !important;
+    font-weight: bold !important;
+    color: #475569 !important;
+    cursor: pointer !important;
+  }
+  
+  .composer-preview-column .preview-toolbar {
+    padding: 10px 20px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    margin: 0 !important;
+    display: flex !important;
+    gap: 8px !important;
+    overflow-x: auto !important;
+    white-space: nowrap !important;
+    -webkit-overflow-scrolling: touch !important;
+  }
+  
+  .composer-preview-column .composer-result-iframe-wrapper {
+    flex: 1 !important;
+    height: auto !important;
+    margin: 0 !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  /* Moment Card Overhaul */
+  .moment-row {
+    background: #ffffff !important;
+    border: 1px solid #e2e8f0 !important;
+    border-radius: 12px !important;
+    padding: 14px 16px !important;
+    margin-bottom: 12px !important;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.01) !important;
+    position: relative !important;
+    display: grid !important;
+    grid-template-columns: 1fr !important;
+    gap: 8px !important;
+  }
+  
+  .moment-color-stripe {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    bottom: 0 !important;
+    width: 6px !important;
+    border-top-left-radius: 12px !important;
+    border-bottom-left-radius: 12px !important;
+    display: block !important;
+  }
+  
+  /* Create Card Header Layout */
+  .moment-card-header {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    width: 100% !important;
+    border-bottom: 1px solid #f1f5f9 !important;
+    padding-bottom: 8px !important;
+    margin-bottom: 6px !important;
+  }
+  
+  .moment-card-header-left {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+  }
+  
+  .moment-badge-index {
+    background: #f1f5f9 !important;
+    color: #475569 !important;
+    font-size: 0.72rem !important;
+    font-weight: 700 !important;
+    padding: 3px 8px !important;
+    border-radius: 20px !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+  
+  .moment-card-title {
+    font-size: 0.95rem !important;
+    font-weight: bold !important;
+  }
+  
+  .btn-moment-dots {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    background: none !important;
+    border: none !important;
+    font-size: 1.25rem !important;
+    color: #64748b !important;
+    cursor: pointer !important;
+    padding: 2px 8px !important;
+  }
+
+  /* Mode d'ajout Section */
+  .moment-row .col-mode {
+    display: flex !important;
+    flex-direction: column !important;
+    gap: 6px !important;
+    border-bottom: 1px dashed #f1f5f9 !important;
+    padding-bottom: 10px !important;
+    margin-bottom: 4px !important;
+  }
+  
+  .moment-row .col-mode::before {
+    content: "Mode d'ajout" !important;
+    font-size: 0.75rem !important;
+    color: #64748b !important;
+    font-weight: bold !important;
+    margin-bottom: 2px !important;
+  }
+  
+  .moment-row .mode-option {
+    display: flex !important;
+    align-items: center !important;
+    gap: 8px !important;
+    font-size: 0.85rem !important;
+    cursor: pointer !important;
+  }
+
+  /* Widgets and Selection Indicator Row */
+  .moment-row-widgets-row {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    background: #f8fafc !important;
+    padding: 8px 12px !important;
+    border-radius: 8px !important;
+    border: 1px solid #f1f5f9 !important;
+  }
+  
+  .moment-widgets-title {
+    font-size: 0.72rem !important;
+    color: #64748b !important;
+    font-weight: bold !important;
+  }
+  
+  .moment-widgets-icons {
+    display: flex !important;
+    gap: 6px !important;
+  }
+  
+  .widget-chip-indicator {
+    width: 24px !important;
+    height: 24px !important;
+    border-radius: 50% !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0.68rem !important;
+    font-weight: bold !important;
+    background: #f1f5f9 !important;
+    color: #94a3b8 !important;
+    border: 1px solid #e2e8f0 !important;
+  }
+  
+  .widget-chip-indicator.active {
+    background: #eafaf1 !important;
+    color: #10b981 !important;
+    border-color: #a7f3d0 !important;
+  }
+  
+  .moment-widgets-status {
+    font-size: 0.7rem !important;
+    color: #10b981 !important;
+    font-weight: 600 !important;
+  }
+
+  /* Actions Row */
+  .moment-card-footer {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: space-between !important;
+    padding-top: 6px !important;
+  }
+  
+  .moment-card-selection-box {
+    flex: 1 !important;
+    margin-right: 12px !important;
+  }
+  
+  .moment-card-action-buttons {
+    display: flex !important;
+    gap: 8px !important;
+  }
+  
+  .moment-card-action-buttons button {
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    width: 36px !important;
+    height: 36px !important;
+    border-radius: 8px !important;
+    border: 1px solid #e2e8f0 !important;
+    background: #ffffff !important;
+    cursor: pointer !important;
+    font-size: 1.05rem !important;
+    transition: all 0.2s ease !important;
+  }
+  
+  .moment-card-action-buttons button:active {
+    background: #f8fafc !important;
+    transform: scale(0.92) !important;
+  }
+  
+  .moment-card-action-buttons .btn-action-trash {
+    color: #ef4444 !important;
+    border-color: #fee2e2 !important;
+    background: #fef2f2 !important;
+  }
+  
+  /* Hide unnecessary columns */
+  .moment-row .col-order,
+  .moment-row .col-moment-name,
+  .moment-row .col-selection,
+  .moment-row .col-resume,
+  .moment-row .col-actions {
+    display: none !important;
+  }
+
+  /* Accommodate the bottom navigation bar by padding the main scroll wrapper */
+  main {
+    padding-bottom: 76px !important;
+  }
+  
+  /* Hide the top bar elements that might collide or default navigation */
+  #menu-berger {
+    display: none !important; /* Hide sidebar drawer on mobile to prefer bottom bar */
+  }
+  
+  #btn-menu {
+    display: none !important; /* Hamburger button is replaced by Bottom Nav Profil */
+  }
+}
