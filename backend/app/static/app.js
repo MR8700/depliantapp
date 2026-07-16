@@ -431,7 +431,7 @@ function verifierModalesOuvertes() {
 const VUES_SUPERADMIN_UNIQUEMENT = new Set(["admin", "statistiques"]);
 
 function gererNavigationHash() {
-  if (bloqueNavigation) return;
+  if (!IDENTITE || bloqueNavigation) return;
   const hash = window.location.hash || "#/bibliotheque";
   const nomVue = hash.replace("#/", "");
 
@@ -5167,26 +5167,19 @@ async function actualiserDepliants() {
         });
       }
 
-      // Dots menu (popover)
+      // Dots menu (responsive popover / bottom sheet)
       card.querySelector('[data-action="dots"]').addEventListener("click", (e) => {
         e.stopPropagation();
         
-        // Remove previous popovers
-        const existing = document.querySelector(".context-menu-popover");
+        // Remove previous menus
+        const existing = document.querySelector(".context-menu-popover, .mobile-bottom-sheet-backdrop");
         if (existing) existing.remove();
-
-        const rect = e.currentTarget.getBoundingClientRect();
-        const popover = document.createElement("div");
-        popover.className = "context-menu-popover";
-        popover.style.position = "fixed";
-        popover.style.top = `${rect.bottom}px`;
-        popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 190, rect.left - 130))}px`;
 
         const isMine = f.chorale_id === (IDENTITE.type === "chorale" ? IDENTITE.compte_id : 0) || IDENTITE.type === "super";
         const favoris = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");
         const inFavs = favoris.includes(id);
 
-        popover.innerHTML = `
+        const itemsHtml = `
           <button type="button" class="context-menu-item" data-menu="ouvrir">👁️ Ouvrir le PDF</button>
           <button type="button" class="context-menu-item" data-menu="modifier">✏️ ${isMine ? "Modifier" : "Copier et modifier"}</button>
           <button type="button" class="context-menu-item" data-menu="cloner">💾 Créer une copie</button>
@@ -5198,68 +5191,115 @@ async function actualiserDepliants() {
           ${isMine ? `<button type="button" class="context-menu-item danger-item" data-menu="supprimer">🗑️ Supprimer</button>` : ""}
         `;
 
-        document.body.appendChild(popover);
+        const isMobile = window.innerWidth < 768;
 
-        // Bind popover actions
-        popover.querySelectorAll(".context-menu-item").forEach((item) => {
-          item.addEventListener("click", async (ev) => {
-            ev.stopPropagation();
-            popover.remove();
-            
-            const action = item.dataset.menu;
-            if (action === "ouvrir") {
-              window.open(`/feuillets/${id}/pdf`, "_blank");
-            } else if (action === "modifier") {
-              modifierDepliant(id);
-            } else if (action === "cloner") {
-              clonerDepliant(id);
-            } else if (action === "favori") {
-              let favs = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");
-              const idx = favs.indexOf(id);
-              if (idx !== -1) favs.splice(idx, 1); else favs.push(id);
-              localStorage.setItem("depliants_favoris", JSON.stringify(favs));
-              actualiserDepliants();
-            } else if (action === "renommer") {
-              renommerDepliant(id, f.date);
-            } else if (action === "info") {
-              voirInfosDepliant(f);
-            } else if (action === "download-pdf") {
-              const a = document.createElement("a");
-              a.href = `/feuillets/${id}/pdf`;
-              a.download = `feuillet-${id}.pdf`;
-              a.click();
-            } else if (action === "download-docx") {
-              alert("Bientôt disponible — L'export Word sera activé lors d'une prochaine mise à jour.");
-            } else if (action === "supprimer") {
-              if (IDENTITE.type === "super") {
-                if (confirm("Supprimer ce feuillet définitivement ?")) {
-                  await api(`/feuillets/${id}`, { method: "DELETE" });
-                  actualiserDepliants();
-                }
-              } else {
-                const raison = demanderMotifSuppression();
-                if (raison) {
-                  await api("/moderation/demandes", {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ type_cible: "feuillet", cible_id: id, raison: raison }),
-                  });
-                  actualiserDepliants();
-                }
-              }
-            }
+        if (isMobile) {
+          const sheetBackdrop = document.createElement("div");
+          sheetBackdrop.className = "mobile-bottom-sheet-backdrop";
+          sheetBackdrop.innerHTML = `
+            <div class="mobile-bottom-sheet">
+              <div class="bottom-sheet-handle"></div>
+              <div class="bottom-sheet-header">
+                <h4>Options du dépliant</h4>
+                <button type="button" class="bottom-sheet-close">✕</button>
+              </div>
+              <div class="bottom-sheet-content">
+                ${itemsHtml}
+              </div>
+            </div>
+          `;
+          document.body.appendChild(sheetBackdrop);
+          
+          setTimeout(() => sheetBackdrop.classList.add("visible"), 10);
+
+          const closeSheet = () => {
+            sheetBackdrop.classList.remove("visible");
+            setTimeout(() => sheetBackdrop.remove(), 300);
+          };
+
+          sheetBackdrop.addEventListener("click", (ev) => {
+            if (ev.target === sheetBackdrop) closeSheet();
           });
-        });
+          sheetBackdrop.querySelector(".bottom-sheet-close").addEventListener("click", closeSheet);
 
-        // Close popover when clicking anywhere else
-        const closeHandler = () => {
-          popover.remove();
-          document.removeEventListener("click", closeHandler);
-        };
-        setTimeout(() => document.addEventListener("click", closeHandler), 10);
+          sheetBackdrop.querySelectorAll(".context-menu-item").forEach((item) => {
+            item.addEventListener("click", async (ev) => {
+              ev.stopPropagation();
+              closeSheet();
+              await executerActionDepliant(id, item.dataset.menu, f);
+            });
+          });
+        } else {
+          const rect = e.currentTarget.getBoundingClientRect();
+          const popover = document.createElement("div");
+          popover.className = "context-menu-popover";
+          popover.style.position = "fixed";
+          popover.style.top = `${rect.bottom}px`;
+          popover.style.left = `${Math.max(10, Math.min(window.innerWidth - 190, rect.left - 130))}px`;
+          popover.innerHTML = itemsHtml;
+          document.body.appendChild(popover);
+
+          popover.querySelectorAll(".context-menu-item").forEach((item) => {
+            item.addEventListener("click", async (ev) => {
+              ev.stopPropagation();
+              popover.remove();
+              await executerActionDepliant(id, item.dataset.menu, f);
+            });
+          });
+
+          const closeHandler = () => {
+            popover.remove();
+            document.removeEventListener("click", closeHandler);
+          };
+          setTimeout(() => document.addEventListener("click", closeHandler), 10);
+        }
       });
     });
   });
+}
+
+async function executerActionDepliant(id, action, f) {
+  if (action === "ouvrir") {
+    window.open(`/feuillets/${id}/pdf`, "_blank");
+  } else if (action === "modifier") {
+    modifierDepliant(id);
+  } else if (action === "cloner") {
+    clonerDepliant(id);
+  } else if (action === "favori") {
+    let favs = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");
+    const idx = favs.indexOf(id);
+    if (idx !== -1) favs.splice(idx, 1); else favs.push(id);
+    localStorage.setItem("depliants_favoris", JSON.stringify(favs));
+    actualiserDepliants();
+  } else if (action === "renommer") {
+    renommerDepliant(id, f.date);
+  } else if (action === "info") {
+    voirInfosDepliant(f);
+  } else if (action === "download-pdf") {
+    const a = document.createElement("a");
+    a.href = `/feuillets/${id}/pdf`;
+    a.download = `feuillet-${id}.pdf`;
+    a.click();
+  } else if (action === "download-docx") {
+    alert("Bientôt disponible — L'export Word sera activé lors d'une prochaine mise à jour.");
+  } else if (action === "supprimer") {
+    if (IDENTITE.type === "super") {
+      if (confirm("Supprimer ce feuillet définitivement ?")) {
+        await api(`/feuillets/${id}`, { method: "DELETE" });
+        actualiserDepliants();
+      }
+    } else {
+      const raison = demanderMotifSuppression();
+      if (raison) {
+        await api("/moderation/demandes", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ type_cible: "feuillet", cible_id: id, raison: raison }),
+        });
+        actualiserDepliants();
+      }
+    }
+  }
 }
 
 async function clonerDepliant(id) {
