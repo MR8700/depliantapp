@@ -2,7 +2,7 @@ import json
 import re
 from typing import Optional
 
-from . import db, schemas
+from . import db, schemas, pdf_cache
 from .db import get_connection, insert_returning_id
 from .slugify import unique_slug
 
@@ -359,6 +359,8 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, chorale_
                 feuillet_id,
             ),
         )
+    # Invalide le cache PDF associé
+    pdf_cache.invalidate_feuillet_cache(chorale_id, feuillet_id)
     return get_feuillet(feuillet_id)
 
 
@@ -394,9 +396,14 @@ def list_feuillets(
 
 
 def delete_feuillet(feuillet_id: int) -> bool:
+    feuillet = get_feuillet(feuillet_id)
+    chorale_id = feuillet.chorale_id if feuillet else None
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM feuillets WHERE id = ?", (feuillet_id,))
-        return cur.rowcount > 0
+        success = cur.rowcount > 0
+        if success and chorale_id is not None:
+            pdf_cache.invalidate_feuillet_cache(chorale_id, feuillet_id)
+        return success
 
 
 # --- Modération (suppression chants/dépliants) ---

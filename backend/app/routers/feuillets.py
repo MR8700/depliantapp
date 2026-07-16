@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from .. import auth, config, crud, schemas
+from .. import auth, config, crud, pdf_cache, schemas
 from ..deps import identite_courante, require_superadmin
 from ..render.pdf import DepassementImpossible, render_feuillet_pdf_auto
 
@@ -66,20 +66,29 @@ def get_feuillet_pdf(feuillet_id: int):
     feuillet = crud.get_feuillet(feuillet_id)
     if not feuillet:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
-    # Résolu par la chorale PROPRIÉTAIRE du dépliant consulté, jamais celle
-    # actuellement connectée -- c'est ce qui fait qu'un dépliant cloné se
-    # met à utiliser les logos/nom de son nouveau propriétaire sans jamais
-    # toucher à l'original (voir crud.update_feuillet).
-    images = {slot: config.get_active_image_reader(feuillet.chorale_id, slot) for slot in config.IMAGE_SLOTS}
-    try:
-        pdf_bytes, taille_texte = render_feuillet_pdf_auto(
-            feuillet, config.get_config(feuillet.chorale_id), images=images
-        )
-    except DepassementImpossible as exc:
-        raise HTTPException(
-            status_code=409,
-            detail={"message": str(exc), "moments_en_cause": exc.moments_en_cause},
-        ) from exc
+
+    # Check cache first
+    cached = pdf_cache.get_cached_pdf(feuillet.chorale_id, feuillet_id)
+    if cached is not None:
+        pdf_bytes, taille_texte = cached
+    else:
+        # Résolu par la chorale PROPRIÉTAIRE du dépliant consulté, jamais celle
+        # actuellement connectée -- c'est ce qui fait qu'un dépliant cloné se
+        # met à utiliser les logos/nom de son nouveau propriétaire sans jamais
+        # toucher à l'original (voir crud.update_feuillet).
+        images = {slot: config.get_active_image_reader(feuillet.chorale_id, slot) for slot in config.IMAGE_SLOTS}
+        try:
+            pdf_bytes, taille_texte = render_feuillet_pdf_auto(
+                feuillet, config.get_config(feuillet.chorale_id), images=images
+            )
+            # Store in cache
+            pdf_cache.set_cached_pdf(feuillet.chorale_id, feuillet_id, pdf_bytes, taille_texte)
+        except DepassementImpossible as exc:
+            raise HTTPException(
+                status_code=409,
+                detail={"message": str(exc), "moments_en_cause": exc.moments_en_cause},
+            ) from exc
+
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

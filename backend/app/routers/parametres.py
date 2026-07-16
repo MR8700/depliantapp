@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from .. import auth, config, schemas, crud
+from .. import auth, config, schemas, crud, pdf_cache
 from ..deps import identite_courante
 
 router = APIRouter(prefix="/parametres", tags=["parametres"])
@@ -19,7 +19,9 @@ def read_parametres(identite: auth.Identite = Depends(identite_courante)):
 @router.put("")
 def write_parametres(data: dict, identite: auth.Identite = Depends(identite_courante)):
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    return config.save_config(chorale_id, data)
+    res = config.save_config(chorale_id, data)
+    pdf_cache.invalidate_chorale_cache(chorale_id)
+    return res
 
 
 # --- Pool partagé de médias (logos, bannières) : voir config.py -----------
@@ -65,7 +67,9 @@ async def uploader_et_activer_image(slot: str, fichier: UploadFile, identite: au
         raise HTTPException(status_code=400, detail="Le fichier doit être une image")
     contenu = await fichier.read()
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    return config.upload_and_activate_image(chorale_id, slot, fichier.filename, contenu, fichier.content_type)
+    res = config.upload_and_activate_image(chorale_id, slot, fichier.filename, contenu, fichier.content_type)
+    pdf_cache.invalidate_chorale_cache(chorale_id)
+    return res
 
 
 @router.post("/image/{slot}/activer")
@@ -79,7 +83,9 @@ def activer_image(slot: str, payload: dict, identite: auth.Identite = Depends(id
     if not media_id or not config.get_media_bytes(media_id):
         raise HTTPException(status_code=404, detail="Image introuvable dans le pool partagé")
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    return config.set_active_media(chorale_id, slot, media_id)
+    res = config.set_active_media(chorale_id, slot, media_id)
+    pdf_cache.invalidate_chorale_cache(chorale_id)
+    return res
 
 
 @router.get("/image/{slot}")
@@ -104,7 +110,9 @@ def retirer_image(slot: str, identite: auth.Identite = Depends(identite_courante
     if slot not in config.IMAGE_SLOTS:
         raise HTTPException(status_code=404, detail="Emplacement d'image inconnu")
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    return config.set_active_media(chorale_id, slot, None)
+    res = config.set_active_media(chorale_id, slot, None)
+    pdf_cache.invalidate_chorale_cache(chorale_id)
+    return res
 
 
 @router.post("/preview-pdf")
