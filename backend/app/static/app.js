@@ -5247,6 +5247,7 @@ async function actualiserDepliants() {
                   actualiserDepliants();
                 }
               }
+            }
           });
         });
 
