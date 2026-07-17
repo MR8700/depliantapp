@@ -251,6 +251,129 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
     return get_chant(chant_id)
 
 
+def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
+    saved = 0
+    replaced = 0
+    ignored = 0
+    with get_connection() as conn:
+        existing_slugs = set(_existing_slugs(conn))
+        
+        for op in ops:
+            if not op:
+                ignored += 1
+                continue
+                
+            op_type = op["type"]
+            if op_type == "save":
+                chant = op["chant"]
+                confiance = op["confiance"]
+                base_slug = chant.slug.strip() if chant.slug and chant.slug.strip() else chant.titre
+                slug = unique_slug(base_slug, existing_slugs)
+                existing_slugs.add(slug)
+                
+                conn.execute(
+                    """
+                    INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        chant.titre,
+                        slug,
+                        chant.categorie,
+                        chant.refrain,
+                        json.dumps(chant.couplets, ensure_ascii=False),
+                        chant.code_reference,
+                        chant.langue,
+                        json.dumps(chant.occasions, ensure_ascii=False),
+                        "import_workspace",
+                        confiance,
+                        json.dumps(chant.mots_cles, ensure_ascii=False),
+                        1 if chant.actif else 0,
+                        1 if chant.favori else 0,
+                        1 if chant.chant_principal else 0,
+                        chant.duree_estimee,
+                        chant.tonalite,
+                        chant.remarques,
+                    ),
+                )
+                saved += 1
+                
+            elif op_type == "replace":
+                chant_id = op["id"]
+                patch = op["patch"]
+                
+                row = conn.execute("SELECT * FROM chants WHERE id = ?", (chant_id,)).fetchone()
+                if not row:
+                    ignored += 1
+                    continue
+                
+                champs_envoyes = patch.model_dump(exclude_unset=True)
+                
+                titre = champs_envoyes.get("titre", row["titre"])
+                refrain = champs_envoyes.get("refrain", row["refrain"])
+                
+                if "couplets" in champs_envoyes:
+                    couplets = json.dumps(champs_envoyes["couplets"], ensure_ascii=False)
+                else:
+                    couplets = row["couplets"]
+                    
+                code_reference = champs_envoyes.get("code_reference", row["code_reference"])
+                langue = champs_envoyes.get("langue", row["langue"])
+                
+                if "occasions" in champs_envoyes:
+                    occasions = json.dumps(champs_envoyes["occasions"], ensure_ascii=False)
+                else:
+                    occasions = row["occasions"]
+                    
+                confiance = 1.0
+                mots_cles = row["mots_cles"]
+                actif = 1 if champs_envoyes.get("actif", bool(row["actif"])) else 0
+                favori = 1 if champs_envoyes.get("favori", bool(row["favori"])) else 0
+                chant_principal = 1 if champs_envoyes.get("chant_principal", bool(row["chant_principal"])) else 0
+                duree_estimee = champs_envoyes.get("duree_estimee", row["duree_estimee"])
+                tonalite = champs_envoyes.get("tonalite", row["tonalite"])
+                remarques = champs_envoyes.get("remarques", row["remarques"])
+                
+                slug_demande = (champs_envoyes.get("slug") or "").strip()
+                if slug_demande:
+                    slug = unique_slug(slug_demande, _existing_slugs(conn, exclude_id=chant_id))
+                else:
+                    slug = row["slug"]
+                    if titre != row["titre"] or not slug:
+                        slug = unique_slug(titre, _existing_slugs(conn, exclude_id=chant_id))
+                
+                conn.execute(
+                    """
+                    UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?
+                    WHERE id=?
+                    """,
+                    (
+                        titre,
+                        slug,
+                        champs_envoyes.get("categorie", row["categorie"]),
+                        refrain,
+                        couplets,
+                        code_reference,
+                        langue,
+                        occasions,
+                        confiance,
+                        mots_cles,
+                        actif,
+                        favori,
+                        chant_principal,
+                        duree_estimee,
+                        tonalite,
+                        remarques,
+                        chant_id,
+                    )
+                )
+                replaced += 1
+            else:
+                ignored += 1
+                
+    return saved, replaced, ignored
+
+
 def delete_chant(chant_id: int) -> bool:
     with get_connection() as conn:
         cur = conn.execute("DELETE FROM chants WHERE id = ?", (chant_id,))

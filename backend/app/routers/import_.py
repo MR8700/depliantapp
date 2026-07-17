@@ -111,40 +111,60 @@ async def upload_carnet(
 
 @router.post("/finalize")
 async def finalize_import(payload: FinalizeImportPayload):
-    saved_count = 0
-    replaced_count = 0
-    ignored_count = 0
+    import concurrent.futures
 
-    for item in payload.chants:
-        if item.action == "save":
-            chant = schemas.ChantCreate(
-                titre=item.titre or "(sans titre)",
-                categorie=item.categorie,
-                refrain=item.refrain,
-                couplets=item.couplets,
-                code_reference=item.code_reference,
-                occasions=item.occasions,
-                langue=item.langue or "fr",
-            )
-            crud.create_chant(chant, source_file="import_workspace", confiance=item.confiance)
-            saved_count += 1
-        elif item.action == "replace" and item.replace_id is not None:
-            patch = schemas.ChantUpdate(
-                titre=item.titre,
-                categorie=item.categorie,
-                refrain=item.refrain,
-                couplets=item.couplets,
-                code_reference=item.code_reference,
-                occasions=item.occasions,
-                langue=item.langue,
-            )
-            crud.update_chant(item.replace_id, patch, mark_reviewed=True)
-            replaced_count += 1
-        else:
-            ignored_count += 1
+    payload_chants = payload.chants
+    N = len(payload_chants)
+    if N == 0:
+        return {"saved": 0, "replaced": 0, "ignored": 0}
+
+    M1 = N // 4
+    M2 = N // 2
+    M3 = (3 * N) // 4
+
+    prepared_ops = [None] * N
+
+    def worker_range(start, end, step):
+        for i in range(start, end, step):
+            item = payload_chants[i]
+            if item.action == "save":
+                chant = schemas.ChantCreate(
+                    titre=item.titre or "(sans titre)",
+                    categorie=item.categorie,
+                    refrain=item.refrain,
+                    couplets=item.couplets,
+                    code_reference=item.code_reference,
+                    occasions=item.occasions,
+                    langue=item.langue or "fr",
+                )
+                prepared_ops[i] = {"type": "save", "chant": chant, "confiance": item.confiance}
+            elif item.action == "replace" and item.replace_id is not None:
+                patch = schemas.ChantUpdate(
+                    titre=item.titre,
+                    categorie=item.categorie,
+                    refrain=item.refrain,
+                    couplets=item.couplets,
+                    code_reference=item.code_reference,
+                    occasions=item.occasions,
+                    langue=item.langue,
+                )
+                prepared_ops[i] = {"type": "replace", "id": item.replace_id, "patch": patch}
+            else:
+                prepared_ops[i] = {"type": "ignore"}
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=4) as executor:
+        futures = [
+            executor.submit(worker_range, 0, M1, 1),
+            executor.submit(worker_range, M2 - 1, M1 - 1, -1),
+            executor.submit(worker_range, M2, M3, 1),
+            executor.submit(worker_range, N - 1, M3 - 1, -1)
+        ]
+        concurrent.futures.wait(futures)
+
+    saved, replaced, ignored = crud.bulk_import_chants(prepared_ops)
 
     return {
-        "saved": saved_count,
-        "replaced": replaced_count,
-        "ignored": ignored_count,
+        "saved": saved,
+        "replaced": replaced,
+        "ignored": ignored,
     }
