@@ -416,17 +416,21 @@ function afficherVueDirect(nomVue) {
   }
 
   if (nomVue === "reglages") chargerParametres();
-  if (nomVue === "editeur") actualiserEditeur();
+  if (nomVue === "bibliotheque") {
+    actualiserListeBibliotheque().catch(e => console.error("Error auto-refreshing library:", e));
+  }
+  if (nomVue === "composer") {
+    actualiserListeBibliotheque().catch(e => console.error("Error auto-refreshing composer:", e));
+  }
+  if (nomVue === "editeur") {
+    actualiserListeBibliotheque().catch(e => console.error("Error auto-refreshing library cache for editor:", e));
+    actualiserEditeur().catch(e => console.error("Error auto-refreshing editor:", e));
+  }
   if (nomVue === "depliants") actualiserDepliants();
   if (nomVue === "admin") actualiserAdmin();
   if (nomVue === "statistiques") actualiserStatistiques();
   if (nomVue === "apropos") chargerApropos();
   if (nomVue === "messagerie") demarrerMessagerie(); else arreterMessagerie();
-  if (nomVue === "composer") {
-    if (!listChantsCache || listChantsCache.length === 0) {
-      actualiserListeBibliotheque().catch(e => console.error("Error preloading chants:", e));
-    }
-  }
 }
 
 function changerVue(nomVue) {
@@ -7757,58 +7761,98 @@ function rafraichisseurVueActive() {
 }
 
 function initTirerPourRafraichir() {
-  const tactile = window.matchMedia("(pointer: coarse)").matches || "ontouchstart" in window;
-  if (!tactile) return;
-
   const indicateur = document.getElementById("ptr-indicateur");
+  if (!indicateur) return;
+
   const SEUIL = 68;
   let depart = null;
   let distance = 0;
   let enCours = false;
+  let pulling = false;
 
   const reinitialiser = () => {
     depart = null;
     distance = 0;
-    indicateur.classList.remove("visible", "pret");
+    pulling = false;
+    indicateur.classList.remove("visible", "pret", "chargement");
     indicateur.style.transform = "";
   };
 
-  document.addEventListener("touchstart", (e) => {
+  const handleStart = (y) => {
     const modaleOuverte = !!document.querySelector(".modal.visible");
     const menuOuvert = document.getElementById("menu-berger").classList.contains("ouvert");
     if (enCours || !rafraichisseurVueActive() || modaleOuverte || menuOuvert || window.scrollY > 0) {
       depart = null;
       return;
     }
-    depart = e.touches[0].clientY;
-  }, { passive: true });
+    depart = y;
+    pulling = true;
+  };
 
-  document.addEventListener("touchmove", (e) => {
-    if (depart === null || enCours) return;
+  const handleMove = (y, event) => {
+    if (depart === null || enCours || !pulling) return;
     if (window.scrollY > 0) { reinitialiser(); return; }
-    const brut = e.touches[0].clientY - depart;
+    const brut = y - depart;
     if (brut <= 0) { reinitialiser(); return; }
+    
+    if (event.cancelable) event.preventDefault();
     distance = Math.min(brut * 0.5, SEUIL * 1.4);
     indicateur.classList.add("visible");
     indicateur.classList.toggle("pret", distance >= SEUIL);
     indicateur.style.transform = `translate(-50%, ${distance - 60}px)`;
-  }, { passive: true });
+  };
 
-  document.addEventListener("touchend", async () => {
-    if (depart === null || enCours) { reinitialiser(); return; }
+  const handleEnd = async () => {
+    if (depart === null || enCours || !pulling) { reinitialiser(); return; }
+    pulling = false;
     const declenche = distance >= SEUIL;
     const fn = rafraichisseurVueActive();
     depart = null;
     if (!declenche || !fn) { reinitialiser(); return; }
+    
     enCours = true;
     indicateur.classList.add("chargement");
     indicateur.style.transform = `translate(-50%, ${SEUIL - 60}px)`;
     try {
       await fn();
-    } catch (err) { /* la vue affiche déjà son propre état d'erreur le cas échéant */ }
+    } catch (err) { /* la vue affiche déjà son propre état d'erreur */ }
     enCours = false;
     indicateur.classList.remove("chargement");
     reinitialiser();
+  };
+
+  // Tactile Events
+  document.addEventListener("touchstart", (e) => {
+    handleStart(e.touches[0].clientY);
+  }, { passive: true });
+
+  document.addEventListener("touchmove", (e) => {
+    handleMove(e.touches[0].clientY, e);
+  }, { passive: false });
+
+  document.addEventListener("touchend", () => {
+    handleEnd();
+  }, { passive: true });
+
+  // Mouse fallback (for testing in desktop simulation)
+  document.addEventListener("mousedown", (e) => {
+    if (e.target.closest("a, button, input, select, textarea, .songs-container")) {
+      return; // Ne pas gêner les interactions avec les boutons et formulaires
+    }
+    if (e.button !== 0) return; // Seul le clic gauche active le pull-down
+    handleStart(e.clientY);
+  });
+
+  document.addEventListener("mousemove", (e) => {
+    if (pulling) {
+      handleMove(e.clientY, e);
+    }
+  }, { passive: false });
+
+  document.addEventListener("mouseup", () => {
+    if (pulling) {
+      handleEnd();
+    }
   });
 }
 
