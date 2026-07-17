@@ -63,8 +63,8 @@ def reset_password(
 
 class PlanificationSuppression(BaseModel):
     raison: str
-    delai_jours: Optional[int] = None
-    date_butoir: Optional[str] = None
+    delai_jours: int | None = None
+    date_butoir: str | None = None
 
 
 class AnnulationSuppression(BaseModel):
