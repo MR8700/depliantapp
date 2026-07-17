@@ -810,8 +810,12 @@ function retirerIndicateurHorsLigne() {
   }
 }
 
-function sauvegarderChantsEnCacheLocaux(chants) {
+function sauvegarderChantsEnCacheLocaux(chants, overwrite = false) {
   try {
+    if (overwrite) {
+      localStorage.setItem("depliantapp_chants_local_db", JSON.stringify(chants));
+      return;
+    }
     let cache = [];
     const stored = localStorage.getItem("depliantapp_chants_local_db");
     if (stored) {
@@ -863,7 +867,7 @@ async function rechercherChants(q, categorie, occasion) {
   const url = `/chants?${params.toString()}`;
 
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Timeout")), 15000)
+    setTimeout(() => reject(new Error("Timeout")), 30000)
   );
 
   try {
@@ -871,7 +875,8 @@ async function rechercherChants(q, categorie, occasion) {
       api(url),
       timeoutPromise
     ]);
-    sauvegarderChantsEnCacheLocaux(data);
+    const estRequeteGlobale = !q && !categorie && !occasion;
+    sauvegarderChantsEnCacheLocaux(data, estRequeteGlobale);
     retirerIndicateurHorsLigne();
     return data;
   } catch (err) {
@@ -6051,12 +6056,12 @@ async function actualiserAdminChorales() {
       btnPlan.addEventListener("click", () => {
         document.getElementById("planifier-suppr-nom").textContent = chorale.nom;
         document.getElementById("admin-planifier-suppr-form").dataset.choraleId = id;
-        
+
         // Reset inputs
         document.getElementById("planifier-suppr-raison-select").value = "Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.";
         document.querySelector(".id-planifier-suppr-custom-raison-group").classList.add("hidden");
         document.getElementById("planifier-suppr-raison-custom").value = "";
-        
+
         ouvrirModale("admin-planifier-suppression-modal");
       });
     }
@@ -6096,15 +6101,15 @@ function actualiserBanniereSuppression() {
   const banner = document.getElementById("deletion-warning-banner");
   const bannerText = document.getElementById("deletion-banner-text");
   const btnRevision = document.getElementById("btn-banner-revision");
-  
+
   if (!banner || !IDENTITE) return;
-  
+
   if (IDENTITE.type === "chorale" && IDENTITE.suppression_date_butoir) {
     banner.classList.remove("hidden");
-    
+
     const dateStr = formaterDateDe(IDENTITE.suppression_date_butoir);
     const jours = calculerJoursRestants(IDENTITE.suppression_date_butoir);
-    
+
     if (IDENTITE.suppression_demande_revision) {
       bannerText.innerHTML = `⚠️ <strong>Avis de suppression programmée</strong> le <strong>${dateStr}</strong> (${jours} jours restants) pour la raison suivante : "${escapeHtml(IDENTITE.suppression_raison)}". <br><strong>⌛ Demande d'examen en cours :</strong> "${escapeHtml(IDENTITE.suppression_revision_raison)}"`;
       if (btnRevision) btnRevision.classList.add("hidden");
@@ -6131,12 +6136,12 @@ function initChoralesDeletionLifecycle() {
       const customVal = document.getElementById("planifier-suppr-raison-custom").value.trim();
       const raison = selectVal === "autre" ? customVal : selectVal;
       const delai = Number(document.getElementById("planifier-suppr-delai").value);
-      
+
       if (!raison) {
         alert("Veuillez renseigner une raison.");
         return;
       }
-      
+
       try {
         await avecChargementSubmit(e.target, () => api(`/chorales/${id}/planifier-suppression`, {
           method: "PUT",
@@ -6159,7 +6164,7 @@ function initChoralesDeletionLifecycle() {
       const selectVal = document.getElementById("annuler-suppr-raison-select").value;
       const customVal = document.getElementById("annuler-suppr-raison-custom").value.trim();
       const raison = selectVal === "autre" ? customVal : selectVal;
-      
+
       if (!raison) {
         alert("Veuillez renseigner un motif d'annulation.");
         return;
@@ -6199,7 +6204,7 @@ function initChoralesDeletionLifecycle() {
           body: JSON.stringify({ raison_revision: raison }),
         }));
         fermerModale("chorale-demande-revision-modal");
-        
+
         const statusRes = await api("/auth/status");
         IDENTITE = statusRes;
         actualiserBanniereSuppression();
@@ -7048,7 +7053,7 @@ async function chargerInboxSuperAdmin() {
     const unreadBadge = t.non_lus > 0 ? `<span class="unread-badge">${t.non_lus}</span>` : "";
 
     // Simule la présence en ligne si dernière activité de moins d'1h
-    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 3600000) : false;
+    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 30000000) : false;
 
     let lastMsgPreview = "Aucun message";
     let lastMsgTime = "";
