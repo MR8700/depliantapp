@@ -7480,17 +7480,10 @@ function initMobileLayout() {
     });
   }
 
-  // 5. FAB Preview Button
-  const btnFab = document.getElementById("btn-mobile-pdf-preview");
-  const pvCol = document.querySelector(".composer-preview-column");
-  if (btnFab && pvCol) {
-    btnFab.addEventListener("click", () => {
-      pvCol.classList.add("active");
-      const refreshBtn = document.getElementById("pv-btn-refresh");
-      if (refreshBtn) refreshBtn.click();
-    });
-  }
+  // 5. Floating Action Menu (Toolbox)
+  initFloatingToolbox();
 
+  const pvCol = document.querySelector(".composer-preview-column");
   const btnClosePv = document.getElementById("btn-close-mobile-preview");
   if (btnClosePv && pvCol) {
     btnClosePv.addEventListener("click", () => {
@@ -7502,6 +7495,265 @@ function initMobileLayout() {
   if (IDENTITE) {
     document.querySelectorAll(".id-admin-only").forEach(el => {
       el.classList.toggle("hidden", IDENTITE.type !== "super");
+    });
+  }
+}
+
+function initFloatingToolbox() {
+  const container = document.getElementById("mobile-floating-toolbox");
+  const trigger = document.getElementById("fab-toolbox-trigger");
+  if (!container || !trigger) return;
+
+  const btnDraft = document.getElementById("fab-action-save-draft");
+  const btnPdf = document.getElementById("fab-action-generate-pdf");
+  const btnCreate = document.getElementById("fab-action-create-sheet");
+  const btnPreview = document.getElementById("fab-action-preview-sheet");
+  const btnWidgets = document.getElementById("fab-action-widgets");
+
+  const actionButtons = [btnDraft, btnPdf, btnCreate, btnPreview, btnWidgets];
+
+  let isDragging = false;
+  let startX = 0, startY = 0;
+  let initialLeft = 0, initialTop = 0;
+  let hasCoordinates = false;
+
+  // Toggle active state of the radial menu
+  function toggleMenu(forceState) {
+    const isActive = forceState !== undefined ? forceState : !container.classList.contains("active");
+    if (isActive) {
+      recalculateRadialPositions();
+      // Apply staggered delays for opening
+      actionButtons.forEach((btn, index) => {
+        if (btn) btn.style.transitionDelay = (index * 0.04) + "s";
+      });
+      container.classList.add("active");
+    } else {
+      // Apply reverse staggered delays for closing
+      actionButtons.forEach((btn, index) => {
+        if (btn) btn.style.transitionDelay = ((actionButtons.length - 1 - index) * 0.03) + "s";
+      });
+      container.classList.remove("active");
+    }
+  }
+
+  // Recalculate where the radial action buttons should fly out
+  function recalculateRadialPositions() {
+    const triggerRect = trigger.getBoundingClientRect();
+    const x = triggerRect.left + triggerRect.width / 2;
+    const y = triggerRect.top + triggerRect.height / 2;
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    const radius = 110; // radius of radial layout in pixels (increased from 88 for more spacing)
+
+    let startAngle, endAngle;
+
+    // Determine target arc based on quadrant position
+    if (x > w / 2 && y > h / 2) {
+      // Bottom-Right: fan Up-Left (from 180deg/left to 270deg/up)
+      startAngle = Math.PI;
+      endAngle = 1.5 * Math.PI;
+    } else if (x <= w / 2 && y > h / 2) {
+      // Bottom-Left: fan Up-Right (from 0deg/right to 270deg/up)
+      startAngle = 0;
+      endAngle = -0.5 * Math.PI;
+    } else if (x > w / 2 && y <= h / 2) {
+      // Top-Right: fan Down-Left (from 180deg/left to 90deg/down)
+      startAngle = Math.PI;
+      endAngle = 0.5 * Math.PI;
+    } else {
+      // Top-Left: fan Down-Right (from 0deg/right to 90deg/down)
+      startAngle = 0;
+      endAngle = 0.5 * Math.PI;
+    }
+
+    actionButtons.forEach((btn, index) => {
+      if (!btn) return;
+      const angle = startAngle + (index / 4) * (endAngle - startAngle);
+      const dx = Math.round(radius * Math.cos(angle));
+      const dy = Math.round(radius * Math.sin(angle));
+      btn.style.setProperty("--dx", dx + "px");
+      btn.style.setProperty("--dy", dy + "px");
+    });
+  }
+
+  // Handle Drag Start
+  function handleDragStart(clientX, clientY) {
+    isDragging = true;
+    startX = clientX;
+    startY = clientY;
+
+    if (!hasCoordinates) {
+      const rect = container.getBoundingClientRect();
+      container.style.right = "auto";
+      container.style.bottom = "auto";
+      container.style.left = rect.left + "px";
+      container.style.top = rect.top + "px";
+      hasCoordinates = true;
+    }
+
+    initialLeft = parseInt(container.style.left) || 0;
+    initialTop = parseInt(container.style.top) || 0;
+    container.classList.remove("smooth-transition");
+
+    // Clear delays and transitions during drag to prevent lag
+    actionButtons.forEach(btn => {
+      if (btn) {
+        btn.style.transition = "none";
+        btn.style.transitionDelay = "0s";
+      }
+    });
+  }
+
+  // Handle Drag Move
+  function handleDragMove(clientX, clientY) {
+    if (!isDragging) return;
+    const dx = clientX - startX;
+    const dy = clientY - startY;
+
+    const viewWidth = window.innerWidth;
+    const viewHeight = window.innerHeight;
+
+    const newLeft = Math.max(10, Math.min(viewWidth - 66, initialLeft + dx));
+    const newTop = Math.max(10, Math.min(viewHeight - 66, initialTop + dy));
+
+    container.style.left = newLeft + "px";
+    container.style.top = newTop + "px";
+
+    if (container.classList.contains("active")) {
+      recalculateRadialPositions();
+    }
+  }
+
+  // Handle Drag End
+  function handleDragEnd(clientX, clientY) {
+    if (!isDragging) return;
+    isDragging = false;
+    container.classList.add("smooth-transition");
+
+    // Restore default transitions and delays
+    actionButtons.forEach(btn => {
+      if (btn) {
+        btn.style.transition = "";
+        btn.style.transitionDelay = "";
+      }
+    });
+
+    const distance = Math.hypot(clientX - startX, clientY - startY);
+    if (distance < 8) {
+      toggleMenu();
+    }
+  }
+
+  // Setup Mouse Event Listeners on Trigger
+  trigger.addEventListener("mousedown", (e) => {
+    e.preventDefault();
+    handleDragStart(e.clientX, e.clientY);
+
+    const onMouseMove = (moveEvent) => {
+      handleDragMove(moveEvent.clientX, moveEvent.clientY);
+    };
+
+    const onMouseUp = (upEvent) => {
+      window.removeEventListener("mousemove", onMouseMove);
+      window.removeEventListener("mouseup", onMouseUp);
+      handleDragEnd(upEvent.clientX, upEvent.clientY);
+    };
+
+    window.addEventListener("mousemove", onMouseMove);
+    window.addEventListener("mouseup", onMouseUp);
+  });
+
+  // Setup Touch Event Listeners on Trigger
+  trigger.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    handleDragStart(touch.clientX, touch.clientY);
+  }, { passive: true });
+
+  trigger.addEventListener("touchmove", (e) => {
+    if (!isDragging || e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    handleDragMove(touch.clientX, touch.clientY);
+  }, { passive: true });
+
+  trigger.addEventListener("touchend", (e) => {
+    if (!isDragging) return;
+    const touch = e.changedTouches[0] || {};
+    handleDragEnd(touch.clientX || startX, touch.clientY || startY);
+  }, { passive: true });
+
+  // Prevent default scroll on touch inside trigger to make dragging responsive
+  trigger.addEventListener("touchmove", (e) => {
+    e.preventDefault();
+  }, { passive: false });
+
+  // Map actions
+  if (btnDraft) {
+    btnDraft.addEventListener("click", () => {
+      const realBtn = document.getElementById("btn-save-draft");
+      if (realBtn) realBtn.click();
+      toggleMenu(false);
+    });
+  }
+
+  if (btnPdf) {
+    btnPdf.addEventListener("click", () => {
+      const realBtn = document.getElementById("btn-generate-pdf-direct");
+      if (realBtn) realBtn.click();
+      toggleMenu(false);
+    });
+  }
+
+  if (btnCreate) {
+    btnCreate.addEventListener("click", () => {
+      const realBtn = document.getElementById("btn-submit-composer");
+      if (realBtn) realBtn.click();
+      toggleMenu(false);
+    });
+  }
+
+  if (btnPreview) {
+    btnPreview.addEventListener("click", () => {
+      const pvCol = document.querySelector(".composer-preview-column");
+      if (pvCol) {
+        pvCol.classList.add("active");
+        const refreshBtn = document.getElementById("pv-btn-refresh");
+        if (refreshBtn) refreshBtn.click();
+      }
+      toggleMenu(false);
+    });
+  }
+
+  if (btnWidgets) {
+    btnWidgets.addEventListener("click", () => {
+      const headers = document.querySelectorAll(".accordion-header");
+      let widgetsHeader = null;
+      for (const hdr of headers) {
+        if (hdr.textContent.includes("Widgets PDF")) {
+          widgetsHeader = hdr;
+          break;
+        }
+      }
+      if (widgetsHeader) {
+        const parent = widgetsHeader.closest(".accordion-fieldset");
+        if (parent) {
+          parent.classList.remove("collapsed");
+          document.querySelectorAll(".accordion-fieldset").forEach(fieldset => {
+            if (fieldset !== parent) {
+              fieldset.classList.add("collapsed");
+            }
+          });
+          parent.scrollIntoView({ behavior: "smooth", block: "center" });
+          
+          const originalOutline = parent.style.outline;
+          parent.style.transition = "outline 0.3s ease";
+          parent.style.outline = "3px solid #1f4a7c";
+          setTimeout(() => {
+            parent.style.outline = originalOutline;
+          }, 1500);
+        }
+      }
+      toggleMenu(false);
     });
   }
 }

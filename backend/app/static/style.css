@@ -6977,7 +6977,7 @@ input.special-label:focus {
 .moment-card-header,
 .moment-row-widgets-row,
 .moment-card-footer,
-.btn-fab-preview,
+.floating-toolbox,
 .mobile-bottom-nav,
 .btn-close-preview-sheet {
   display: none !important;
@@ -7281,35 +7281,117 @@ input.special-label:focus {
     gap: 12px !important;
   }
 
-  /* Floating Action Button (FAB) */
-  .btn-fab-preview {
+  /* Floating Radial Action Menu (Toolbox) */
+  .floating-toolbox {
     display: flex !important;
     position: fixed !important;
     bottom: 80px !important;
     right: 20px !important;
+    width: 56px !important;
+    height: 56px !important;
+    z-index: 9999 !important;
+    pointer-events: none !important;
+    user-select: none !important;
+    touch-action: none !important;
+  }
+
+  .floating-toolbox * {
+    pointer-events: auto !important;
+  }
+
+  /* Central Ball (Trigger) */
+  .fab-trigger-btn {
+    position: absolute !important;
+    width: 56px !important;
+    height: 56px !important;
+    border-radius: 50% !important;
     background: #1f4a7c !important;
     color: #ffffff !important;
     border: none !important;
-    border-radius: 28px !important;
-    padding: 0 20px !important;
-    height: 50px !important;
+    box-shadow: 0 4px 14px rgba(31, 74, 124, 0.4) !important;
+    cursor: grab !important;
+    display: flex !important;
     align-items: center !important;
     justify-content: center !important;
-    gap: 8px !important;
-    box-shadow: 0 4px 14px rgba(31, 74, 124, 0.4) !important;
-    z-index: 9999 !important;
-    font-weight: bold !important;
-    font-size: 0.88rem !important;
-    cursor: pointer !important;
-    transition: transform 0.2s ease, opacity 0.2s ease !important;
+    z-index: 10 !important;
+    transition: transform 0.2s ease, background-color 0.2s ease !important;
   }
-  
-  .btn-fab-preview:active {
+
+  .fab-trigger-btn:active {
+    cursor: grabbing !important;
     transform: scale(0.95) !important;
+    background: #17385c !important;
   }
-  
-  .btn-fab-preview .fab-icon {
-    font-size: 1.2rem !important;
+
+  .fab-trigger-btn .trigger-icon {
+    font-size: 1.5rem !important;
+    transition: transform 0.3s ease !important;
+  }
+
+  .floating-toolbox.active .fab-trigger-btn .trigger-icon {
+    transform: rotate(135deg) !important;
+  }
+
+  /* Radial Action Buttons */
+  .fab-action-btn {
+    position: absolute !important;
+    left: 8px !important;
+    top: 8px !important;
+    width: 40px !important;
+    height: 40px !important;
+    border-radius: 50% !important;
+    background: #ffffff !important;
+    color: #1f4a7c !important;
+    border: 1px solid #e2e8f0 !important;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15) !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    cursor: pointer !important;
+    opacity: 0 !important;
+    transform: scale(0) translate(0, 0) !important;
+    z-index: 5 !important;
+    transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275), opacity 0.2s ease !important;
+  }
+
+  .fab-action-btn:active {
+    transform: scale(0.9) !important;
+    background: #f8fafc !important;
+  }
+
+  .fab-action-btn .fab-btn-icon {
+    font-size: 1.1rem !important;
+  }
+
+  .fab-action-btn .fab-btn-label {
+    position: absolute !important;
+    background: rgba(15, 23, 42, 0.8) !important;
+    color: #ffffff !important;
+    padding: 2px 6px !important;
+    border-radius: 4px !important;
+    font-size: 0.72rem !important;
+    font-weight: 600 !important;
+    white-space: nowrap !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    transition: opacity 0.2s ease !important;
+    bottom: -18px !important;
+    left: 50% !important;
+    transform: translateX(-50%) !important;
+  }
+
+  .floating-toolbox.active .fab-action-btn:hover .fab-btn-label,
+  .floating-toolbox.active .fab-action-btn:active .fab-btn-label {
+    opacity: 1 !important;
+  }
+
+  .floating-toolbox.active .fab-action-btn {
+    opacity: 1 !important;
+    transform: scale(1) translate(var(--dx, 0px), var(--dy, 0px)) !important;
+  }
+
+  .floating-toolbox.smooth-transition {
+    transition: left 0.25s ease-out, top 0.25s ease-out !important;
   }
 
   /* PDF Preview Sheet on Mobile */

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>DepliantApp</title>
-<link rel="stylesheet" href="/style.css?v=13">
+<link rel="stylesheet" href="/style.css?v=15">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#1a3c6e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -376,11 +376,35 @@
       </div>
     </div>
 
-    <!-- Floating Action Button for Mobile PDF Preview -->
-    <button type="button" id="btn-mobile-pdf-preview" class="btn-fab-preview no-print">
-      <span class="fab-icon">👁</span>
-      <span class="fab-text">Aperçu PDF</span>
-    </button>
+    <!-- Floating Radial Action Menu (Toolbox) for Mobile -->
+    <div id="mobile-floating-toolbox" class="floating-toolbox no-print">
+      <!-- Radial Action Buttons -->
+      <button type="button" id="fab-action-save-draft" class="fab-action-btn" title="Enregistrer comme brouillon">
+        <span class="fab-btn-icon">💾</span>
+        <span class="fab-btn-label">Brouillon</span>
+      </button>
+      <button type="button" id="fab-action-generate-pdf" class="fab-action-btn" title="Générer le PDF">
+        <span class="fab-btn-icon">📄</span>
+        <span class="fab-btn-label">PDF</span>
+      </button>
+      <button type="button" id="fab-action-create-sheet" class="fab-action-btn" title="Créer le feuillet">
+        <span class="fab-btn-icon">✨</span>
+        <span class="fab-btn-label">Créer</span>
+      </button>
+      <button type="button" id="fab-action-preview-sheet" class="fab-action-btn" title="Aperçu du feuillet">
+        <span class="fab-btn-icon">👁</span>
+        <span class="fab-btn-label">Aperçu</span>
+      </button>
+      <button type="button" id="fab-action-widgets" class="fab-action-btn" title="Widgets PDF">
+        <span class="fab-btn-icon">⚙️</span>
+        <span class="fab-btn-label">Widgets</span>
+      </button>
+      
+      <!-- Central Trigger Ball -->
+      <button type="button" id="fab-toolbox-trigger" class="fab-trigger-btn" title="Outils d'action rapide">
+        <span class="trigger-icon">🛠️</span>
+      </button>
+    </div>
   </section>
 
   <!-- Les dépliants -->
@@ -1789,6 +1813,6 @@
 
 <!-- Import workspace rendered inline in view-importer -->
 
-<script src="/app.js?v=13"></script>
+<script src="/app.js?v=15"></script>
 </body>
 </html>
