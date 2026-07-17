@@ -4957,16 +4957,23 @@ input.special-label:focus {
   background: #e2e8f0;
 }
 
-.footer-input-wrapper input {
+.footer-input-wrapper input,
+.footer-input-wrapper textarea {
   flex: 1;
   background: none;
   border: none;
   padding: 8px 0;
   font-size: 0.95rem;
   margin-top: 0;
+  resize: none;
+  height: 22px;
+  max-height: 120px;
+  line-height: 1.4;
+  font-family: inherit;
 }
 
-.footer-input-wrapper input:focus {
+.footer-input-wrapper input:focus,
+.footer-input-wrapper textarea:focus {
   outline: none;
 }
 

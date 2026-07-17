@@ -6858,7 +6858,34 @@ function getAttachmentIcon(filename) {
 }
 
 function messageBulleHtml(m, allMessages) {
-  const deMoi = m.expediteur_type === IDENTITE.type;
+  const deMoi = m.sending ? true : (m.expediteur_type === IDENTITE.type);
+
+  if (m.sending) {
+    let mediaHtml = "";
+    if (m.piece_jointe_filename) {
+      const sizeStr = m.piece_jointe_size ? formatBytes(m.piece_jointe_size) : "";
+      mediaHtml = `
+        <div class="message-attachment-card">
+          <span class="attachment-icon">📎</span>
+          <div class="attachment-info">
+            <p class="attachment-name">${escapeHtml(m.piece_jointe_filename)}</p>
+            <p class="attachment-size">${sizeStr} (Envoi...)</p>
+          </div>
+        </div>`;
+    }
+    
+    return `
+      <div class="message-item sent" data-id="${m.id}" style="opacity: 0.75;">
+        <div class="message-bubble">
+          <p class="message-text">${escapeHtml(m.texte || '').replace(/\n/g, "<br>")}</p>
+          ${mediaHtml}
+          <div class="message-meta">
+            <span>Envoi en cours...</span>
+            <span class="sent-status" style="color: #94a3b8; font-size: 0.8rem;">🕒</span>
+          </div>
+        </div>
+      </div>`;
+  }
 
   // Citations / Réponses
   let replyHtml = "";
@@ -7013,46 +7040,88 @@ async function chargerFilMessagerie() {
     return;
   }
 
-  const url = IDENTITE.type === "super" ? `/messages?chorale_id=${messagerieChoraleActive}` : "/messages";
-  const messages = await api(url);
-
-  if (!messages.length) {
-    fil.innerHTML = `
-      <div class="empty-chat-state">
-        <div class="empty-illustration">💬</div>
-        <p>Aucun message pour l'instant. Envoyez le premier message !</p>
-      </div>`;
-    // Update headers and details pane
-    actualiserChatHeader();
-    actualiserInfoPanel(0);
-    return;
+  const cacheKey = IDENTITE.type === "super" ? `cached_messages_super_${messagerieChoraleActive}` : `cached_messages_chorale`;
+  
+  // PRELOAD: Read from cache and render immediately
+  const cached = localStorage.getItem(cacheKey);
+  let preloadedRendered = false;
+  if (cached) {
+    try {
+      const cachedMessages = JSON.parse(cached);
+      if (cachedMessages && cachedMessages.length) {
+        let html = "";
+        let lastGroupDate = "";
+        cachedMessages.forEach(m => {
+          const groupDate = formatGroupDate(m.created_at);
+          if (groupDate !== lastGroupDate) {
+            html += `<div class="date-divider"><span>${groupDate}</span></div>`;
+            lastGroupDate = groupDate;
+          }
+          html += messageBulleHtml(m, cachedMessages);
+        });
+        fil.innerHTML = html;
+        fil.scrollTop = fil.scrollHeight;
+        preloadedRendered = true;
+      }
+    } catch (e) { }
   }
 
-  // Group and render messages
-  let html = "";
-  let lastGroupDate = "";
-  messages.forEach(m => {
-    const groupDate = formatGroupDate(m.created_at);
-    if (groupDate !== lastGroupDate) {
-      html += `<div class="date-divider"><span>${groupDate}</span></div>`;
-      lastGroupDate = groupDate;
+  const url = IDENTITE.type === "super" ? `/messages?chorale_id=${messagerieChoraleActive}` : "/messages";
+  
+  try {
+    const messages = await api(url);
+    
+    // Save to cache
+    localStorage.setItem(cacheKey, JSON.stringify(messages));
+    
+    if (!messages.length) {
+      fil.innerHTML = `
+        <div class="empty-chat-state">
+          <div class="empty-illustration">💬</div>
+          <p>Aucun message pour l'instant. Envoyez le premier message !</p>
+        </div>`;
+      actualiserChatHeader();
+      actualiserInfoPanel(0);
+      return;
     }
-    html += messageBulleHtml(m, messages);
-  });
+    
+    // Group and render messages
+    let html = "";
+    let lastGroupDate = "";
+    messages.forEach(m => {
+      const groupDate = formatGroupDate(m.created_at);
+      if (groupDate !== lastGroupDate) {
+        html += `<div class="date-divider"><span>${groupDate}</span></div>`;
+        lastGroupDate = groupDate;
+      }
+      html += messageBulleHtml(m, messages);
+    });
 
-  fil.innerHTML = html;
-  fil.scrollTop = fil.scrollHeight;
+    fil.innerHTML = html;
+    
+    // Always scroll to bottom on load
+    fil.scrollTop = fil.scrollHeight;
 
-  actualiserChatHeader();
+    actualiserChatHeader();
 
-  // Compter le nombre de fichiers joints
-  const fileCount = messages.filter(m => m.piece_jointe_filename).length;
-  actualiserInfoPanel(fileCount);
+    // Compter le nombre de fichiers joints
+    const fileCount = messages.filter(m => m.piece_jointe_filename).length;
+    actualiserInfoPanel(fileCount);
 
-  // Marquer comme lu
-  const urlLu = IDENTITE.type === "super" ? `/messages/lu?chorale_id=${messagerieChoraleActive}` : "/messages/lu";
-  await api(urlLu, { method: "POST" });
-  await actualiserBadgeMessagerie();
+    // Marquer comme lu
+    const urlLu = IDENTITE.type === "super" ? `/messages/lu?chorale_id=${messagerieChoraleActive}` : "/messages/lu";
+    await api(urlLu, { method: "POST" });
+    await actualiserBadgeMessagerie();
+  } catch (err) {
+    console.error("Failed to load messages in background:", err);
+    if (!preloadedRendered) {
+      fil.innerHTML = `
+        <div class="empty-chat-state">
+          <div class="empty-illustration">⚠️</div>
+          <p>Erreur de chargement des messages.</p>
+        </div>`;
+    }
+  }
 }
 
 function actualiserChatHeader() {
@@ -7136,6 +7205,7 @@ async function actualiserBadgeMessagerie() {
 async function chargerInboxSuperAdmin() {
   const threads = await api("/messages/chorales");
   globalThreads = threads;
+  localStorage.setItem("cached_messagerie_threads", JSON.stringify(threads));
 
   const container = document.getElementById("conversations-list");
   if (!container) return;
@@ -7245,7 +7315,21 @@ function initMessagerieEventListeners() {
     if (sendBtn) sendBtn.disabled = !(hasText || hasFile);
   }
 
-  if (msgText) msgText.addEventListener("input", updateSendButtonState);
+  if (msgText) {
+    msgText.addEventListener("input", () => {
+      msgText.style.height = "22px";
+      msgText.style.height = Math.min(120, msgText.scrollHeight - 16) + "px";
+      updateSendButtonState();
+    });
+    
+    msgText.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        if (msgForm) msgForm.dispatchEvent(new Event("submit"));
+      }
+    });
+  }
+  
   if (fileInput) {
     fileInput.addEventListener("change", (e) => {
       piecJointeSelectionnee = e.target.files[0] || null;
@@ -7279,6 +7363,9 @@ function initMessagerieEventListeners() {
             msgText.value += span.textContent;
             msgText.focus();
             popover.classList.add("hidden");
+            // Auto resize textarea height
+            msgText.style.height = "22px";
+            msgText.style.height = Math.min(120, msgText.scrollHeight - 16) + "px";
             updateSendButtonState();
           });
         });
@@ -7311,37 +7398,105 @@ function initMessagerieEventListeners() {
       if (!texte && !piecJointeSelectionnee) return;
 
       const statusEl = document.getElementById("btn-messagerie-send");
+      const fil = document.getElementById("messagerie-fil");
 
       try {
         if (activeEditMessageId) {
-          // Mode modification
+          // Mode modification (standard edit, does not need optimistic send)
           const formData = new FormData();
           formData.append("texte", texte);
           await avecChargementSubmit(statusEl, () => fetch(`/messages/${activeEditMessageId}`, { method: "PUT", body: formData }));
           activeEditMessageId = null;
+          msgText.value = "";
+          msgText.style.height = "22px";
+          updateSendButtonState();
+          await chargerFilMessagerie();
         } else {
-          // Mode création
+          // Mode création: OPTIMISTIC SEND!
+          const tempId = "temp-" + Date.now();
+          const mockMsg = {
+            id: tempId,
+            texte: texte,
+            created_at: new Date().toISOString(),
+            expediteur_type: IDENTITE.type,
+            piece_jointe_filename: piecJointeSelectionnee ? piecJointeSelectionnee.name : null,
+            piece_jointe_size: piecJointeSelectionnee ? piecJointeSelectionnee.size : null,
+            sending: true
+          };
+
+          // Remove empty state if present
+          const emptyState = document.getElementById("empty-chat-state");
+          if (emptyState) emptyState.remove();
+
+          // Render date divider if needed
+          const groupDate = formatGroupDate(mockMsg.created_at);
+          const dividers = fil.querySelectorAll(".date-divider");
+          let dividerPresent = false;
+          if (dividers.length > 0) {
+            const lastDividerText = dividers[dividers.length - 1].textContent.trim();
+            if (lastDividerText === groupDate) {
+              dividerPresent = true;
+            }
+          }
+          
+          let newHtml = "";
+          if (!dividerPresent) {
+            newHtml += `<div class="date-divider"><span>${groupDate}</span></div>`;
+          }
+          newHtml += messageBulleHtml(mockMsg, []);
+          
+          fil.insertAdjacentHTML("beforeend", newHtml);
+          fil.scrollTop = fil.scrollHeight;
+
+          // Clear inputs immediately
+          msgText.value = "";
+          msgText.style.height = "22px";
+          
+          const originalFile = piecJointeSelectionnee;
+          piecJointeSelectionnee = null;
+          if (fileInput) fileInput.value = "";
+          if (fileLabel) fileLabel.textContent = "";
+          updateSendButtonState();
+
+          // Save references to reply parameters and reset
+          const replyId = activeReplyMessageId;
+          activeReplyMessageId = null;
+          const replyBar = document.getElementById("reply-preview-bar");
+          if (replyBar) replyBar.classList.add("hidden");
+
+          // Build form data
           const formData = new FormData();
           if (texte) formData.append("texte", texte);
-          if (piecJointeSelectionnee) formData.append("piece_jointe", piecJointeSelectionnee);
-          if (activeReplyMessageId) formData.append("parent_id", activeReplyMessageId);
+          if (originalFile) formData.append("piece_jointe", originalFile);
+          if (replyId) formData.append("parent_id", replyId);
           if (IDENTITE.type === "super" && messagerieChoraleActive) {
             formData.append("chorale_id", messagerieChoraleActive);
           }
 
-          await avecChargementSubmit(statusEl, () => fetch("/messages", { method: "POST", body: formData }));
-          activeReplyMessageId = null;
-          document.getElementById("reply-preview-bar").classList.add("hidden");
+          // Trigger fetch in background
+          fetch("/messages", { method: "POST", body: formData })
+            .then(async (res) => {
+              if (!res.ok) throw new Error(await res.text());
+              // Re-fetch confirmed state
+              await chargerFilMessagerie();
+              if (IDENTITE.type === "super") {
+                const threads = await api("/messages/chorales");
+                globalThreads = threads;
+                chargerSidebarMessagerie(threads);
+              }
+            })
+            .catch((err) => {
+              console.error("Optimistic send error:", err);
+              const tempBubble = fil.querySelector(`[data-id="${tempId}"]`);
+              if (tempBubble) {
+                tempBubble.style.opacity = "1";
+                const metaSpan = tempBubble.querySelector(".message-meta span");
+                if (metaSpan) metaSpan.innerHTML = `<span style="color: #ef4444; font-weight: bold;">Échec de l'envoi</span>`;
+                const statusSpan = tempBubble.querySelector(".sent-status");
+                if (statusSpan) statusSpan.innerHTML = `<span style="color: #ef4444; font-weight: bold; cursor: pointer;" onclick="alert('Erreur: ${err.message}')">⚠️</span>`;
+              }
+            });
         }
-
-        msgText.value = "";
-        piecJointeSelectionnee = null;
-        if (fileInput) fileInput.value = "";
-        if (fileLabel) fileLabel.textContent = "";
-        updateSendButtonState();
-
-        await chargerFilMessagerie();
-        if (IDENTITE.type === "super") await chargerInboxSuperAdmin();
       } catch (err) {
         alert("Erreur lors de l'action : " + err.message);
       }
@@ -7457,6 +7612,16 @@ async function demarrerMessagerie() {
     // Admin : Affiche recherche + filtres
     document.getElementById("messagerie-search-wrapper").style.display = "flex";
     document.getElementById("messagerie-filters").style.display = "flex";
+    
+    // PRELOAD conversations list from cache
+    const cachedThreads = localStorage.getItem("cached_messagerie_threads");
+    if (cachedThreads) {
+      try {
+        globalThreads = JSON.parse(cachedThreads);
+        chargerSidebarMessagerie(globalThreads);
+      } catch (e) { }
+    }
+    
     await chargerInboxSuperAdmin();
   } else {
     // Chorale : Masque recherche + filtres
@@ -7491,10 +7656,11 @@ async function demarrerMessagerie() {
       // Met à jour la liste sans perturber la sélection
       const threads = await api("/messages/chorales");
       globalThreads = threads;
+      localStorage.setItem("cached_messagerie_threads", JSON.stringify(threads));
       chargerSidebarMessagerie(threads);
     }
     await chargerFilMessagerie();
-  }, 8000);
+  }, 3000);
 }
 
 function arreterMessagerie() {
