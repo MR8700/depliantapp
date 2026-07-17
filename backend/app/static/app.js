@@ -863,7 +863,7 @@ async function rechercherChants(q, categorie, occasion) {
   const url = `/chants?${params.toString()}`;
 
   const timeoutPromise = new Promise((_, reject) =>
-    setTimeout(() => reject(new Error("Timeout")), 3500)
+    setTimeout(() => reject(new Error("Timeout")), 15000)
   );
 
   try {
@@ -8331,6 +8331,14 @@ async function init() {
       api("/meta")
     ]);
     IDENTITE = identiteRes;
+    if (IDENTITE && IDENTITE.type === "super") {
+      currentDepliantsTab = "tous";
+      document.querySelectorAll(".tab-filter-btn[data-tab='mine']").forEach(el => el.classList.add("hidden"));
+      document.querySelectorAll(".tab-filter-btn[data-tab='sauvegardes']").forEach(el => el.classList.add("hidden"));
+      document.querySelectorAll(".tab-filter-btn").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.tab === "tous");
+      });
+    }
     const meta = metaRes;
 
     actualiserBanniereSuppression();
