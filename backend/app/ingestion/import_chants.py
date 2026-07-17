@@ -134,7 +134,7 @@ def import_all(chants_dir: Path = DEFAULT_CHANTS_DIR) -> list[dict]:
             else:
                 continue
 
-            for raw in segment_paragraphs(paragraphs):
+            for raw in segment_paragraphs(paragraphs, is_clean_paragraphs=True):
                 _store(raw, categorie, occasions, name, report)
     finally:
         word.Quit()

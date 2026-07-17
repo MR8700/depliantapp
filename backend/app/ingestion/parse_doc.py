@@ -34,8 +34,7 @@ def iter_paragraphs_doc(path: Path, word=None) -> list[str]:
                 # aval n'y voit qu'un unique bloc de texte.
                 for sous_ligne in text.split("\x0b"):
                     sous_ligne = sous_ligne.strip()
-                    if sous_ligne:
-                        paragraphs.append(sous_ligne)
+                    paragraphs.append(sous_ligne)
             return paragraphs
         finally:
             doc.Close(False)

@@ -30,6 +30,5 @@ def iter_paragraphs_docx(path: Path) -> list[str]:
         texte_brut = "".join(morceaux)
         for sous_ligne in texte_brut.split("\n"):
             sous_ligne = sous_ligne.strip()
-            if sous_ligne:
-                paragraphs.append(sous_ligne)
+            paragraphs.append(sous_ligne)
     return paragraphs

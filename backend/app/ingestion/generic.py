@@ -91,12 +91,12 @@ def parse_and_segment(path: Path, categorie_defaut: str = "Autre", word=None) ->
     if suffix == ".docx":
         with _chemin_avec_bonne_extension(path, ".docx") as chemin:
             paragraphs = iter_paragraphs_docx(chemin)
-        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
+        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs, is_clean_paragraphs=True)]
 
     if suffix == ".doc":
         with _chemin_avec_bonne_extension(path, ".doc") as chemin:
             paragraphs = iter_paragraphs_doc(chemin, word=word)
-        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs)]
+        return [(raw.categorie_detectee or categorie_defaut, raw) for raw in segment_paragraphs(paragraphs, is_clean_paragraphs=True)]
 
     if suffix == ".pdf":
         strat = detect_pdf_strategy(path)

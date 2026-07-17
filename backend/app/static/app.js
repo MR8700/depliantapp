@@ -4810,20 +4810,97 @@ document.getElementById("import-form").addEventListener("submit", async (e) => {
   formData.append("langue", document.getElementById("import-langue").value);
   formData.append("auteur", document.getElementById("import-auteur").value);
 
+  // Render the double progression container
   resultDiv.innerHTML = `
-    <div class="import-progression" style="margin-top:20px;">
-      <div class="import-progression-barre"><div class="import-progression-remplissage" style="width: 50%;"></div></div>
-      <p class="hint">Analyse et découpage du fichier en cours…</p>
+    <div class="liquid-progress-container">
+      <!-- Phase 1: Spinner turning -->
+      <div id="import-phase-spinner" class="spinner-large-container">
+        <div class="spinner-large"></div>
+        <p style="font-size: 0.9rem; color: #1e293b; font-weight: 600; margin: 0;">Étape 1 : Lecture et extraction du document...</p>
+        <p style="font-size: 0.8rem; color: #64748b; margin: 0;">Traitement initial du fichier en cours</p>
+      </div>
+      
+      <!-- Phase 2: Progress bar with blue liquid charging from 0% to 100% -->
+      <div id="import-phase-progress" class="hidden" style="animation: fadeIn 0.3s ease;">
+        <p style="font-size: 0.9rem; color: #1e293b; font-weight: 600; margin: 0 0 4px 0;">Étape 2 : Analyse intelligente et découpage des chants...</p>
+        <p style="font-size: 0.8rem; color: #64748b; margin: 0 0 12px 0;">Recherche des couplets, refrains et structures</p>
+        <div class="liquid-barre">
+          <div id="import-liquid-fill" class="liquid-remplissage"></div>
+        </div>
+        <div id="import-progress-percent" style="font-size: 0.95rem; color: #2563eb; font-weight: 700; margin-top: 4px;">0%</div>
+      </div>
     </div>
   `;
-  try {
-    await avecChargementSubmit(e.target, async () => {
+
+  // Start the request and track its completion status
+  let requestDone = false;
+  let requestData = null;
+  let requestError = null;
+
+  const apiPromise = (async () => {
+    try {
       const res = await fetch("/import/upload", { method: "POST", body: formData });
       if (!res.ok) throw new Error(await res.text());
-      const data = await res.json();
+      requestData = await res.json();
+    } catch (err) {
+      requestError = err;
+    } finally {
+      requestDone = true;
+    }
+  })();
 
+  try {
+    await avecChargementSubmit(e.target, async () => {
+      // Step 1: Wait for 1.5 seconds under Phase 1 (spinner turning)
+      await new Promise(r => setTimeout(r, 1500));
+      
+      // Transition to Phase 2
+      const spinnerEl = document.getElementById("import-phase-spinner");
+      const progressEl = document.getElementById("import-phase-progress");
+      if (spinnerEl) spinnerEl.classList.add("hidden");
+      if (progressEl) progressEl.classList.remove("hidden");
+      
+      // Step 2: Animate liquid fill from 0% to 100% over 2 seconds (or wait for the request if it takes longer)
+      const fillEl = document.getElementById("import-liquid-fill");
+      const percentEl = document.getElementById("import-progress-percent");
+      
+      const duration = 2000; // 2 seconds animation
+      const interval = 40; // update every 40ms
+      const steps = duration / interval;
+      let step = 0;
+      
+      while (step <= steps || !requestDone) {
+        let pct = Math.min(100, Math.round((step / steps) * 100));
+        
+        // If request is still not done, cap at 98% until it completes
+        if (!requestDone && pct >= 98) {
+          pct = 98;
+        }
+        
+        if (fillEl) fillEl.style.width = `${pct}%`;
+        if (percentEl) percentEl.textContent = `${pct}%`;
+        
+        await new Promise(r => setTimeout(r, interval));
+        
+        if (step <= steps) {
+          step++;
+        }
+      }
+      
+      // Finish the animation to 100%
+      if (fillEl) fillEl.style.width = "100%";
+      if (percentEl) percentEl.textContent = "100%";
+      await new Promise(r => setTimeout(r, 200)); // small delay to let user see 100%
+
+      // Await api completion if it wasn't done yet
+      await apiPromise;
+      
+      if (requestError) {
+        throw requestError;
+      }
+      
       resultDiv.textContent = "";
-      afficherImportWorkspace(data.chants);
+      afficherImportWorkspace(requestData.chants);
     });
   } catch (err) {
     resultDiv.innerHTML = `

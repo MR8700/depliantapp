@@ -8650,3 +8650,91 @@ input.special-label:focus {
   display: inline-block !important;
   margin-top: 4px !important;
 }
+
+/* Custom premium liquid progress bar styles */
+.liquid-progress-container {
+  background: white;
+  border: 1px solid var(--bordure);
+  border-radius: 20px;
+  padding: 30px 24px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.05), 0 8px 10px -6px rgba(0, 0, 0, 0.05);
+  text-align: center;
+  max-width: 500px;
+  margin: 30px auto;
+  transition: all 0.3s ease;
+}
+
+.spinner-large-container {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+  padding: 10px 0;
+  animation: fadeIn 0.3s ease;
+}
+
+.spinner-large {
+  width: 50px;
+  height: 50px;
+  border: 4px solid rgba(37, 99, 235, 0.15);
+  border-left-color: #2563eb;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  box-shadow: 0 0 12px rgba(37, 99, 235, 0.2);
+}
+
+.liquid-barre {
+  height: 24px;
+  border-radius: 12px;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.15);
+  overflow: hidden;
+  position: relative;
+  box-shadow: inset 0 2px 4px rgba(0,0,0,0.06);
+  margin: 15px 0;
+}
+
+.liquid-remplissage {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, #3b82f6, #1d4ed8, #2563eb);
+  position: relative;
+  border-radius: 12px;
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.4);
+  transition: width 0.1s linear;
+}
+
+/* Wave overlay inside the liquid fill */
+.liquid-remplissage::after {
+  content: "";
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.25) 25%,
+    transparent 25%,
+    transparent 50%,
+    rgba(255, 255, 255, 0.25) 50%,
+    rgba(255, 255, 255, 0.25) 75%,
+    transparent 75%,
+    transparent
+  );
+  background-size: 30px 30px;
+  animation: liquid-wave-anim 0.8s linear infinite;
+  opacity: 0.75;
+}
+
+@keyframes liquid-wave-anim {
+  0% { background-position: 0 0; }
+  100% { background-position: 30px 0; }
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
+}

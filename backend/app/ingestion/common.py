@@ -66,10 +66,11 @@ CATEGORY_PREFIX_RE = re.compile(r"^([A-ZÉÈÀÂÎÔÛÇÏ][A-ZÉÈÀÂÎÔÛÇ�
 
 # Cas 15 : mots-clés de section liturgique — jamais des titres de chant.
 SECTION_KEYWORDS = {
-    "ENTREE", "ENTRÉE", "KYRIE", "GLORIA", "PSAUME", "ALLELUIA", "ALLÉLUIA",
-    "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE", "PU",
-    "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE",
+    "ENTREE", "ENTRÉE", "KYRIE", "PRENDS PITIE", "PRENDS PITIÉ", "GLORIA", "PSAUME", 
+    "ALLELUIA", "ALLÉLUIA", "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE", 
+    "PU", "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE", 
     "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE",
+    "CHANTS MARIAUX", "MARIAUX"
 }
 
 # Gros carnets multi-catégories (souvent des PDF) qui préfixent chaque chant
@@ -78,7 +79,10 @@ SECTION_KEYWORDS = {
 # _detect_consistent_prefix (qui exige un préfixe unique et répété) ne peut
 # pas le voir : ce marqueur est reconnu indépendamment, pour n'importe quel
 # mot-clé de SECTION_KEYWORDS, avec ou sans numéro.
-CODED_TITLE_RE = re.compile(r"^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{3,25})\s*(\d{0,3})\s*[:.\-]\s*(.+)$")
+CODED_TITLE_RE = re.compile(
+    r"^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,25})\s*(\d{0,3})\s*(?:[:.\-]\s*(.*))?$",
+    re.IGNORECASE
+)
 # Clés déjà passées par normaliser()+upper() (sans accents) puisque la
 # recherche ci-dessous normalise systématiquement le mot capté.
 _CODED_TITLE_CATEGORIES = {
@@ -87,6 +91,7 @@ _CODED_TITLE_CATEGORIES = {
     "GLORIA": "Gloria",
     "PSAUME": "Psaume",
     "ACCLAMATION": "Acclamation",
+    "ACCLAMTION": "Acclamation", # gestion de la coquille dans le docx
     "ALLELUIA": "Acclamation",
     "CREDO": "Credo",
     "PRIERE UNIVERSELLE": "Priere_universelle",
@@ -109,7 +114,7 @@ _CODED_TITLE_CATEGORIES = {
 }
 
 
-# Éclate aussi un titre codé apparaissant en PLEIN MILIEU d'un paragraphe
+# Éclate aussi un titre codé apparaissant en PLEIN MILIEu d'un paragraphe
 # reconstruit (ex. fin d'un couplet collée au titre du chant suivant faute
 # d'un espacement suffisant dans le PDF source pour que l'extraction les
 # sépare). Le mot-clé capté est validé après coup via _CODED_TITLE_CATEGORIES
@@ -133,20 +138,36 @@ def _split_titres_codes(texte: str) -> list[str]:
     return morceaux
 
 
+_SECTION_HEAD_RE = re.compile(r"^[A-Z]\.?\s*([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ ]{3,30})$")
+
+
 def _match_coded_title(ligne: str) -> Optional[tuple[str, str]]:
-    """Reconnaît un titre codé 'CATEGORIE[N] : Titre'. Rejette les lignes de
-    sommaire à points de suite ('ENTREE.......... 3') qui matcheraient sinon
-    le même motif sans être un vrai titre de chant."""
-    m = CODED_TITLE_RE.match(ligne.strip())
+    cleaned = ligne.strip()
+    m = CODED_TITLE_RE.match(cleaned)
     if not m:
         return None
-    categorie = _CODED_TITLE_CATEGORIES.get(normaliser(m.group(1)).upper())
+    
+    cat_raw = normaliser(m.group(1)).upper()
+    categorie = _CODED_TITLE_CATEGORIES.get(cat_raw)
     if categorie is None:
         return None
-    reste = m.group(3).strip()
-    if ".." in reste or "…" in reste or len(re.sub(r"[.\s\d]", "", reste)) < 2:
+    
+    number = m.group(2) or ""
+    reste = (m.group(3) or "").strip()
+    reste = re.sub(r'^[«"\'\s]+|[»"\'\s]+$', '', reste)
+    
+    if ".." in reste or "…" in reste:
         return None
-    return categorie, reste
+        
+    if len(re.sub(r"[.\s\d]", "", reste)) < 2:
+        if number:
+            title = f"{m.group(1).strip().capitalize()} {number}"
+        else:
+            title = m.group(1).strip().capitalize()
+    else:
+        title = reste
+        
+    return categorie, title
 
 TITRE_LONGUEUR_SUSPECTE = 60
 # Une ligne libre plus longue que ça, après qu'un Réf/verset a déjà été vu
@@ -205,6 +226,9 @@ def _eclater_marqueurs_internes(paragraphs: list[str]) -> list[str]:
     paragraphe Word, sans le moindre saut de ligne entre eux."""
     lignes: list[str] = []
     for p in paragraphs:
+        if _match_coded_title(p):
+            lignes.append(p)
+            continue
         for morceau in _INLINE_MARKER_SPLIT_RE.split(p):
             for sous_morceau in _split_titres_codes(morceau):
                 for sous_sous_morceau in _INLINE_DIALOGUE_SPLIT_RE.split(sous_morceau):
@@ -222,7 +246,15 @@ def _extract_code_reference(titre: str) -> tuple[Optional[str], str]:
 
 
 def _est_ligne_section(ligne: str) -> bool:
-    return ligne.strip().upper().rstrip(":.") in SECTION_KEYWORDS
+    cleaned = ligne.strip().upper().rstrip(":.")
+    if cleaned in SECTION_KEYWORDS:
+        return True
+    m = _SECTION_HEAD_RE.match(cleaned)
+    if m:
+        val = m.group(1).strip()
+        if val in SECTION_KEYWORDS or val.replace(" ", "") in SECTION_KEYWORDS:
+            return True
+    return False
 
 
 # --- Classification ligne par ligne -------------------------------------
@@ -236,6 +268,9 @@ class _Ligne:
 
 
 def _classer_ligne(ligne: str) -> _Ligne:
+    if _est_ligne_section(ligne):
+        return _Ligne(ligne, "texte", None, ligne)
+        
     ref_m = REF_RE.match(ligne)
     if ref_m:
         return _Ligne(ligne, "ref", ref_m.group(1), ref_m.group(2).strip())
@@ -306,7 +341,107 @@ def _detecter_refrain_implicite(blocs_avant_versets: list[str], tous_les_blocs: 
 
 # --- Segmentation principale ---------------------------------------------
 
-def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
+def _is_uppercase_title(text: str) -> bool:
+    letters = [c for c in text if c.isalpha()]
+    return len(text) <= 60 and len(letters) >= 3 and all(c.isupper() for c in letters)
+
+
+def segment_paragraphs_docx_clean(paragraphs: list[str]) -> list[RawChant]:
+    chants: list[RawChant] = []
+    
+    titre_courant: Optional[str] = None
+    categorie_courante: Optional[str] = None
+    
+    blocks = []
+    current_block = None
+    block_finished = False
+
+    def flush_song():
+        nonlocal titre_courant, categorie_courante, blocks, current_block, block_finished
+        if current_block:
+            blocks.append(current_block)
+            current_block = None
+            
+        if titre_courant is None and not blocks:
+            return
+            
+        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=categorie_courante)
+        
+        ref_parts = []
+        couplets = []
+        for b in blocks:
+            text = " / ".join(b["lines"])
+            if b["type"] == "ref":
+                ref_parts.append(text)
+            else:
+                if b["num"]:
+                    couplets.append(f"{b['num']}- {text}")
+                else:
+                    couplets.append(text)
+                    
+        if ref_parts:
+            chant.refrain = " / ".join(ref_parts)
+            
+        chant.couplets = couplets
+        chant.confiance = _calculer_confiance(chant, 1.0, any(b["type"] == "couplet" and b["num"] for b in blocks))
+        chants.append(_finalize(chant))
+        
+        titre_courant = None
+        categorie_courante = None
+        blocks = []
+        block_finished = False
+
+    for p in paragraphs:
+        p_clean = p.strip()
+        if not p_clean:
+            block_finished = True
+            continue
+            
+        if _est_ligne_section(p_clean):
+            flush_song()
+            continue
+            
+        coded = _match_coded_title(p_clean)
+        if coded:
+            flush_song()
+            categorie_courante, titre_courant = coded
+            continue
+            
+        if _is_uppercase_title(p_clean):
+            flush_song()
+            titre_courant = p_clean
+            continue
+            
+        if titre_courant is None:
+            titre_courant = "(sans titre)"
+            
+        ref_m = REF_RE.match(p_clean)
+        verse_m = VERSE_RE.match(p_clean)
+        
+        if ref_m:
+            if current_block:
+                blocks.append(current_block)
+            current_block = {"type": "ref", "lines": [ref_m.group(2).strip()]}
+            block_finished = False
+        elif verse_m:
+            if current_block:
+                blocks.append(current_block)
+            current_block = {"type": "couplet", "num": verse_m.group(1), "lines": [verse_m.group(2).strip()]}
+            block_finished = False
+        else:
+            if current_block and not block_finished:
+                current_block["lines"].append(p_clean)
+            else:
+                if current_block:
+                    blocks.append(current_block)
+                current_block = {"type": "couplet", "num": None, "lines": [p_clean]}
+                block_finished = False
+                
+    flush_song()
+    return chants
+
+
+def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False) -> list[RawChant]:
     """Segmente une liste de paragraphes en chants individuels (titre, refrain, couplets).
 
     Approche multi-indices (pas une seule règle d'espacement) :
@@ -333,6 +468,8 @@ def segment_paragraphs(paragraphs: list[str]) -> list[RawChant]:
       numérotés '1-', '2-'... (ex. DEFUNTS.docx, KYRIE.doc) — le style
       largement dominant.
     """
+    if is_clean_paragraphs:
+        return segment_paragraphs_docx_clean(paragraphs)
     paragraphs = [p.strip() for p in paragraphs if p and p.strip()]
     paragraphs = [p for p in paragraphs if not _est_ligne_section(p)]
     prefix = _detect_consistent_prefix(paragraphs)
