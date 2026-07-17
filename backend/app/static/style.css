@@ -8614,4 +8614,8 @@ input.special-label:focus {
   .signature-quote-card {
     padding: 32px;
   }
+  .btn-back-to-top {
+    bottom: 96px !important;
+    right: 16px !important;
+  }
 }
