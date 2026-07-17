@@ -390,6 +390,11 @@ document.getElementById("btn-profil-enregistrer").addEventListener("click", asyn
 });
 
 function afficherVueDirect(nomVue) {
+  const btnBackToTop = document.getElementById("btn-back-to-top");
+  if (btnBackToTop && nomVue !== "apropos") {
+    btnBackToTop.classList.add("hidden");
+  }
+
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
   const btn = document.querySelector(`.nav-btn[data-view="${nomVue}"]`);
