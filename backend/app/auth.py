@@ -180,7 +180,12 @@ def get_chorale_by_username(username: str) -> Optional[dict]:
 
 def list_chorales() -> list[dict]:
     with get_connection() as conn:
-        rows = conn.execute("SELECT id, nom, username, must_change_password, created_at FROM chorales WHERE id <> 0 ORDER BY nom").fetchall()
+        rows = conn.execute(
+            "SELECT id, nom, username, must_change_password, created_at, "
+            "       suppression_date_butoir, suppression_raison, suppression_delai_jours, "
+            "       suppression_demande_revision, suppression_revision_raison "
+            "FROM chorales WHERE id <> 0 ORDER BY nom"
+        ).fetchall()
         return [dict(r) for r in rows]
 
 
@@ -278,3 +283,54 @@ def verify_session_token(token: str) -> Optional[Identite]:
     if type_compte not in ("super", "chorale"):
         return None
     return Identite(type=type_compte, compte_id=compte_id, username=username)
+
+
+def planifier_suppression_chorale(chorale_id: int, delai_jours: int, raison: str) -> None:
+    from datetime import datetime, timezone, timedelta
+    date_butoir = (datetime.now(timezone.utc) + timedelta(days=delai_jours)).isoformat()
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chorales SET "
+            f"  suppression_date_butoir = ?, "
+            f"  suppression_raison = ?, "
+            f"  suppression_delai_jours = ?, "
+            f"  suppression_demande_revision = 0, "
+            f"  suppression_revision_raison = NULL, "
+            f"  updated_at = {horodatage} "
+            f"WHERE id = ?",
+            (date_butoir, raison, delai_jours, chorale_id)
+        )
+
+
+def demander_revision_suppression(chorale_id: int, raison_revision: str) -> None:
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chorales SET "
+            f"  suppression_demande_revision = 1, "
+            f"  suppression_revision_raison = ?, "
+            f"  updated_at = {horodatage} "
+            f"WHERE id = ?",
+            (raison_revision, chorale_id)
+        )
+
+
+def annuler_suppression_chorale(chorale_id: int, raison_annulation: str) -> None:
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chorales SET "
+            f"  suppression_date_butoir = NULL, "
+            f"  suppression_raison = NULL, "
+            f"  suppression_delai_jours = NULL, "
+            f"  suppression_demande_revision = 0, "
+            f"  suppression_revision_raison = NULL, "
+            f"  updated_at = {horodatage} "
+            f"WHERE id = ?",
+            (chorale_id,)
+        )
+        
+        from . import crud
+        texte_message = f"📢 [Annulation de planification de suppression]\nMotif d'annulation : {raison_annulation}"
+        crud.creer_message(chorale_id, "super", texte_message)

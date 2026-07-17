@@ -8619,3 +8619,24 @@ input.special-label:focus {
     right: 16px !important;
   }
 }
+
+/* Cycle de suppression des chorales */
+.deletion-status-badge {
+  background: #fef2f2 !important;
+  border: 1px solid #fecaca !important;
+  color: #b91c1c !important;
+  padding: 8px 12px !important;
+  border-radius: 8px !important;
+  font-size: 0.8rem !important;
+  margin-top: 8px !important;
+  line-height: 1.4 !important;
+  font-weight: 600 !important;
+}
+
+.revision-requested-label {
+  color: #d97706 !important;
+  font-style: italic !important;
+  font-weight: normal !important;
+  display: inline-block !important;
+  margin-top: 4px !important;
+}

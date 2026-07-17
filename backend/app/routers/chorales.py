@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import auth, config
-from ..deps import require_superadmin
+from ..deps import require_superadmin, require_chorale
 
 router = APIRouter(prefix="/chorales", tags=["chorales"])
 
@@ -59,3 +59,47 @@ def reset_password(
     mot_de_passe = payload.nouveau_mot_de_passe or secrets.token_urlsafe(9)
     auth.reinitialiser_mot_de_passe_chorale(chorale_id, mot_de_passe)
     return {"mot_de_passe_initial": mot_de_passe}
+
+
+class PlanificationSuppression(BaseModel):
+    raison: str
+    delai_jours: int
+
+
+class AnnulationSuppression(BaseModel):
+    raison_annulation: str
+
+
+class DemandeRevision(BaseModel):
+    raison_revision: str
+
+
+@router.put("/{chorale_id}/planifier-suppression")
+def planifier_suppression(
+    chorale_id: int, payload: PlanificationSuppression, _identite: auth.Identite = Depends(require_superadmin)
+):
+    if not auth.get_chorale(chorale_id):
+        raise HTTPException(status_code=404, detail="Chorale introuvable")
+    auth.planifier_suppression_chorale(chorale_id, payload.delai_jours, payload.raison)
+    return {"message": "Suppression planifiée"}
+
+
+@router.post("/{chorale_id}/annuler-suppression")
+def annuler_suppression(
+    chorale_id: int, payload: AnnulationSuppression, _identite: auth.Identite = Depends(require_superadmin)
+):
+    if not auth.get_chorale(chorale_id):
+        raise HTTPException(status_code=404, detail="Chorale introuvable")
+    auth.annuler_suppression_chorale(chorale_id, payload.raison_annulation)
+    return {"message": "Suppression annulée"}
+
+
+@router.post("/demande-revision")
+def demander_revision(
+    payload: DemandeRevision, identite: auth.Identite = Depends(require_chorale)
+):
+    compte_id = identite.compte_id
+    if not auth.get_chorale(compte_id):
+        raise HTTPException(status_code=404, detail="Chorale introuvable")
+    auth.demander_revision_suppression(compte_id, payload.raison_revision)
+    return {"message": "Demande de révision enregistrée"}

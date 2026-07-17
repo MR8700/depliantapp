@@ -58,6 +58,11 @@ def status(request: Request):
         "nom": nom,
         "username": identite.username,
         "must_change_password": bool(compte["must_change_password"]) if compte else False,
+        "suppression_date_butoir": compte.get("suppression_date_butoir") if identite.type == "chorale" and compte else None,
+        "suppression_raison": compte.get("suppression_raison") if identite.type == "chorale" and compte else None,
+        "suppression_delai_jours": compte.get("suppression_delai_jours") if identite.type == "chorale" and compte else None,
+        "suppression_demande_revision": compte.get("suppression_demande_revision", 0) if identite.type == "chorale" and compte else 0,
+        "suppression_revision_raison": compte.get("suppression_revision_raison") if identite.type == "chorale" and compte else None,
     }
 
 

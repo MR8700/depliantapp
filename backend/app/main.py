@@ -52,6 +52,10 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if path in _CHEMINS_PUBLICS:
             return await call_next(request)
 
+        # Effacer les chorales expirées
+        from . import db
+        db.nettoyer_chorales_supprimees()
+
         token = request.cookies.get(auth.COOKIE_NAME)
         identite = auth.verify_session_token(token) if token else None
         if not identite:
@@ -65,6 +69,8 @@ class AuthMiddleware(BaseHTTPMiddleware):
             compte = auth.get_account()
         else:
             compte = auth.get_chorale(identite.compte_id)
+        if not compte:
+            return self._refuser(request)
         if compte and compte["must_change_password"]:
             return self._refuser(request)
 

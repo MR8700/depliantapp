@@ -457,7 +457,7 @@ const VUES_SUPERADMIN_UNIQUEMENT = new Set(["admin", "statistiques"]);
 function gererNavigationHash() {
   if (!IDENTITE || bloqueNavigation) return;
   const hash = window.location.hash || "#/bibliotheque";
-  
+
   const parts = hash.split('#').filter(Boolean);
   const pathPart = parts[0] || "/bibliotheque";
   const nomVue = pathPart.replace("/", "");
@@ -1806,7 +1806,7 @@ function renderMomentBody(row, moment) {
       const codeRef = state.chant_reference || state.code_reference || "N/A";
       const catClass = "cat-pill-" + (state.chant_categorie ? state.chant_categorie.toLowerCase().replace(/[^a-z0-9]/g, "-") : "autre");
       const catLabel = categorieLabel(state.chant_categorie);
-      
+
       cardContent.innerHTML = `
         <div class="moment-card-song-details" style="padding:12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; margin:6px 0; display:flex; flex-direction:column; gap:6px; position:relative; text-align:left;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
@@ -5946,13 +5946,54 @@ function peuplerSelectsCategories() {
 
 // --- Administration (super-admin) ---
 
+function formaterDateDe(dateStr) {
+  if (!dateStr) return "";
+  try {
+    return new Date(dateStr).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "long",
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  } catch (e) {
+    return dateStr;
+  }
+}
+
+function calculerJoursRestants(dateStr) {
+  if (!dateStr) return 0;
+  try {
+    const diffMs = new Date(dateStr) - new Date();
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60 * 24)));
+  } catch (e) {
+    return 0;
+  }
+}
+
 function choraleCardHtml(chorale) {
+  const isScheduled = !!chorale.suppression_date_butoir;
+  const statusBadge = isScheduled ? `
+    <div class="deletion-status-badge">
+      ⚠️ Suppression planifiée le ${formaterDateDe(chorale.suppression_date_butoir)} 
+      (${calculerJoursRestants(chorale.suppression_date_butoir)} jours restants)
+      ${chorale.suppression_demande_revision ? `<br><span class="revision-requested-label">⌛ Révision demandée : "${escapeHtml(chorale.suppression_revision_raison)}"</span>` : ''}
+    </div>` : '';
+
+  const actionButton = isScheduled ? `
+    <button type="button" class="btn-secondary btn-annuler-suppr" style="font-size: 0.8rem; padding: 6px 12px; background: #e0f2fe; color: #0369a1; border-color: #bae6fd;">Annuler la suppression</button>
+  ` : `
+    <button type="button" class="btn-secondary btn-planifier-suppr" style="font-size: 0.8rem; padding: 6px 12px; background: #fee2e2; color: #dc2626; border-color: #fecaca;">Planifier la suppression</button>
+  `;
+
   return `
     <li class="chorale-card" data-id="${chorale.id}">
-      <div class="chant-titre">${escapeHtml(chorale.nom)}</div>
+      <div class="chant-titre" style="font-weight: 700;">${escapeHtml(chorale.nom)}</div>
       <div class="chant-meta">Identifiant : ${escapeHtml(chorale.username)}${chorale.must_change_password ? " — mot de passe pas encore défini" : ""}</div>
-      <div class="toolbar">
+      ${statusBadge}
+      <div class="toolbar" style="margin-top: 8px; display: flex; gap: 8px;">
         <button type="button" class="btn-secondary btn-reset-mdp" style="font-size: 0.8rem; padding: 6px 12px;">Réinitialiser le mot de passe</button>
+        ${actionButton}
       </div>
     </li>`;
 }
@@ -5966,6 +6007,8 @@ async function actualiserAdminChorales() {
   list.querySelectorAll(".chorale-card").forEach((el) => {
     const id = Number(el.dataset.id);
     const chorale = chorales.find(c => c.id === id);
+    if (!chorale) return;
+
     el.querySelector(".btn-reset-mdp").addEventListener("click", async (e) => {
       try {
         if (!confirm(`Réinitialiser le mot de passe de la chorale "${chorale ? chorale.nom : ''}" ? Elle devra en définir un nouveau à sa prochaine connexion.`)) return;
@@ -6002,7 +6045,180 @@ async function actualiserAdminChorales() {
         alert("Erreur de réinitialisation : " + err.message);
       }
     });
+
+    const btnPlan = el.querySelector(".btn-planifier-suppr");
+    if (btnPlan) {
+      btnPlan.addEventListener("click", () => {
+        document.getElementById("planifier-suppr-nom").textContent = chorale.nom;
+        document.getElementById("admin-planifier-suppr-form").dataset.choraleId = id;
+        
+        // Reset inputs
+        document.getElementById("planifier-suppr-raison-select").value = "Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.";
+        document.querySelector(".id-planifier-suppr-custom-raison-group").classList.add("hidden");
+        document.getElementById("planifier-suppr-raison-custom").value = "";
+        
+        ouvrirModale("admin-planifier-suppression-modal");
+      });
+    }
+
+    const btnCancel = el.querySelector(".btn-annuler-suppr");
+    if (btnCancel) {
+      btnCancel.addEventListener("click", () => {
+        document.getElementById("annuler-suppr-nom").textContent = chorale.nom;
+        document.getElementById("admin-annuler-suppr-form").dataset.choraleId = id;
+
+        // Reset inputs
+        document.getElementById("annuler-suppr-raison-select").value = "Confirmation d'activité : Suite à vos explications, nous confirmons le maintien de votre compte actif sur la plateforme.";
+        document.querySelector(".id-annuler-suppr-custom-raison-group").classList.add("hidden");
+        document.getElementById("annuler-suppr-raison-custom").value = "";
+
+        ouvrirModale("admin-annuler-suppression-modal");
+      });
+    }
   });
+}
+
+function setupReasonSelectToggler(selectId, customGroupClass) {
+  const select = document.getElementById(selectId);
+  const group = document.querySelector(customGroupClass);
+  if (select && group) {
+    select.addEventListener("change", () => {
+      if (select.value === "autre") {
+        group.classList.remove("hidden");
+      } else {
+        group.classList.add("hidden");
+      }
+    });
+  }
+}
+
+function actualiserBanniereSuppression() {
+  const banner = document.getElementById("deletion-warning-banner");
+  const bannerText = document.getElementById("deletion-banner-text");
+  const btnRevision = document.getElementById("btn-banner-revision");
+  
+  if (!banner || !IDENTITE) return;
+  
+  if (IDENTITE.type === "chorale" && IDENTITE.suppression_date_butoir) {
+    banner.classList.remove("hidden");
+    
+    const dateStr = formaterDateDe(IDENTITE.suppression_date_butoir);
+    const jours = calculerJoursRestants(IDENTITE.suppression_date_butoir);
+    
+    if (IDENTITE.suppression_demande_revision) {
+      bannerText.innerHTML = `⚠️ <strong>Avis de suppression programmée</strong> le <strong>${dateStr}</strong> (${jours} jours restants) pour la raison suivante : "${escapeHtml(IDENTITE.suppression_raison)}". <br><strong>⌛ Demande d'examen en cours :</strong> "${escapeHtml(IDENTITE.suppression_revision_raison)}"`;
+      if (btnRevision) btnRevision.classList.add("hidden");
+    } else {
+      bannerText.innerHTML = `⚠️ <strong>Avis de suppression programmée</strong> le <strong>${dateStr}</strong> (${jours} jours restants) pour la raison suivante : "${escapeHtml(IDENTITE.suppression_raison)}".`;
+      if (btnRevision) btnRevision.classList.remove("hidden");
+    }
+  } else {
+    banner.classList.add("hidden");
+  }
+}
+
+function initChoralesDeletionLifecycle() {
+  setupReasonSelectToggler("planifier-suppr-raison-select", ".id-planifier-suppr-custom-raison-group");
+  setupReasonSelectToggler("annuler-suppr-raison-select", ".id-annuler-suppr-custom-raison-group");
+  setupReasonSelectToggler("revision-raison-select", ".id-revision-custom-raison-group");
+
+  const planForm = document.getElementById("admin-planifier-suppr-form");
+  if (planForm) {
+    planForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = e.target.dataset.choraleId;
+      const selectVal = document.getElementById("planifier-suppr-raison-select").value;
+      const customVal = document.getElementById("planifier-suppr-raison-custom").value.trim();
+      const raison = selectVal === "autre" ? customVal : selectVal;
+      const delai = Number(document.getElementById("planifier-suppr-delai").value);
+      
+      if (!raison) {
+        alert("Veuillez renseigner une raison.");
+        return;
+      }
+      
+      try {
+        await avecChargementSubmit(e.target, () => api(`/chorales/${id}/planifier-suppression`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raison: raison, delai_jours: delai }),
+        }));
+        fermerModale("admin-planifier-suppression-modal");
+        await actualiserAdminChorales();
+      } catch (err) {
+        alert("Erreur : " + err.message);
+      }
+    });
+  }
+
+  const cancelForm = document.getElementById("admin-annuler-suppr-form");
+  if (cancelForm) {
+    cancelForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const id = e.target.dataset.choraleId;
+      const selectVal = document.getElementById("annuler-suppr-raison-select").value;
+      const customVal = document.getElementById("annuler-suppr-raison-custom").value.trim();
+      const raison = selectVal === "autre" ? customVal : selectVal;
+      
+      if (!raison) {
+        alert("Veuillez renseigner un motif d'annulation.");
+        return;
+      }
+
+      try {
+        await avecChargementSubmit(e.target, () => api(`/chorales/${id}/annuler-suppression`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raison_annulation: raison }),
+        }));
+        fermerModale("admin-annuler-suppression-modal");
+        await actualiserAdminChorales();
+      } catch (err) {
+        alert("Erreur : " + err.message);
+      }
+    });
+  }
+
+  const revisionForm = document.getElementById("chorale-demande-revision-form");
+  if (revisionForm) {
+    revisionForm.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const selectVal = document.getElementById("revision-raison-select").value;
+      const customVal = document.getElementById("revision-raison-custom").value.trim();
+      const raison = selectVal === "autre" ? customVal : selectVal;
+
+      if (!raison) {
+        alert("Veuillez renseigner un motif.");
+        return;
+      }
+
+      try {
+        await avecChargementSubmit(e.target, () => api("/chorales/demande-revision", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ raison_revision: raison }),
+        }));
+        fermerModale("chorale-demande-revision-modal");
+        
+        const statusRes = await api("/auth/status");
+        IDENTITE = statusRes;
+        actualiserBanniereSuppression();
+        alert("Votre demande d'examen et révision a été transmise à l'administrateur avec succès.");
+      } catch (err) {
+        alert("Erreur : " + err.message);
+      }
+    });
+  }
+
+  const btnBanner = document.getElementById("btn-banner-revision");
+  if (btnBanner) {
+    btnBanner.addEventListener("click", () => {
+      document.getElementById("revision-raison-select").value = "Compte actif : Notre chorale est toujours en activité et nous prévoyons de créer de nouveaux dépliants liturgiques prochainement.";
+      document.querySelector(".id-revision-custom-raison-group").classList.add("hidden");
+      document.getElementById("revision-raison-custom").value = "";
+      ouvrirModale("chorale-demande-revision-modal");
+    });
+  }
 }
 
 function demandeCardHtml(demande) {
@@ -7082,7 +7298,7 @@ function chargerSidebarMessagerie(threads) {
   container.innerHTML = filtered.map(t => {
     const activeClass = t.chorale_id === messagerieChoraleActive ? "active" : "";
     const unreadBadge = t.non_lus > 0 ? `<span class="unread-badge">${t.non_lus}</span>` : "";
-    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 10000000) : false;
+    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 30000000) : false;
 
     let lastMsgPreview = "Aucun message";
     let lastMsgTime = "";
@@ -7763,7 +7979,7 @@ function initFloatingToolbox() {
             }
           });
           parent.scrollIntoView({ behavior: "smooth", block: "center" });
-          
+
           const originalOutline = parent.style.outline;
           parent.style.transition = "outline 0.3s ease";
           parent.style.outline = "3px solid #1f4a7c";
@@ -8117,6 +8333,7 @@ async function init() {
     IDENTITE = identiteRes;
     const meta = metaRes;
 
+    actualiserBanniereSuppression();
     updateHeaderAndProfileAvatar();
 
     document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
@@ -8131,6 +8348,7 @@ async function init() {
     document.getElementById("composer-result").innerHTML = indiceComposerHtml();
     initMobileLayout();
     initApropos();
+    initChoralesDeletionLifecycle();
 
     const promises = [
       actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),

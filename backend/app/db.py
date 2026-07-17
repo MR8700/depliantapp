@@ -174,7 +174,12 @@ CREATE TABLE IF NOT EXISTS chorales (
     password_hash TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 1,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
-    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    suppression_date_butoir TEXT,
+    suppression_raison TEXT,
+    suppression_delai_jours INTEGER,
+    suppression_demande_revision INTEGER NOT NULL DEFAULT 0,
+    suppression_revision_raison TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chorales_username ON chorales(username);
 
@@ -338,7 +343,12 @@ CREATE TABLE IF NOT EXISTS chorales (
     password_hash TEXT NOT NULL,
     must_change_password INTEGER NOT NULL DEFAULT 1,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
-    updated_at TIMESTAMP NOT NULL DEFAULT now()
+    updated_at TIMESTAMP NOT NULL DEFAULT now(),
+    suppression_date_butoir TEXT,
+    suppression_raison TEXT,
+    suppression_delai_jours INTEGER,
+    suppression_demande_revision INTEGER NOT NULL DEFAULT 0,
+    suppression_revision_raison TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_chorales_username ON chorales(username);
 
@@ -540,6 +550,19 @@ def _init_sqlite() -> None:
         if colonnes_demandes and "raison" not in colonnes_demandes:
             conn.execute("ALTER TABLE demandes_suppression ADD COLUMN raison TEXT")
 
+        colonnes_chorales = {row["name"] for row in conn.execute("PRAGMA table_info(chorales)").fetchall()}
+        if colonnes_chorales:
+            if "suppression_date_butoir" not in colonnes_chorales:
+                conn.execute("ALTER TABLE chorales ADD COLUMN suppression_date_butoir TEXT")
+            if "suppression_raison" not in colonnes_chorales:
+                conn.execute("ALTER TABLE chorales ADD COLUMN suppression_raison TEXT")
+            if "suppression_delai_jours" not in colonnes_chorales:
+                conn.execute("ALTER TABLE chorales ADD COLUMN suppression_delai_jours INTEGER")
+            if "suppression_demande_revision" not in colonnes_chorales:
+                conn.execute("ALTER TABLE chorales ADD COLUMN suppression_demande_revision INTEGER NOT NULL DEFAULT 0")
+            if "suppression_revision_raison" not in colonnes_chorales:
+                conn.execute("ALTER TABLE chorales ADD COLUMN suppression_revision_raison TEXT")
+
         # backfill ponctuel : génère un slug pour les chants qui n'en ont pas encore
         # (import initial, chants créés avant l'ajout de cette colonne)
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
@@ -633,6 +656,12 @@ def _init_postgres() -> None:
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS motif_rejet TEXT")
         conn.execute("ALTER TABLE demandes_suppression ADD COLUMN IF NOT EXISTS raison TEXT")
 
+        conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_date_butoir TEXT")
+        conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_raison TEXT")
+        conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_delai_jours INTEGER")
+        conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_demande_revision INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_revision_raison TEXT")
+
         conn.executescript(SCHEMA_POSTGRES)
 
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
@@ -679,3 +708,27 @@ def get_connection():
         conn.commit()
     finally:
         conn.close()
+
+
+def definitivement_supprimer_chorale(chorale_id: int) -> None:
+    with get_connection() as conn:
+        conn.execute("DELETE FROM feuillets WHERE chorale_id = ?", (chorale_id,))
+        conn.execute("DELETE FROM parametres WHERE chorale_id = ?", (chorale_id,))
+        conn.execute("DELETE FROM categories_personnalisees WHERE cree_par = ?", (chorale_id,))
+        conn.execute("DELETE FROM messages WHERE chorale_id = ?", (chorale_id,))
+        conn.execute("DELETE FROM chorales WHERE id = ?", (chorale_id,))
+
+
+def nettoyer_chorales_supprimees() -> None:
+    from datetime import datetime, timezone
+    now_str = datetime.now(timezone.utc).isoformat()
+    with get_connection() as conn:
+        try:
+            rows = conn.execute(
+                "SELECT id FROM chorales WHERE suppression_date_butoir IS NOT NULL AND suppression_date_butoir <= ?",
+                (now_str,)
+            ).fetchall()
+        except Exception:
+            return
+        for r in rows:
+            definitivement_supprimer_chorale(r["id"])

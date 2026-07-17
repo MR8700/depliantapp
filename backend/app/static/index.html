@@ -15,6 +15,17 @@
 </head>
 <body>
 
+<!-- Deletion warning banner for chorales -->
+<div id="deletion-warning-banner" class="deletion-warning-banner hidden no-print" style="background: #fee2e2; border-bottom: 2px solid #ef4444; color: #991b1b; padding: 12px 24px; position: sticky; top: 0; z-index: 9999; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 0.9rem;">
+  <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+    <span style="font-size: 1.4rem;">⚠️</span>
+    <div id="deletion-banner-text" style="font-weight: 500;"></div>
+  </div>
+  <button type="button" id="btn-banner-revision" class="btn-primary" style="background: #dc2626; border: none; color: white; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem; flex-shrink: 0; transition: background-color 0.2s;">
+    Contester / Demander révision
+  </button>
+</div>
+
 <div id="splash" class="splash">
   <div class="splash-symbole" aria-hidden="true">
     <svg viewBox="0 0 100 100" width="110" height="110">
@@ -2177,6 +2188,112 @@
     <button type="button" onclick="fermerModale('admin-reset-modal')" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #1F4A7C; color: white; cursor: pointer; margin-top: 8px;">
       Fermer
     </button>
+  </div>
+</div>
+
+<!-- Modal: Planifier la suppression (Admin) -->
+<div id="admin-planifier-suppression-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('admin-planifier-suppression-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">⚠️ Planifier la suppression</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Planifiez la suppression définitive du compte de la chorale <strong id="planifier-suppr-nom"></strong>. Un délai de contestation lui sera accordé.
+    </p>
+    
+    <form id="admin-planifier-suppr-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison de la suppression (Modèles rapides)</label>
+        <select id="planifier-suppr-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.">💤 Inactivité prolongée (> 6 mois)</option>
+          <option value="Non-respect des conditions d'utilisation : Utilisation inappropriée de l'espace de stockage ou diffusion de contenus non conformes.">🚫 Non-respect des conditions d'utilisation</option>
+          <option value="Fermeture de la chorale : Signalement de la dissolution ou de l'arrêt des activités de la chorale.">🏛️ Fermeture de la chorale</option>
+          <option value="Doublon ou compte de test : Compte créé par erreur ou utilisé temporairement pour des tests de mise en route.">📋 Doublon ou compte de test</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-planifier-suppr-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison personnalisée</label>
+        <textarea id="planifier-suppr-raison-custom" rows="3" placeholder="Saisissez la raison détaillée de la suppression..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-delai" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Délai avant suppression définitive</label>
+        <select id="planifier-suppr-delai" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="7">7 jours</option>
+          <option value="15" selected>15 jours</option>
+          <option value="30">30 jours</option>
+        </select>
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #dc2626; color: white; cursor: pointer; margin-top: 8px;">
+        Planifier la suppression
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Annuler la suppression (Admin) -->
+<div id="admin-annuler-suppression-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('admin-annuler-suppression-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">🔄 Annuler la suppression</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Annulez la suppression programmée pour la chorale <strong id="annuler-suppr-nom"></strong>. Un message d'explication officiel lui sera envoyé automatiquement.
+    </p>
+    
+    <form id="admin-annuler-suppr-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="annuler-suppr-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Motif de l'annulation (Modèles rapides)</label>
+        <select id="annuler-suppr-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Confirmation d'activité : Suite à vos explications, nous confirmons le maintien de votre compte actif sur la plateforme.">✓ Confirmation d'activité (Révision approuvée)</option>
+          <option value="Assistance technique apportée : Les problèmes techniques ou d'accès ayant été résolus, le compte est rétabli.">🛠️ Assistance technique apportée</option>
+          <option value="Malentendu clarifié : Le malentendu a été résolu, la planification de la suppression est annulée.">🤝 Malentendu clarifié</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-annuler-suppr-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="annuler-suppr-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Motif d'annulation personnalisé</label>
+        <textarea id="annuler-suppr-raison-custom" rows="3" placeholder="Saisissez la raison détaillée de l'annulation..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #2563eb; color: white; cursor: pointer; margin-top: 8px;">
+        Confirmer l'annulation
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Demander révision (Chorale) -->
+<div id="chorale-demande-revision-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('chorale-demande-revision-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">⌛ Demander examen et révision</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Expliquez pourquoi la planification de la suppression de votre compte doit être suspendue et réexaminée.
+    </p>
+    
+    <form id="chorale-demande-revision-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="revision-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison de la contestation (Modèles rapides)</label>
+        <select id="revision-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Compte actif : Notre chorale est toujours en activité et nous prévoyons de créer de nouveaux dépliants liturgiques prochainement.">🏛️ Chorale en activité</option>
+          <option value="Erreur de ciblage : Il y a une erreur, notre compte n'est pas inactif et respecte toutes les conditions de la plateforme.">❌ Erreur de ciblage / d'inactivité</option>
+          <option value="Besoin d'aide : Nous rencontrons des difficultés techniques pour utiliser la plateforme et demandons de l'assistance.">🛠️ Difficultés techniques rencontrées</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-revision-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="revision-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Explications personnalisées</label>
+        <textarea id="revision-raison-custom" rows="3" placeholder="Saisissez des détails supplémentaires..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #1f4a7c; color: white; cursor: pointer; margin-top: 8px;">
+        Soumettre la demande d'examen
+      </button>
+    </form>
   </div>
 </div>
 
