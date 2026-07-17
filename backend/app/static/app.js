@@ -452,7 +452,11 @@ const VUES_SUPERADMIN_UNIQUEMENT = new Set(["admin", "statistiques"]);
 function gererNavigationHash() {
   if (!IDENTITE || bloqueNavigation) return;
   const hash = window.location.hash || "#/bibliotheque";
-  const nomVue = hash.replace("#/", "");
+  
+  const parts = hash.split('#').filter(Boolean);
+  const pathPart = parts[0] || "/bibliotheque";
+  const nomVue = pathPart.replace("/", "");
+  const sectionId = parts[1] || "";
 
   if (VUES_SUPERADMIN_UNIQUEMENT.has(nomVue) && IDENTITE && IDENTITE.type !== "super") {
     bloqueNavigation = true;
@@ -475,6 +479,15 @@ function gererNavigationHash() {
 
   vuePrecedente = nomVue;
   afficherVueDirect(nomVue);
+
+  if (sectionId) {
+    setTimeout(() => {
+      const targetEl = document.getElementById(sectionId);
+      if (targetEl) {
+        targetEl.scrollIntoView({ behavior: "smooth", block: "start" });
+      }
+    }, 120);
+  }
 }
 
 window.addEventListener("hashchange", gererNavigationHash);
