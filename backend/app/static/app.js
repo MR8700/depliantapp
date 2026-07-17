@@ -7756,6 +7756,7 @@ function initFloatingToolbox() {
   let startX = 0, startY = 0;
   let initialLeft = 0, initialTop = 0;
   let hasCoordinates = false;
+  let lastTouchTime = 0;
 
   // Toggle active state of the radial menu
   function toggleMenu(forceState) {
@@ -7879,13 +7880,14 @@ function initFloatingToolbox() {
     });
 
     const distance = Math.hypot(clientX - startX, clientY - startY);
-    if (distance < 8) {
+    if (distance < 24) {
       toggleMenu();
     }
   }
 
   // Setup Mouse Event Listeners on Trigger
   trigger.addEventListener("mousedown", (e) => {
+    if (Date.now() - lastTouchTime < 1000) return;
     e.preventDefault();
     handleDragStart(e.clientX, e.clientY);
 
@@ -7905,6 +7907,7 @@ function initFloatingToolbox() {
 
   // Setup Touch Event Listeners on Trigger
   trigger.addEventListener("touchstart", (e) => {
+    lastTouchTime = Date.now();
     if (e.touches.length !== 1) return;
     const touch = e.touches[0];
     handleDragStart(touch.clientX, touch.clientY);
@@ -7917,9 +7920,10 @@ function initFloatingToolbox() {
   }, { passive: true });
 
   trigger.addEventListener("touchend", (e) => {
+    lastTouchTime = Date.now();
     if (!isDragging) return;
     const touch = e.changedTouches[0] || {};
-    handleDragEnd(touch.clientX || startX, touch.clientY || startY);
+    handleDragEnd(touch.clientX !== undefined ? touch.clientX : startX, touch.clientY !== undefined ? touch.clientY : startY);
   }, { passive: true });
 
   // Prevent default scroll on touch inside trigger to make dragging responsive
