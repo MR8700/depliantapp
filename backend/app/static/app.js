@@ -600,6 +600,12 @@ async function api(path, options) {
     const texte = await res.text();
     let detail = texte;
     try { detail = JSON.parse(texte).detail; } catch (e) { /* pas du JSON */ }
+    
+    // Si la réponse est un document HTML (typiquement une page d'erreur 502/504 de la passerelle)
+    if (typeof detail === "string" && (detail.trim().startsWith("<!DOCTYPE") || detail.trim().startsWith("<html") || detail.trim().includes("502 Bad Gateway") || detail.trim().includes("504 Gateway Timeout"))) {
+      detail = `Le serveur a rencontré une erreur ou est indisponible (Code ${res.status}). Vos modifications ont pu être enregistrées ; veuillez rafraîchir la page ou vérifier votre bibliothèque.`;
+    }
+    
     const message = typeof detail === "object" && detail !== null ? detail.message : detail;
     const erreur = new Error(message || `Erreur ${res.status}`);
     erreur.status = res.status;
