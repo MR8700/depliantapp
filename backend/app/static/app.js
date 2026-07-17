@@ -21,7 +21,7 @@ function recalculerDimensionsGlobales() {
   const vw = window.innerWidth * 0.01;
   document.documentElement.style.setProperty('--vh', `${vh}px`);
   document.documentElement.style.setProperty('--vw', `${vw}px`);
-  
+
   // Dynamic safe width for drawers
   const widthTiroir = Math.min(420, window.innerWidth);
   document.documentElement.style.setProperty('--largeur-tiroir', `${widthTiroir}px`);
@@ -35,7 +35,7 @@ recalculerDimensionsGlobales();
 // (voir sw.js) — jamais les données, toujours récupérées en direct.
 if ("serviceWorker" in navigator) {
   window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js").catch(() => {});
+    navigator.serviceWorker.register("/sw.js").catch(() => { });
   });
 }
 
@@ -140,7 +140,7 @@ document.getElementById("profil-menu-burger").addEventListener("click", () => {
 async function ouvrirProfil() {
   switcherSectionProfil("infos-personnelles");
   document.getElementById("profil-menu-dropdown").classList.add("hidden");
-  
+
   updateHeaderAndProfileAvatar();
 
   document.getElementById("profil-info-username").textContent = IDENTITE.username;
@@ -150,7 +150,7 @@ async function ouvrirProfil() {
   // Handle roles visibility
   const lblPrenom = document.getElementById("lbl-profil-prenom");
   const lblNomChorale = document.getElementById("lbl-profil-nom-chorale");
-  
+
   if (IDENTITE.type === "super") {
     lblPrenom.classList.remove("hidden");
     lblNomChorale.classList.add("hidden");
@@ -253,7 +253,7 @@ function updatePasswordStrengthAndCriteria() {
 
   reqLength.innerHTML = hasLength ? "✅ minimum 8 caractères" : "❌ minimum 8 caractères";
   reqLength.className = "req-item " + (hasLength ? "met" : "");
-  
+
   reqUppercase.innerHTML = hasUppercase ? "✅ une lettre majuscule" : "❌ une lettre majuscule";
   reqUppercase.className = "req-item " + (hasUppercase ? "met" : "");
 
@@ -275,7 +275,7 @@ function updatePasswordStrengthAndCriteria() {
 
   const labelEl = document.getElementById("profil-mdp-strength-label");
   const barEl = document.getElementById("profil-mdp-strength-bar");
-  
+
   if (mdp.length === 0) {
     labelEl.textContent = "Vide";
     labelEl.style.color = "#64748b";
@@ -369,7 +369,7 @@ document.getElementById("btn-profil-enregistrer").addEventListener("click", asyn
       statusEl.textContent = "Les deux nouveaux mots de passe ne correspondent pas.";
       return;
     }
-    
+
     statusEl.textContent = "Changement du mot de passe en cours...";
     try {
       await api("/auth/change-password", {
@@ -396,7 +396,7 @@ function afficherVueDirect(nomVue) {
   if (btn) btn.classList.add("active");
   const viewEl = document.getElementById(`view-${nomVue}`);
   if (viewEl) viewEl.classList.add("active");
-  
+
   // Sync Bottom Navigation items
   document.querySelectorAll(".bottom-nav-item").forEach((b) => b.classList.remove("active"));
   const bBtn = document.querySelector(`.bottom-nav-item[data-target-view="${nomVue}"]`);
@@ -416,6 +416,11 @@ function afficherVueDirect(nomVue) {
   if (nomVue === "admin") actualiserAdmin();
   if (nomVue === "statistiques") actualiserStatistiques();
   if (nomVue === "messagerie") demarrerMessagerie(); else arreterMessagerie();
+  if (nomVue === "composer") {
+    if (!listChantsCache || listChantsCache.length === 0) {
+      actualiserListeBibliotheque().catch(e => console.error("Error preloading chants:", e));
+    }
+  }
 }
 
 function changerVue(nomVue) {
@@ -466,7 +471,7 @@ function gererNavigationHash() {
       fermerModale("import-workspace-modal");
     }
   }
-  
+
   vuePrecedente = nomVue;
   afficherVueDirect(nomVue);
 }
@@ -485,19 +490,19 @@ window.addEventListener("beforeunload", (e) => {
 function syncModalLock() {
   const edEl = document.getElementById("chant-editor");
   const editeurOuvert = edEl ? !edEl.classList.contains("hidden") : false;
-  
+
   const pkEl = document.getElementById("chant-picker");
   const pickerOuvert = pkEl ? !pkEl.classList.contains("hidden") : false;
-  
+
   const dtEl = document.getElementById("chant-detail-modal");
   const detailOuvert = dtEl ? !dtEl.classList.contains("hidden") : false;
-  
+
   const wsEl = document.getElementById("import-workspace-modal");
   const workspaceOuvert = wsEl ? !wsEl.classList.contains("hidden") : false;
-  
+
   const tgEl = document.getElementById("texte-grand-editor");
   const tgeOuvert = tgEl ? !tgEl.classList.contains("hidden") : false;
-  
+
   document.body.classList.toggle("no-scroll", editeurOuvert || pickerOuvert || detailOuvert || workspaceOuvert || tgeOuvert);
 }
 ["chant-editor", "chant-picker", "chant-detail-modal", "import-workspace-modal", "texte-grand-editor"].forEach((id) => {
@@ -548,7 +553,7 @@ window.addEventListener("popstate", () => {
     return;
   }
   if (MODALS_AVEC_CONFIRMATION.has(top) &&
-      !confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
+    !confirm("Attention : des modifications sont en cours d'édition. Quitter sans enregistrer ?")) {
     history.pushState({ depliantModal: top }, "", location.href);
     return;
   }
@@ -638,7 +643,7 @@ function slugifyClient(text) {
 
 function chantCardHtml(chant) {
   const catClass = `cat-pill-${(chant.categorie || "autre").toLowerCase()}`;
-  
+
   const icons = {
     entree: "🎵",
     kyrie: "🙏",
@@ -657,7 +662,7 @@ function chantCardHtml(chant) {
     autre: "🎵"
   };
   const icon = icons[(chant.categorie || "").toLowerCase()] || "🎵";
-  
+
   let stateText = "Actif";
   let stateClass = "badge-actif";
   if (chant.actif === false) {
@@ -667,11 +672,11 @@ function chantCardHtml(chant) {
     stateText = "À vérifier";
     stateClass = "badge-a-verifier";
   }
-  
+
   const refrainApercu = chant.refrain ? chant.refrain.slice(0, 80) : (chant.couplets && chant.couplets[0] ? chant.couplets[0].slice(0, 80) : "");
   const occasionsText = (chant.occasions && chant.occasions.length > 0) ? chant.occasions.join(", ") : "N/A";
   const nomLangue = NOMS_LANGUES[chant.langue] || chant.langue || "Français";
-  
+
   let tagsHtml = "";
   if (chant.mots_cles && chant.mots_cles.length > 0) {
     const visibleTags = chant.mots_cles.slice(0, 3);
@@ -680,7 +685,7 @@ function chantCardHtml(chant) {
       tagsHtml += `<span class="card-tag card-tag-more">+${chant.mots_cles.length - 3}</span>`;
     }
   }
-  
+
   let actionButtonsHtml = "";
   if (IDENTITE && IDENTITE.type === "super") {
     if (pickerTargetMoment) {
@@ -710,7 +715,7 @@ function chantCardHtml(chant) {
       </div>
     `;
   }
-  
+
   return `
     <li class="chant-card" data-id="${chant.id}">
       <div class="card-icon-circle ${catClass}">${icon}</div>
@@ -763,13 +768,13 @@ function afficherIndicateurHorsLigne() {
       <button type="button" id="close-offline-indicator" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: rgba(0,0,0,0.15); border: none; color: white; font-size: 1.1rem; cursor: pointer; font-weight: bold; width: 22px; height: 22px; border-radius: 50%; display: flex; align-items: center; justify-content: center; line-height: 1; padding: 0; z-index: 10001;">&times;</button>
     `;
     document.body.appendChild(indicator);
-    
+
     // Defer padding layout assignment to let the browser compute offsetHeight
     setTimeout(() => {
       const computedHeight = indicator.offsetHeight || 42;
       document.body.style.paddingTop = `${computedHeight}px`;
     }, 50);
-    
+
     document.getElementById("close-offline-indicator").addEventListener("click", (e) => {
       e.stopPropagation();
       offlineIndicatorDismissed = true;
@@ -837,7 +842,7 @@ async function rechercherChants(q, categorie, occasion) {
   params.set("limit", "1000");
 
   const url = `/chants?${params.toString()}`;
-  
+
   const timeoutPromise = new Promise((_, reject) =>
     setTimeout(() => reject(new Error("Timeout")), 3500)
   );
@@ -861,7 +866,7 @@ function actualiserBibliothequeHeaderActions() {
   const container = document.getElementById("library-header-role-actions");
   if (!container) return;
   container.innerHTML = "";
-  
+
   if (IDENTITE && IDENTITE.type === "super") {
     const btnAjouter = document.createElement("button");
     btnAjouter.type = "button";
@@ -869,21 +874,21 @@ function actualiserBibliothequeHeaderActions() {
     btnAjouter.innerHTML = "➕ Ajouter un chant";
     btnAjouter.addEventListener("click", () => ouvrirEditeurChant(null));
     container.appendChild(btnAjouter);
-    
+
     const btnImporter = document.createElement("button");
     btnImporter.type = "button";
     btnImporter.className = "btn-secondary";
     btnImporter.innerHTML = "📥 Importer";
     btnImporter.addEventListener("click", () => changerVue("importer"));
     container.appendChild(btnImporter);
-    
+
     const btnAdmin = document.createElement("button");
     btnAdmin.type = "button";
     btnAdmin.className = "btn-secondary";
     btnAdmin.innerHTML = "🛡 Admin";
     btnAdmin.addEventListener("click", () => changerVue("admin"));
     container.appendChild(btnAdmin);
-    
+
     const btnStats = document.createElement("button");
     btnStats.type = "button";
     btnStats.className = "btn-secondary";
@@ -897,14 +902,14 @@ function actualiserBibliothequeHeaderActions() {
     btnComposer.innerHTML = "✍ Composer";
     btnComposer.addEventListener("click", () => changerVue("composer"));
     container.appendChild(btnComposer);
-    
+
     const btnDepliants = document.createElement("button");
     btnDepliants.type = "button";
     btnDepliants.className = "btn-secondary";
     btnDepliants.innerHTML = "📂 Dépliants";
     btnDepliants.addEventListener("click", () => changerVue("depliants"));
     container.appendChild(btnDepliants);
-    
+
     const btnReglages = document.createElement("button");
     btnReglages.type = "button";
     btnReglages.className = "btn-secondary";
@@ -922,7 +927,7 @@ function initBibliothequeControles() {
       block.classList.toggle("hidden");
     });
   }
-  
+
   document.getElementById("search-q").addEventListener("input", (e) => {
     clearTimeout(searchTimer);
     searchTimer = setTimeout(() => {
@@ -930,17 +935,17 @@ function initBibliothequeControles() {
       actualiserListeBibliotheque();
     }, 300);
   });
-  
+
   document.getElementById("search-categorie").addEventListener("change", () => {
     pageBibliothequeIndex = 1;
     actualiserListeBibliotheque();
   });
-  
+
   document.getElementById("search-langue").addEventListener("change", () => {
     pageBibliothequeIndex = 1;
     actualiserListeBibliotheque();
   });
-  
+
   const inputOccasion = document.getElementById("search-occasion");
   if (inputOccasion) {
     inputOccasion.addEventListener("input", () => {
@@ -951,7 +956,7 @@ function initBibliothequeControles() {
       }, 300);
     });
   }
-  
+
   const selectEtat = document.getElementById("search-etat");
   if (selectEtat) {
     selectEtat.addEventListener("change", () => {
@@ -959,11 +964,11 @@ function initBibliothequeControles() {
       actualiserListeBibliotheque();
     });
   }
-  
+
   const btnList = document.getElementById("btn-view-list");
   const btnGrid = document.getElementById("btn-view-grid");
   const wrapper = document.getElementById("library-songs-wrapper");
-  
+
   if (btnList && btnGrid) {
     btnList.addEventListener("click", () => {
       vueBibliothequeMode = "list";
@@ -973,7 +978,7 @@ function initBibliothequeControles() {
       wrapper.className = "view-mode-list";
       actualiserListeBibliothequeRendering();
     });
-    
+
     btnGrid.addEventListener("click", () => {
       vueBibliothequeMode = "grid";
       localStorage.setItem("vueBibliothequeMode", "grid");
@@ -982,7 +987,7 @@ function initBibliothequeControles() {
       wrapper.className = "view-mode-grid";
       actualiserListeBibliothequeRendering();
     });
-    
+
     if (vueBibliothequeMode === "grid") {
       btnGrid.classList.add("active");
       btnList.classList.remove("active");
@@ -993,7 +998,7 @@ function initBibliothequeControles() {
       wrapper.className = "view-mode-list";
     }
   }
-  
+
   const selectSort = document.getElementById("library-sort-by");
   if (selectSort) {
     selectSort.addEventListener("change", () => {
@@ -1001,7 +1006,7 @@ function initBibliothequeControles() {
       actualiserListeBibliothequeRendering();
     });
   }
-  
+
   const btnDirection = document.getElementById("btn-sort-direction");
   if (btnDirection) {
     btnDirection.addEventListener("click", () => {
@@ -1009,7 +1014,7 @@ function initBibliothequeControles() {
       actualiserListeBibliothequeRendering();
     });
   }
-  
+
   const selectPageSize = document.getElementById("library-page-size");
   if (selectPageSize) {
     selectPageSize.value = pageBibliothequeSize;
@@ -1024,12 +1029,12 @@ function initBibliothequeControles() {
 
 function actualiserListeBibliothequeRendering() {
   let list = [...listChantsCache];
-  
+
   const langue = document.getElementById("search-langue").value;
   if (langue) {
     list = list.filter(c => c.langue === langue);
   }
-  
+
   const etat = document.getElementById("search-etat") ? document.getElementById("search-etat").value : "";
   if (etat) {
     if (etat === "archive") {
@@ -1040,9 +1045,9 @@ function actualiserListeBibliothequeRendering() {
       list = list.filter(c => c.actif !== false && c.confiance >= 0.7);
     }
   }
-  
+
   document.getElementById("library-total-badge").textContent = `${list.length} chant${list.length > 1 ? "s" : ""}`;
-  
+
   list.sort((a, b) => {
     let valA = "", valB = "";
     if (triBibliothequeKey === "titre") {
@@ -1059,21 +1064,21 @@ function actualiserListeBibliothequeRendering() {
       const scoreB = b.confiance ?? 1.0;
       return (scoreB - scoreA) * triBibliothequeDirection;
     }
-    
+
     if (valA < valB) return -1 * triBibliothequeDirection;
     if (valA > valB) return 1 * triBibliothequeDirection;
     return 0;
   });
-  
+
   const totalItems = list.length;
   const totalPages = Math.ceil(totalItems / pageBibliothequeSize) || 1;
   if (pageBibliothequeIndex > totalPages) pageBibliothequeIndex = totalPages;
   if (pageBibliothequeIndex < 1) pageBibliothequeIndex = 1;
-  
+
   const startOffset = (pageBibliothequeIndex - 1) * pageBibliothequeSize;
   const endOffset = startOffset + pageBibliothequeSize;
   const paginatedList = list.slice(startOffset, endOffset);
-  
+
   const listEl = document.getElementById("chant-list");
   if (paginatedList.length === 0) {
     const q = document.getElementById("search-q").value.trim();
@@ -1085,15 +1090,15 @@ function actualiserListeBibliothequeRendering() {
     document.getElementById("library-pagination-controls").innerHTML = "";
     return;
   }
-  
+
   listEl.innerHTML = paginatedList.map(chantCardHtml).join("");
-  
+
   listEl.querySelectorAll(".chant-card").forEach((el) => {
     const id = Number(el.dataset.id);
     const chant = listChantsCache.find((c) => c.id === id);
-    
+
     el.addEventListener("click", () => avecChargementChant(listEl, el, () => ouvrirDetailChant(chant)));
-    
+
     const btnVoir = el.querySelector(".btn-action-voir");
     if (btnVoir) {
       btnVoir.addEventListener("click", (e) => {
@@ -1131,12 +1136,12 @@ function actualiserListeBibliothequeRendering() {
       });
     }
   });
-  
+
   const pagControls = document.getElementById("library-pagination-controls");
   pagControls.innerHTML = "";
-  
+
   if (totalPages <= 1) return;
-  
+
   const btnPrev = document.createElement("button");
   btnPrev.type = "button";
   btnPrev.className = "btn-page";
@@ -1147,14 +1152,14 @@ function actualiserListeBibliothequeRendering() {
     actualiserListeBibliothequeRendering();
   });
   pagControls.appendChild(btnPrev);
-  
+
   const maxVisiblePages = 5;
   let startPage = Math.max(1, pageBibliothequeIndex - 2);
   let endPage = Math.min(totalPages, startPage + maxVisiblePages - 1);
   if (endPage - startPage < maxVisiblePages - 1) {
     startPage = Math.max(1, endPage - maxVisiblePages + 1);
   }
-  
+
   if (startPage > 1) {
     const btnFirst = document.createElement("button");
     btnFirst.type = "button";
@@ -1165,7 +1170,7 @@ function actualiserListeBibliothequeRendering() {
       actualiserListeBibliothequeRendering();
     });
     pagControls.appendChild(btnFirst);
-    
+
     if (startPage > 2) {
       const ellipsis = document.createElement("span");
       ellipsis.className = "pagination-ellipsis";
@@ -1173,7 +1178,7 @@ function actualiserListeBibliothequeRendering() {
       pagControls.appendChild(ellipsis);
     }
   }
-  
+
   for (let i = startPage; i <= endPage; i++) {
     const btnNum = document.createElement("button");
     btnNum.type = "button";
@@ -1185,7 +1190,7 @@ function actualiserListeBibliothequeRendering() {
     });
     pagControls.appendChild(btnNum);
   }
-  
+
   if (endPage < totalPages) {
     if (endPage < totalPages - 1) {
       const ellipsis = document.createElement("span");
@@ -1193,7 +1198,7 @@ function actualiserListeBibliothequeRendering() {
       ellipsis.textContent = "...";
       pagControls.appendChild(ellipsis);
     }
-    
+
     const btnLast = document.createElement("button");
     btnLast.type = "button";
     btnLast.className = "btn-page";
@@ -1204,7 +1209,7 @@ function actualiserListeBibliothequeRendering() {
     });
     pagControls.appendChild(btnLast);
   }
-  
+
   const btnNext = document.createElement("button");
   btnNext.type = "button";
   btnNext.className = "btn-page";
@@ -1221,9 +1226,9 @@ async function actualiserListeBibliotheque() {
   const q = document.getElementById("search-q").value.trim();
   const categorie = document.getElementById("search-categorie").value;
   const occasion = document.getElementById("search-occasion") ? document.getElementById("search-occasion").value.trim() : "";
-  
+
   actualiserBibliothequeHeaderActions();
-  
+
   try {
     listChantsCache = await rechercherChants(q, categorie, occasion);
     actualiserListeBibliothequeRendering();
@@ -1253,7 +1258,7 @@ const MOMENT_COLORS = {
 function momentRowHtml(moment, index) {
   const label = LABELS_MOMENTS[moment] || moment;
   const color = MOMENT_COLORS[moment] || "#666666";
-  
+
   return `
     <div class="moment-row" data-moment="${moment}" draggable="true">
       <div class="moment-color-stripe" style="background-color: ${color};"></div>
@@ -1317,15 +1322,11 @@ function momentRowHtml(moment, index) {
         <span class="moment-widgets-status" id="widgets-status-${moment}">0 actif</span>
       </div>
 
+      <!-- [MOBILE ONLY] Card Content Area -->
+      <div class="moment-card-body-content no-print"></div>
+
       <!-- [MOBILE ONLY] Footer Actions -->
-      <div class="moment-card-footer no-print">
-        <div class="moment-card-selection-box" id="selection-box-${moment}"></div>
-        <div class="moment-card-action-buttons">
-          <button type="button" class="btn-card-icon btn-action-book" title="Choisir de la bibliothèque">📖</button>
-          <button type="button" class="btn-card-icon btn-action-eye" title="Aperçu du chant">👁</button>
-          <button type="button" class="btn-card-icon btn-action-trash" title="Vider ce moment">🗑</button>
-        </div>
-      </div>
+      <div class="moment-card-footer no-print"></div>
 
       <!-- Collapsible Edit Panel (full width spanned in grid) -->
       <div class="moment-edit-panel collapsed" id="edit-panel-${moment}">
@@ -1416,15 +1417,11 @@ function specialRowHtml(id, state) {
         <span class="moment-widgets-status" id="widgets-status-${id}">0 actif</span>
       </div>
 
+      <!-- [MOBILE ONLY] Card Content Area -->
+      <div class="moment-card-body-content no-print"></div>
+
       <!-- [MOBILE ONLY] Footer Actions -->
-      <div class="moment-card-footer no-print">
-        <div class="moment-card-selection-box" id="selection-box-${id}"></div>
-        <div class="moment-card-action-buttons">
-          <button type="button" class="btn-card-icon btn-action-book" title="Choisir de la bibliothèque">📖</button>
-          <button type="button" class="btn-card-icon btn-action-eye" title="Aperçu du chant">👁</button>
-          <button type="button" class="btn-card-icon btn-supprimer-special" title="Supprimer le chant spécial">🗑</button>
-        </div>
-      </div>
+      <div class="moment-card-footer no-print"></div>
       
       <!-- Collapsible Edit Panel (full width spanned in grid) -->
       <div class="moment-edit-panel collapsed" id="edit-panel-${id}">
@@ -1476,14 +1473,14 @@ function ajouterChantSpecial(initial = null) {
 function bindMomentCardEvents(row, id) {
   const select = row.querySelector(".moment-type");
   const editPanel = row.querySelector(".moment-edit-panel");
-  
+
   // Radio modes triggers hidden select option
   row.querySelectorAll(".moment-mode-radio").forEach((radio) => {
     radio.addEventListener("change", () => {
       select.value = radio.value;
       momentsState[id] = { ...momentsState[id], type: radio.value };
       renderMomentBody(row, id);
-      
+
       // Auto expand edit panel when switching to Ajout manuel
       if (radio.value === "texte_libre") {
         if (editPanel) editPanel.classList.remove("collapsed");
@@ -1494,12 +1491,12 @@ function bindMomentCardEvents(row, id) {
       regenererApercuSiPossible();
     });
   });
-  
+
   row.querySelector(".moment-ordre-input").addEventListener("input", (e) => {
     momentsState[id].ordre = Number(e.target.value) || 0;
     regenererApercuSiPossible();
   });
-  
+
   row.querySelectorAll(".btn-action-eye").forEach((btnEye) => {
     btnEye.addEventListener("click", () => {
       const state = momentsState[id];
@@ -1508,7 +1505,7 @@ function bindMomentCardEvents(row, id) {
       }
     });
   });
-  
+
   row.querySelectorAll(".btn-action-pencil").forEach((btnPencil) => {
     btnPencil.addEventListener("click", () => {
       const state = momentsState[id];
@@ -1522,11 +1519,11 @@ function bindMomentCardEvents(row, id) {
       }
     });
   });
-  
+
   row.querySelectorAll(".btn-action-book").forEach((btnBook) => {
     btnBook.addEventListener("click", () => ouvrirPicker(id));
   });
-  
+
   row.querySelectorAll(".btn-action-trash").forEach((btnTrash) => {
     btnTrash.addEventListener("click", () => {
       momentsState[id] = { type: "aucun", ordre: momentsState[id].ordre };
@@ -1535,7 +1532,7 @@ function bindMomentCardEvents(row, id) {
       regenererApercuSiPossible();
     });
   });
-  
+
   row.querySelectorAll(".btn-supprimer-special").forEach((btnDeleteSpecial) => {
     btnDeleteSpecial.addEventListener("click", () => {
       delete momentsState[id];
@@ -1551,7 +1548,7 @@ function bindMomentCardEvents(row, id) {
       ouvrirCardActionsSheet(id, row);
     });
   }
-  
+
   // Bind input fields in the edit panel
   if (editPanel) {
     const inputTitre = editPanel.querySelector(".titre-libre");
@@ -1560,7 +1557,7 @@ function bindMomentCardEvents(row, id) {
     const hiddenTextarea = editPanel.querySelector(".texte-libre");
     const btnClose = editPanel.querySelector(".btn-close-panel");
     const specialLabel = editPanel.querySelector(".special-label");
-    
+
     const syncText = () => {
       const refrain = inputRefrain.value.trim();
       const couplets = inputCouplets.value.trim();
@@ -1570,44 +1567,44 @@ function bindMomentCardEvents(row, id) {
         hiddenTextarea.value = couplets;
       }
       momentsState[id].texte_libre = hiddenTextarea.value;
-      
+
       // Update the resume text in the row in real-time
       const colResume = row.querySelector(".col-resume");
       if (colResume) {
         const isFilled = !!(momentsState[id].texte_libre || momentsState[id].titre_libre);
-        colResume.innerHTML = isFilled 
-          ? `<strong>${escapeHtml(momentsState[id].titre_libre || "Texte manuel")}</strong>` 
+        colResume.innerHTML = isFilled
+          ? `<strong>${escapeHtml(momentsState[id].titre_libre || "Texte manuel")}</strong>`
           : `<span class="text-muted">Vide</span>`;
       }
-      
+
       regenererApercuSiPossible();
       actualiserStatsBottomBar();
     };
-    
+
     if (inputTitre) {
       inputTitre.addEventListener("input", (e) => {
         momentsState[id].titre_libre = e.target.value;
         const colResume = row.querySelector(".col-resume");
         if (colResume) {
           const isFilled = !!(momentsState[id].texte_libre || momentsState[id].titre_libre);
-          colResume.innerHTML = isFilled 
-            ? `<strong>${escapeHtml(momentsState[id].titre_libre || "Texte manuel")}</strong>` 
+          colResume.innerHTML = isFilled
+            ? `<strong>${escapeHtml(momentsState[id].titre_libre || "Texte manuel")}</strong>`
             : `<span class="text-muted">Vide</span>`;
         }
         regenererApercuSiPossible();
       });
     }
-    
+
     if (inputRefrain) inputRefrain.addEventListener("input", syncText);
     if (inputCouplets) inputCouplets.addEventListener("input", syncText);
-    
+
     if (btnClose) {
       btnClose.addEventListener("click", () => {
         editPanel.classList.add("collapsed");
         renderMomentBody(row, id);
       });
     }
-    
+
     if (specialLabel) {
       specialLabel.addEventListener("input", (e) => {
         momentsState[id].label = e.target.value;
@@ -1627,13 +1624,13 @@ function renderMomentBody(row, moment) {
   const state = momentsState[moment] || { type: "aucun" };
   const colSelection = row.querySelector(".col-selection");
   const colResume = row.querySelector(".col-resume");
-  
+
   const select = row.querySelector(".moment-type");
   if (select) select.value = state.type;
-  
+
   const checkedRadio = row.querySelector(`.moment-mode-radio[value="${state.type}"]`);
   if (checkedRadio) checkedRadio.checked = true;
-  
+
   if (state.type === "chant") {
     const total = state.total_couplets || 0;
     const limiteHtml = total > 0 ? `
@@ -1646,7 +1643,7 @@ function renderMomentBody(row, moment) {
           `).join("")}
         </select>
       </label>` : "";
-      
+
     if (state.chant_titre) {
       colSelection.innerHTML = `
         <div class="selection-input-wrapper select-song-trigger">
@@ -1668,19 +1665,19 @@ function renderMomentBody(row, moment) {
       `;
       colResume.innerHTML = `<span class="text-muted">—</span>`;
     }
-    
+
     // Bind the song search click
     const trigger = colSelection.querySelector(".select-song-trigger");
     if (trigger) {
       trigger.addEventListener("click", () => ouvrirPicker(moment));
     }
-    
+
     const selectLimite = colSelection.querySelector(".select-couplet-limite");
     if (selectLimite) selectLimite.addEventListener("change", () => {
       momentsState[moment].couplet_limit = selectLimite.value ? Number(selectLimite.value) : null;
       regenererApercuSiPossible();
     });
-    
+
   } else if (state.type === "texte_libre") {
     const isFilled = !!(state.texte_libre || state.titre_libre);
     const editPanel = row.querySelector(".moment-edit-panel");
@@ -1692,10 +1689,10 @@ function renderMomentBody(row, moment) {
         ✏️ ${isFilled ? "Modifier le texte" : "Saisir le texte"} ${arrow}
       </button>
     `;
-    colResume.innerHTML = isFilled 
-      ? `<strong>${escapeHtml(state.titre_libre || "Texte manuel")}</strong>` 
+    colResume.innerHTML = isFilled
+      ? `<strong>${escapeHtml(state.titre_libre || "Texte manuel")}</strong>`
       : `<span class="text-muted">Vide</span>`;
-      
+
     // Sync values to edit panel inputs
     if (editPanel) {
       let refrainVal = "";
@@ -1712,13 +1709,13 @@ function renderMomentBody(row, moment) {
       const inputRefrain = editPanel.querySelector(".refrain-libre");
       const inputCouplets = editPanel.querySelector(".couplets-libre");
       const hiddenTextarea = editPanel.querySelector(".texte-libre");
-      
+
       if (inputTitre) inputTitre.value = state.titre_libre || "";
       if (inputRefrain) inputRefrain.value = refrainVal;
       if (inputCouplets) inputCouplets.value = coupletsVal;
       if (hiddenTextarea) hiddenTextarea.value = state.texte_libre || "";
     }
-    
+
     const btnAddManual = colSelection.querySelector(".btn-add-manual");
     if (btnAddManual) {
       btnAddManual.addEventListener("click", () => {
@@ -1728,12 +1725,12 @@ function renderMomentBody(row, moment) {
         }
       });
     }
-    
+
   } else {
     colSelection.innerHTML = `<span class="text-muted" style="font-size: 0.78rem;">Aucun chant sélectionné</span>`;
     colResume.innerHTML = `<span class="text-muted">—</span>`;
   }
-  
+
   // Configure action icons visibility
   const btnEye = row.querySelector(".btn-action-eye");
   const btnPencil = row.querySelector(".btn-action-pencil");
@@ -1750,7 +1747,7 @@ function renderMomentBody(row, moment) {
       }
     }
   }
-  
+
   // Mobile UI updates inside renderMomentBody
   const wIconsEl = row.querySelector(".moment-widgets-icons");
   const wStatusEl = row.querySelector(".moment-widgets-status");
@@ -1759,13 +1756,13 @@ function renderMomentBody(row, moment) {
     const isVisible = state.type !== "aucun";
     const hasLimit = !!((state.couplet_limit !== null && state.couplet_limit !== undefined) || state.type === "texte_libre");
     const hasRef = !!(state.code_reference);
-    
+
     let activeCount = 0;
     if (hasTitle) activeCount++;
     if (isVisible) activeCount++;
     if (hasLimit) activeCount++;
     if (hasRef) activeCount++;
-    
+
     wIconsEl.innerHTML = `
       <span class="widget-chip-indicator ${hasTitle ? 'active' : ''}" title="Titre">T</span>
       <span class="widget-chip-indicator ${isVisible ? 'active' : ''}" title="Visibilité">👁</span>
@@ -1775,25 +1772,154 @@ function renderMomentBody(row, moment) {
     wStatusEl.textContent = `${activeCount} actif${activeCount > 1 ? 's' : ''}`;
   }
 
-  const cardSelBox = row.querySelector(".moment-card-selection-box");
-  if (cardSelBox) {
-    cardSelBox.innerHTML = colSelection.innerHTML;
-    // Re-bind click handlers for mobile triggers
-    const mobileTrigger = cardSelBox.querySelector(".select-song-trigger");
-    if (mobileTrigger) {
-      mobileTrigger.addEventListener("click", () => ouvrirPicker(moment));
+  const cardContent = row.querySelector(".moment-card-body-content");
+  const cardFooter = row.querySelector(".moment-card-footer");
+
+  if (cardContent && cardFooter) {
+    // 1. Content Area Rendering
+    const isFilledChant = state.type === "chant" && state.chant_titre;
+    const isFilledManual = state.type === "texte_libre" && (state.texte_libre || state.titre_libre);
+
+    if (state.type === "aucun" || (state.type === "chant" && !isFilledChant) || (state.type === "texte_libre" && !isFilledManual)) {
+      cardContent.innerHTML = `<div class="card-empty-state" style="color:#94a3b8; font-style:italic; font-size:0.85rem; padding:8px 0; text-align:left;">Vide</div>`;
+    } else if (state.type === "chant" && isFilledChant) {
+      const labelAuteur = state.chant_auteur || "Système";
+      const codeRef = state.chant_reference || state.code_reference || "N/A";
+      const catClass = "cat-pill-" + (state.chant_categorie ? state.chant_categorie.toLowerCase().replace(/[^a-z0-9]/g, "-") : "autre");
+      const catLabel = categorieLabel(state.chant_categorie);
+      
+      cardContent.innerHTML = `
+        <div class="moment-card-song-details" style="padding:12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; margin:6px 0; display:flex; flex-direction:column; gap:6px; position:relative; text-align:left;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
+            <div style="display:flex; flex-direction:column; gap:4px; max-width:80%;">
+              <span class="chant-categorie-pill ${catClass}" style="align-self:flex-start; font-size:0.7rem; font-weight:700; text-transform:uppercase; padding:2px 6px; border-radius:4px;">${catLabel}</span>
+              <h3 style="margin:0; font-size:0.95rem; font-weight:700; color:#1e293b; line-height:1.3;">${escapeHtml(state.chant_titre)}</h3>
+            </div>
+            <button type="button" class="btn-card-changer" style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; padding:4px 10px; font-size:0.75rem; font-weight:600; color:#475569; cursor:pointer; transition:all 0.15s; white-space:nowrap; height:28px; box-sizing:border-box;">Changer</button>
+          </div>
+          <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.78rem; color:#64748b; margin-top:4px;">
+            <span>Auteur : <strong style="color:#475569;">${escapeHtml(labelAuteur)}</strong></span>
+            <span>Réf : <strong style="color:#475569;">${escapeHtml(codeRef)}</strong></span>
+          </div>
+        </div>
+      `;
+      // Bind click on "Changer"
+      const btnChanger = cardContent.querySelector(".btn-card-changer");
+      if (btnChanger) {
+        btnChanger.addEventListener("click", () => ouvrirPicker(moment));
+      }
+    } else if (state.type === "texte_libre") {
+      const textPreview = state.texte_libre ? state.texte_libre.split("\n").slice(0, 3).join("\n") : "";
+      cardContent.innerHTML = `
+        <div class="moment-card-manual-details" style="padding:12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; margin:6px 0; display:flex; flex-direction:column; gap:4px; text-align:left;">
+          <h3 style="margin:0; font-size:0.95rem; font-weight:700; color:#1e293b; line-height:1.3;">${escapeHtml(state.titre_libre || "Texte manuel")}</h3>
+          ${textPreview ? `<p style="margin:4px 0 0 0; font-size:0.8rem; color:#475569; white-space:pre-line; font-style:italic; line-height:1.4;">${escapeHtml(textPreview)}${state.texte_libre.split("\n").length > 3 ? "..." : ""}</p>` : ""}
+        </div>
+      `;
     }
-    const mobileSelectLimite = cardSelBox.querySelector(".select-couplet-limite");
-    if (mobileSelectLimite) mobileSelectLimite.addEventListener("change", () => {
-      momentsState[moment].couplet_limit = mobileSelectLimite.value ? Number(mobileSelectLimite.value) : null;
-      regenererApercuSiPossible();
-    });
-    const mobileBtnAddManual = cardSelBox.querySelector(".btn-add-manual");
-    if (mobileBtnAddManual) {
-      mobileBtnAddManual.addEventListener("click", () => {
-        const editPanel = row.querySelector(".moment-edit-panel");
+
+    // 2. Footer Actions Rendering
+    const editPanel = row.querySelector(".moment-edit-panel");
+    const isEditCollapsed = editPanel ? editPanel.classList.contains("collapsed") : true;
+    const arrow = isEditCollapsed ? "▼" : "▲";
+
+    let leftButtonHtml = "";
+    if (state.type === "chant") {
+      leftButtonHtml = `<button type="button" class="btn-footer-left btn-footer-picker" style="display:flex; align-items:center; gap:6px; font-size:0.82rem; font-weight:600; border:1px solid #cbd5e1; border-radius:6px; padding:8px 12px; background:#ffffff; color:#334155; cursor:pointer; height:38px; box-sizing:border-box; transition:all 0.15s;">📚 Choisir un chant ▼</button>`;
+    } else if (state.type === "texte_libre") {
+      const isFilled = !!(state.texte_libre || state.titre_libre);
+      leftButtonHtml = `<button type="button" class="btn-footer-left btn-footer-manual" style="display:flex; align-items:center; gap:6px; font-size:0.82rem; font-weight:600; border:1px solid #cbd5e1; border-radius:6px; padding:8px 12px; background:#ffffff; color:#334155; cursor:pointer; height:38px; box-sizing:border-box; transition:all 0.15s;">✏️ ${isFilled ? "Modifier" : "Saisir"} le texte ${arrow}</button>`;
+    } else {
+      leftButtonHtml = `<button type="button" class="btn-footer-left" disabled style="opacity:0.5; border:1px solid #e2e8f0; border-radius:6px; padding:8px 12px; font-size:0.82rem; background:#f1f5f9; color:#94a3b8; height:38px; box-sizing:border-box;">Aucune action</button>`;
+    }
+
+    // Right Buttons: Disposition, Preview (eye), Delete (trash)
+    const totalCouplets = state.total_couplets || 0;
+    let dispositionSelectHtml = "";
+    if (state.type === "chant" && state.chant_id) {
+      dispositionSelectHtml = `
+        <div class="btn-disposition-mobile-wrapper" style="position:relative; display:inline-block; height:38px; width:38px;">
+          <select class="select-couplet-limite-mobile" style="opacity:0; position:absolute; inset:0; width:100%; height:100%; cursor:pointer; z-index:2;">
+            <option value="">Tous (${totalCouplets})</option>
+            <option value="0" ${state.couplet_limit === 0 ? "selected" : ""}>Aucun (0)</option>
+            ${Array.from({ length: totalCouplets }, (_, i) => i + 1).map((n) => `
+              <option value="${n}" ${state.couplet_limit === n ? "selected" : ""}>${n}</option>
+            `).join("")}
+          </select>
+          <button type="button" class="btn-footer-icon" style="display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid #cbd5e1; border-radius:6px; background:#ffffff; font-size:0.95rem; color:#475569; pointer-events:none; z-index:1; box-sizing:border-box;">⚙️</button>
+        </div>
+      `;
+    } else {
+      dispositionSelectHtml = `
+        <button type="button" class="btn-footer-icon" disabled style="display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid #e2e8f0; border-radius:6px; background:#f1f5f9; font-size:0.95rem; color:#94a3b8; cursor:not-allowed; opacity:0.6; box-sizing:border-box;">⚙️</button>
+      `;
+    }
+
+    const showPreview = state.type === "chant" && state.chant_id;
+    const previewBtnHtml = `
+      <button type="button" class="btn-footer-icon btn-footer-preview" ${showPreview ? "" : "disabled"} style="display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid ${showPreview ? '#cbd5e1' : '#e2e8f0'}; border-radius:6px; background:${showPreview ? '#ffffff' : '#f1f5f9'}; font-size:0.95rem; color:${showPreview ? '#475569' : '#94a3b8'}; cursor:${showPreview ? 'pointer' : 'not-allowed'}; opacity:${showPreview ? '1' : '0.6'}; box-sizing:border-box; transition:all 0.15s;">👁</button>
+    `;
+
+    const trashBtnHtml = `
+      <button type="button" class="btn-footer-icon btn-footer-trash" style="display:flex; align-items:center; justify-content:center; width:38px; height:38px; border:1px solid #fee2e2; border-radius:6px; background:#fef2f2; font-size:0.95rem; color:#ef4444; cursor:pointer; box-sizing:border-box; transition:all 0.15s;">🗑</button>
+    `;
+
+    cardFooter.innerHTML = `
+      <div class="footer-left-buttons" style="display:flex; align-items:center; gap:8px; flex:1;">
+        ${leftButtonHtml}
+      </div>
+      <div class="footer-right-buttons" style="display:flex; align-items:center; gap:6px;">
+        ${dispositionSelectHtml}
+        ${previewBtnHtml}
+        ${trashBtnHtml}
+      </div>
+    `;
+
+    // 3. Bind events for footer controls
+    const btnLeftPicker = cardFooter.querySelector(".btn-footer-picker");
+    if (btnLeftPicker) {
+      btnLeftPicker.addEventListener("click", () => ouvrirPicker(moment));
+    }
+
+    const btnLeftManual = cardFooter.querySelector(".btn-footer-manual");
+    if (btnLeftManual) {
+      btnLeftManual.addEventListener("click", () => {
         if (editPanel) {
           editPanel.classList.toggle("collapsed");
+          renderMomentBody(row, moment);
+        }
+      });
+    }
+
+    const selectLimiteMobile = cardFooter.querySelector(".select-couplet-limite-mobile");
+    if (selectLimiteMobile) {
+      selectLimiteMobile.addEventListener("change", () => {
+        momentsState[moment].couplet_limit = selectLimiteMobile.value ? Number(selectLimiteMobile.value) : null;
+        regenererApercuSiPossible();
+      });
+    }
+
+    const btnFooterPreview = cardFooter.querySelector(".btn-footer-preview");
+    if (btnFooterPreview && showPreview) {
+      btnFooterPreview.addEventListener("click", () => {
+        ouvrirDetailsChant(state.chant_id, false);
+      });
+    }
+
+    const btnFooterTrash = cardFooter.querySelector(".btn-footer-trash");
+    if (btnFooterTrash) {
+      btnFooterTrash.addEventListener("click", () => {
+        const isSpecial = moment.startsWith("special-");
+        if (isSpecial) {
+          delete momentsState[moment];
+          row.remove();
+          regenererApercuSiPossible();
+          actualiserStatsBottomBar();
+        } else {
+          momentsState[moment] = { type: "aucun", ordre: momentsState[moment].ordre };
+          if (editPanel) editPanel.classList.add("collapsed");
+          renderMomentBody(row, moment);
+          regenererApercuSiPossible();
         }
       });
     }
@@ -1806,7 +1932,7 @@ function actualiserStatsBottomBar() {
   let chantsCount = 0;
   let momentsRemplis = 0;
   let totalMoments = 0;
-  
+
   MOMENTS.forEach((m) => {
     const state = momentsState[m];
     totalMoments++;
@@ -1819,7 +1945,7 @@ function actualiserStatsBottomBar() {
       }
     }
   });
-  
+
   document.querySelectorAll("#chants-speciaux-container .special-row").forEach((row) => {
     const id = row.dataset.moment;
     const state = momentsState[id];
@@ -1829,10 +1955,10 @@ function actualiserStatsBottomBar() {
       }
     }
   });
-  
+
   const countEl = document.getElementById("composer-bar-chants-count");
   if (countEl) countEl.textContent = `${chantsCount} chant${chantsCount !== 1 ? "s" : ""} sélectionné${chantsCount !== 1 ? "s" : ""}`;
-  
+
   const checklistEl = document.getElementById("composer-bar-checklist");
   if (checklistEl) {
     if (momentsRemplis === totalMoments && totalMoments > 0) {
@@ -1841,7 +1967,7 @@ function actualiserStatsBottomBar() {
       checklistEl.innerHTML = `🟡 Moments remplis : ${momentsRemplis}/${totalMoments}`;
     }
   }
-  
+
   const timeEl = document.getElementById("composer-bar-update-time");
   if (timeEl) {
     timeEl.textContent = "Mis à jour à l'instant";
@@ -1866,7 +1992,7 @@ function initDragAndDrop() {
   const container = document.getElementById("moments-container");
   if (!container) return;
   let dragEl = null;
-  
+
   container.addEventListener("dragstart", (e) => {
     // Restrict drag start to drag handle
     if (!e.target.closest(".moment-drag-handle")) {
@@ -1882,11 +2008,11 @@ function initDragAndDrop() {
     card.classList.add("dragging");
     e.dataTransfer.effectAllowed = "move";
   });
-  
+
   container.addEventListener("dragover", (e) => {
     e.preventDefault();
     e.dataTransfer.dropEffect = "move";
-    
+
     const card = e.target.closest(".moment-row");
     if (card && card !== dragEl) {
       const rect = card.getBoundingClientRect();
@@ -1894,12 +2020,12 @@ function initDragAndDrop() {
       container.insertBefore(dragEl, next ? card.nextSibling : card);
     }
   });
-  
+
   container.addEventListener("dragend", () => {
     if (dragEl) {
       dragEl.classList.remove("dragging");
       dragEl = null;
-      
+
       const cards = Array.from(container.children);
       cards.forEach((card, index) => {
         const moment = card.dataset.moment;
@@ -1908,7 +2034,7 @@ function initDragAndDrop() {
         if (inputOrdre) inputOrdre.value = newOrdre;
         if (momentsState[moment]) momentsState[moment].ordre = newOrdre;
       });
-      
+
       regenererApercuSiPossible();
       actualiserStatsBottomBar();
       showToast("Ordre mis à jour");
@@ -1924,7 +2050,7 @@ function showToast(message, type = "success") {
     container.style.cssText = "position: fixed; top: 24px; right: 24px; z-index: 9999; display: flex; flex-direction: column; gap: 10px; pointer-events: none;";
     document.body.appendChild(container);
   }
-  
+
   const toast = document.createElement("div");
   toast.className = `toast toast-${type}`;
   toast.style.cssText = "background: #1e293b; color: white; padding: 12px 20px; border-radius: 8px; font-size: 0.88rem; font-weight: 600; box-shadow: 0 4px 12px rgba(0,0,0,0.15); opacity: 0; transform: translateY(-20px); transition: opacity 0.25s, transform 0.25s; pointer-events: auto; border-left: 4px solid #10b981;";
@@ -1933,12 +2059,12 @@ function showToast(message, type = "success") {
   }
   toast.textContent = message;
   container.appendChild(toast);
-  
+
   setTimeout(() => {
     toast.style.opacity = "1";
     toast.style.transform = "translateY(0)";
   }, 10);
-  
+
   setTimeout(() => {
     toast.style.opacity = "0";
     toast.style.transform = "translateY(-20px)";
@@ -1975,7 +2101,7 @@ function initComposer() {
     momentsState[moment] = { type: "aucun", ordre: Number(row.querySelector(".moment-ordre-input").value) };
     bindMomentCardEvents(row, moment);
   });
-  
+
   // Custom celebration inputs
   ["f-type-celebration", "f-president", "f-animateur", "f-chorale-info"].forEach((id) => {
     const el = document.getElementById(id);
@@ -1997,7 +2123,7 @@ function initComposer() {
       });
     }
   });
-  
+
   // Standard widgets
   const priereCheck = document.getElementById("f-priere-active");
   if (priereCheck) {
@@ -2011,7 +2137,7 @@ function initComposer() {
       regenererApercuSiPossible();
     });
   }
-  
+
   // Custom checkboxes widgets (saved to localStorage for workflow preservation)
   ["f-widget-info-chorale", "f-widget-ref-bibles"].forEach((id) => {
     const el = document.getElementById(id);
@@ -2042,7 +2168,7 @@ function initComposer() {
       regenererApercuSiPossible();
     });
   }
-  
+
   // Lecture search button triggers picker
   document.querySelectorAll(".btn-search-lecture").forEach((btn) => {
     btn.addEventListener("click", () => {
@@ -2050,7 +2176,7 @@ function initComposer() {
       ouvrirPickerPourLecture(targetInputId);
     });
   });
-  
+
   // Header buttons action
   const btnAjouterMoment = document.getElementById("btn-composer-ajouter-moment");
   if (btnAjouterMoment) {
@@ -2058,7 +2184,7 @@ function initComposer() {
       ajouterChantSpecial();
     });
   }
-  
+
   const btnReinit = document.getElementById("btn-composer-reinit-ordre");
   if (btnReinit) {
     btnReinit.addEventListener("click", () => {
@@ -2075,7 +2201,7 @@ function initComposer() {
       showToast("Ordre réinitialisé !");
     });
   }
-  
+
   const btnTri = document.getElementById("btn-composer-tri-auto");
   if (btnTri) {
     btnTri.addEventListener("click", () => {
@@ -2084,7 +2210,7 @@ function initComposer() {
       showToast("Tri automatique appliqué !");
     });
   }
-  
+
   // Tool buttons actions
   const btnZoomOut = document.getElementById("pv-btn-zoom-out");
   if (btnZoomOut) {
@@ -2126,7 +2252,7 @@ function initComposer() {
       const col = document.querySelector(".composer-preview-column");
       if (!col) return;
       if (!document.fullscreenElement) {
-        col.requestFullscreen().catch(() => {});
+        col.requestFullscreen().catch(() => { });
       } else {
         document.exitFullscreen();
       }
@@ -2138,7 +2264,7 @@ function initComposer() {
       regenererApercuSiPossible(true);
     });
   }
-  
+
   // Bottom bar buttons actions
   const btnSaveDraft = document.getElementById("btn-save-draft");
   if (btnSaveDraft) {
@@ -2157,13 +2283,13 @@ function initComposer() {
       }
     });
   }
-  
+
   // Mobile Tab toggle actions
   const btnCompTabForm = document.getElementById("btn-comp-tab-form");
   const btnCompTabPreview = document.getElementById("btn-comp-tab-preview");
   const formCol = document.querySelector(".composer-form-column");
   const previewCol = document.querySelector(".composer-preview-column");
-  
+
   if (btnCompTabForm && btnCompTabPreview && formCol && previewCol) {
     btnCompTabForm.addEventListener("click", () => {
       btnCompTabForm.classList.add("active");
@@ -2171,7 +2297,7 @@ function initComposer() {
       formCol.classList.remove("inactive-tab");
       previewCol.classList.remove("active-tab");
     });
-    
+
     btnCompTabPreview.addEventListener("click", () => {
       btnCompTabPreview.classList.add("active");
       btnCompTabForm.classList.remove("active");
@@ -2179,7 +2305,7 @@ function initComposer() {
       previewCol.classList.add("active-tab");
     });
   }
-  
+
   initDragAndDrop();
   actualiserStatsBottomBar();
 }
@@ -2203,21 +2329,21 @@ async function enregistrerBrouillon() {
     alert("Veuillez sélectionner une date pour enregistrer le brouillon.");
     return;
   }
-  
+
   try {
     const btn = document.getElementById("btn-save-draft");
     await avecChargement(btn, async () => {
       const feuillet = feuilletCourantId
         ? await api(`/feuillets/${feuilletCourantId}`, {
-            method: "PUT",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          })
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        })
         : await api("/feuillets", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(payload),
-          });
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
       feuilletCourantId = feuillet.id;
       await actualiserDepliants();
       await actualiserStatsBottomBar();
@@ -2270,10 +2396,73 @@ document.getElementById("picker-categorie").addEventListener("change", () => {
   actualiserPicker();
 });
 
-async function actualiserPicker() {
+function rechercherChantsDepuisCache(q, categorie) {
+  let list = [];
+  if (listChantsCache && listChantsCache.length > 0) {
+    list = [...listChantsCache];
+  } else {
+    try {
+      const stored = localStorage.getItem("depliantapp_chants_local_db");
+      if (stored) {
+        list = JSON.parse(stored);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  }
+
+  // Filter active songs only by default
+  list = list.filter(c => c.actif !== false);
+
+  if (categorie) {
+    list = list.filter(c => c.categorie === categorie);
+  }
+
+  if (q) {
+    const qLower = q.toLowerCase();
+    list = list.filter(c => {
+      const titreMatch = c.titre && c.titre.toLowerCase().includes(qLower);
+      const refrainMatch = c.refrain && c.refrain.toLowerCase().includes(qLower);
+      const coupletsMatch = c.couplets && c.couplets.some(cp => cp.toLowerCase().includes(qLower));
+      return titreMatch || refrainMatch || coupletsMatch;
+    });
+  }
+
+  return list;
+}
+
+function selectionnerChantPourComposer(chant) {
+  if (pickerTargetInputId) {
+    const input = document.getElementById(pickerTargetInputId);
+    if (input) {
+      input.value = chant.titre;
+      input.dispatchEvent(new Event("input"));
+    }
+    fermerModale("chant-picker");
+    pickerTargetInputId = null;
+    return;
+  }
+  if (!pickerTargetMoment) return;
+  momentsState[pickerTargetMoment] = {
+    ...momentsState[pickerTargetMoment],
+    type: "chant",
+    chant_id: chant.id,
+    chant_titre: chant.titre,
+    total_couplets: (chant.couplets || []).length,
+    couplet_limit: null,
+    refrain: chant.refrain,
+    couplets: chant.couplets,
+  };
+  const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
+  renderMomentBody(row, pickerTargetMoment);
+  regenererApercuSiPossible();
+  fermerModale("chant-picker");
+}
+
+function actualiserPicker() {
   const q = document.getElementById("picker-q").value.trim();
   const categorie = document.getElementById("picker-categorie").value;
-  const chants = await rechercherChants(q, categorie);
+  const chants = rechercherChantsDepuisCache(q, categorie);
   const list = document.getElementById("picker-list");
   if (chants.length === 0) {
     const contexte = categorie ? ` dans « ${categorieLabel(categorie)} »` : "";
@@ -2282,12 +2471,36 @@ async function actualiserPicker() {
   } else {
     list.innerHTML = chants.map(chantCardHtml).join("");
   }
-  list.querySelectorAll(".chant-item").forEach((el) => {
-    el.addEventListener("click", () => avecChargementChant(list, el, async () => {
-      const id = Number(el.dataset.id);
-      const chant = chants.find((c) => c.id === id);
-      ouvrirDetailChant(chant);
-    }));
+  list.querySelectorAll(".chant-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    const chant = chants.find((c) => c.id === id);
+
+    el.addEventListener("click", () => avecChargementChant(list, el, () => ouvrirDetailChant(chant)));
+
+    const btnVoir = el.querySelector(".btn-action-voir");
+    if (btnVoir) {
+      btnVoir.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ouvrirDetailChant(chant);
+      });
+    }
+
+    const btnAjouter = el.querySelector(".btn-action-ajouter");
+    if (btnAjouter) {
+      btnAjouter.addEventListener("click", (e) => {
+        e.stopPropagation();
+        selectionnerChantPourComposer(chant);
+      });
+    }
+
+    const btnFavori = el.querySelector(".btn-action-favori");
+    if (btnFavori) {
+      btnFavori.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        await toggleFavoriChant(chant);
+        actualiserPicker();
+      });
+    }
   });
 }
 
@@ -2438,20 +2651,20 @@ function copierChantParoles(chant) {
 
 function ouvrirDetailChant(chant) {
   chantDetailCourant = chant;
-  
+
   document.getElementById("cd-categorie").textContent = categorieLabel(chant.categorie);
   document.getElementById("cd-categorie").className = `cd-categorie-pill cat-pill-${(chant.categorie || "autre").toLowerCase()}`;
   document.getElementById("cd-titre").textContent = chant.titre || "(sans titre)";
-  
+
   document.getElementById("cd-meta-ref").innerHTML = chant.code_reference ? `Réf : <strong>${escapeHtml(chant.code_reference)}</strong>` : "Pas de référence";
-  
+
   const nomLangue = NOMS_LANGUES[chant.langue] || chant.langue || "Français";
   document.getElementById("cd-meta-langue").innerHTML = `Langue : <strong>${escapeHtml(nomLangue)}</strong>`;
-  
+
   document.getElementById("cd-meta-occasions").innerHTML = (chant.occasions && chant.occasions.length > 0)
     ? `Occasions : <strong>${escapeHtml(chant.occasions.join(", "))}</strong>`
     : "";
-    
+
   const refrainContainer = document.getElementById("cd-refrain-container");
   if (chant.refrain) {
     refrainContainer.classList.remove("hidden");
@@ -2459,7 +2672,7 @@ function ouvrirDetailChant(chant) {
   } else {
     refrainContainer.classList.add("hidden");
   }
-  
+
   const coupletsList = document.getElementById("cd-couplets-list");
   coupletsList.innerHTML = "";
   if (chant.couplets && chant.couplets.length > 0) {
@@ -2472,7 +2685,7 @@ function ouvrirDetailChant(chant) {
   } else {
     coupletsList.innerHTML = `<p class="hint">Aucun couplet enregistré.</p>`;
   }
-  
+
   const tagsList = document.getElementById("cd-mots-cles-list");
   tagsList.innerHTML = "";
   if (chant.mots_cles && chant.mots_cles.length > 0) {
@@ -2485,7 +2698,7 @@ function ouvrirDetailChant(chant) {
   } else {
     tagsList.innerHTML = `<span class="hint">Aucun mot-clé</span>`;
   }
-  
+
   let stateText = "Actif";
   let etatClass = "badge-actif";
   if (chant.actif === false) {
@@ -2495,19 +2708,19 @@ function ouvrirDetailChant(chant) {
     stateText = "À vérifier";
     etatClass = "badge-a-verifier";
   }
-  
+
   document.getElementById("cd-hist-etat").innerHTML = `<span class="cd-badge ${etatClass}">${stateText}</span>`;
-  
+
   const dateCreation = chant.created_at ? new Date(chant.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "N/A";
   document.getElementById("cd-hist-creation").textContent = dateCreation;
   document.getElementById("cd-hist-modification").textContent = dateCreation;
-  
+
   const auteur = chant.source_file ? chant.source_file.replace(/_/g, " ").replace(/\.[^/.]+$/, "") : "Système";
   document.getElementById("cd-hist-auteur").textContent = auteur;
-  
+
   const footerActions = document.getElementById("cd-footer-actions");
   footerActions.innerHTML = "";
-  
+
   if (IDENTITE && IDENTITE.type === "super") {
     const btnSupprimer = document.createElement("button");
     btnSupprimer.type = "button";
@@ -2518,7 +2731,7 @@ function ouvrirDetailChant(chant) {
       supprimerChantDetail(chant.id);
     });
     footerActions.appendChild(btnSupprimer);
-    
+
     if (chant.actif !== false) {
       const btnArchiver = document.createElement("button");
       btnArchiver.type = "button";
@@ -2552,7 +2765,7 @@ function ouvrirDetailChant(chant) {
       });
       footerActions.appendChild(btnActiver);
     }
-    
+
     const btnDupliquer = document.createElement("button");
     btnDupliquer.type = "button";
     btnDupliquer.className = "btn-secondary";
@@ -2562,14 +2775,14 @@ function ouvrirDetailChant(chant) {
       await dupliquerChant(chant);
     });
     footerActions.appendChild(btnDupliquer);
-    
+
     const btnExporter = document.createElement("button");
     btnExporter.type = "button";
     btnExporter.className = "btn-secondary";
     btnExporter.innerHTML = "⬇ Exporter";
     btnExporter.addEventListener("click", () => exporterChant(chant));
     footerActions.appendChild(btnExporter);
-    
+
     const btnImprimer = document.createElement("button");
     btnImprimer.type = "button";
     btnImprimer.className = "btn-secondary";
@@ -2596,39 +2809,8 @@ function ouvrirDetailChant(chant) {
       await toggleFavoriChant(chant);
     });
     footerActions.appendChild(btnFavori);
-    
-    if (pickerTargetMoment || pickerTargetInputId) {
-      const btnAjouter = document.createElement("button");
-      btnAjouter.type = "button";
-      btnAjouter.className = "btn-primary";
-      btnAjouter.innerHTML = "➕ Ajouter au dépliant";
-      btnAjouter.addEventListener("click", () => {
-        if (pickerTargetInputId) {
-          const input = document.getElementById(pickerTargetInputId);
-          if (input) {
-            input.value = chant.titre;
-            input.dispatchEvent(new Event("input"));
-          }
-          fermerModale("chant-detail-modal");
-          fermerModale("chant-picker");
-          pickerTargetInputId = null;
-          return;
-        }
-        if (!chantDetailCourant || !pickerTargetMoment) return;
-        momentsState[pickerTargetMoment] = {
-          ...momentsState[pickerTargetMoment],
-          type: "chant", chant_id: chant.id, chant_titre: chant.titre,
-          total_couplets: (chant.couplets || []).length, couplet_limit: null,
-          refrain: chant.refrain, couplets: chant.couplets,
-        };
-        const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
-        renderMomentBody(row, pickerTargetMoment);
-        regenererApercuSiPossible();
-        fermerModale("chant-detail-modal");
-        fermerModale("chant-picker");
-      });
-      footerActions.appendChild(btnAjouter);
-    } else {
+
+    if (!pickerTargetMoment && !pickerTargetInputId) {
       const btnComposer = document.createElement("button");
       btnComposer.type = "button";
       btnComposer.className = "btn-secondary";
@@ -2639,14 +2821,14 @@ function ouvrirDetailChant(chant) {
       });
       footerActions.appendChild(btnComposer);
     }
-    
+
     const btnCopier = document.createElement("button");
     btnCopier.type = "button";
     btnCopier.className = "btn-secondary";
     btnCopier.innerHTML = "📋 Copier paroles";
     btnCopier.addEventListener("click", () => copierChantParoles(chant));
     footerActions.appendChild(btnCopier);
-    
+
     const btnImprimer = document.createElement("button");
     btnImprimer.type = "button";
     btnImprimer.className = "btn-secondary";
@@ -2654,14 +2836,26 @@ function ouvrirDetailChant(chant) {
     btnImprimer.addEventListener("click", () => imprimerChant(chant));
     footerActions.appendChild(btnImprimer);
   }
-  
+
+  if (pickerTargetMoment || pickerTargetInputId) {
+    const btnAjouter = document.createElement("button");
+    btnAjouter.type = "button";
+    btnAjouter.className = "btn-primary";
+    btnAjouter.innerHTML = "➕ Ajouter au dépliant";
+    btnAjouter.addEventListener("click", () => {
+      selectionnerChantPourComposer(chant);
+      fermerModale("chant-detail-modal");
+    });
+    footerActions.appendChild(btnAjouter);
+  }
+
   const btnFermer = document.createElement("button");
   btnFermer.type = "button";
   btnFermer.className = "btn-secondary";
   btnFermer.innerHTML = "Fermer";
   btnFermer.addEventListener("click", () => fermerModale("chant-detail-modal"));
   footerActions.appendChild(btnFermer);
-  
+
   ouvrirModale("chant-detail-modal");
 }
 
@@ -2723,14 +2917,14 @@ function nettoyerMomentsEnCause() {
 function afficherErreurDepassement(detail, resultDiv) {
   const message = typeof detail === "object" && detail !== null ? detail.message : String(detail || "Erreur inconnue");
   const moments = (typeof detail === "object" && detail !== null && detail.moments_en_cause) || [];
-  
+
   let explications = "Certains moments débordent sur le feuillet imprimable (surlignés en rouge dans l'aperçu ci-dessous).<br/>" +
     "Pour faire tenir le document sur 2 pages, vous devez :<br/>" +
     "<ul>" +
     "  <li>Réduire le nombre de couplets à afficher pour les chants en cause (ex: afficher 2 couplets au lieu de 4).</li>" +
     "  <li>Ou raccourcir le texte libre / les paroles du chant.</li>" +
     "</ul>";
-    
+
   resultDiv.innerHTML = `
     <div class="etat-vide" style="border: 2px solid var(--danger); background: #fdeaea; padding: 12px; border-radius: 8px;">
       <div class="etat-vide-icone">⚠️</div>
@@ -2738,7 +2932,7 @@ function afficherErreurDepassement(detail, resultDiv) {
       <p class="hint" style="text-align: left; line-height: 1.4; color: #555;">${explications}</p>
     </div>
   `;
-  
+
   moments.forEach((m) => {
     const row = document.querySelector(`.moment-row[data-moment="${m}"]`);
     if (row) row.classList.add("moment-en-cause");
@@ -2777,7 +2971,7 @@ async function afficherResultatFeuillet(feuilletId) {
       const now = new Date();
       timeEl.textContent = `Mis à jour à ${now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}`;
     }
-    
+
     const blobUrl = URL.createObjectURL(await res.blob());
     resultDiv.innerHTML = `
       <div class="toolbar">
@@ -2865,27 +3059,27 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
   afficherSplashGeneration();
   try {
     await avecChargementSubmit(e.target, async () => {
-    const idAvant = feuilletCourantId;
-    const feuillet = feuilletCourantId
-      ? await api(`/feuillets/${feuilletCourantId}`, {
+      const idAvant = feuilletCourantId;
+      const feuillet = feuilletCourantId
+        ? await api(`/feuillets/${feuilletCourantId}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         })
-      : await api("/feuillets", {
+        : await api("/feuillets", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(payload),
         });
-    const vientDetreClone = idAvant && feuillet.id !== idAvant;
-    feuilletCourantId = feuillet.id;
-    await afficherResultatFeuillet(feuillet.id);
-    if (vientDetreClone) {
-      resultDiv.insertAdjacentHTML(
-        "afterbegin",
-        `<p class="hint">Copié dans ton espace — le dépliant original n'a pas été modifié.</p>`
-      );
-    }
+      const vientDetreClone = idAvant && feuillet.id !== idAvant;
+      feuilletCourantId = feuillet.id;
+      await afficherResultatFeuillet(feuillet.id);
+      if (vientDetreClone) {
+        resultDiv.insertAdjacentHTML(
+          "afterbegin",
+          `<p class="hint">Copié dans ton espace — le dépliant original n'a pas été modifié.</p>`
+        );
+      }
     });
   } catch (err) {
     resultDiv.textContent = `Erreur : ${err.message}`;
@@ -2944,7 +3138,7 @@ async function persisterSettings() {
 async function regenererSettingsPdf() {
   const iframe = document.getElementById("reglages-pdf-iframe");
   if (!iframe) return;
-  
+
   const payload = {
     chorale: document.getElementById("p-chorale").value,
     paroisse: document.getElementById("p-paroisse").value,
@@ -2956,7 +3150,7 @@ async function regenererSettingsPdf() {
     banniere_bas_media_id: activeSettingsMedias.banniere_bas_media_id,
     one_page_mode: document.getElementById("choice-one-page").checked,
   };
-  
+
   try {
     const res = await fetch("/parametres/preview-pdf", {
       method: "POST",
@@ -2966,13 +3160,13 @@ async function regenererSettingsPdf() {
     if (!res.ok) throw new Error(await res.text());
     const blob = await res.blob();
     const blobUrl = URL.createObjectURL(blob);
-    
+
     if (iframe.dataset.blobUrl) {
       URL.revokeObjectURL(iframe.dataset.blobUrl);
     }
     iframe.src = blobUrl;
     iframe.dataset.blobUrl = blobUrl;
-    
+
     // Apply visual scale
     appliquerZoomApercu(document.getElementById("preview-zoom-select").value);
   } catch (err) {
@@ -2980,10 +3174,10 @@ async function regenererSettingsPdf() {
   }
 }
 
-window.appliquerZoomApercu = function(zoomVal) {
+window.appliquerZoomApercu = function (zoomVal) {
   const iframe = document.getElementById("reglages-pdf-iframe");
   if (!iframe) return;
-  
+
   if (zoomVal === "width") {
     const containerWidth = iframe.parentElement.clientWidth || 400;
     const scale = containerWidth / 1122; // A4 landscape width factor
@@ -3005,18 +3199,18 @@ async function chargerParametres() {
   document.getElementById("p-contact").value = params.contact || "";
   document.getElementById("p-annonce").value = params.annonce || "";
   document.getElementById("p-priere-defaut").value = params.priere_texte_defaut || "";
-  
+
   activeSettingsMedias.logo_gauche_media_id = params.logo_gauche_media_id;
   activeSettingsMedias.logo_droit_media_id = params.logo_droit_media_id;
   activeSettingsMedias.banniere_bas_media_id = params.banniere_bas_media_id;
-  
+
   document.getElementById("p-priere-char-count").textContent = params.priere_texte_defaut ? params.priere_texte_defaut.length : 0;
-  
+
   initImageSlots(params);
   actualiserApercuEntete();
   actualiserApercuBanniere();
   actualiserApercuPriere();
-  
+
   // Rendu de l'aperçu PDF
   debouncedRegenererSettingsPdf();
 }
@@ -3110,10 +3304,10 @@ function initImageSlots(params) {
             if (!res.ok) throw new Error(await res.text());
             resMetadata = await res.json();
           });
-          
+
           input.value = "";
           const activeId = resMetadata[`${slot}_media_id`];
-          
+
           // Get filename and size from medias
           const medias = await api("/parametres/medias");
           const media = medias.find(m => m.id === activeId);
@@ -3151,7 +3345,7 @@ function afficherImageSlot(slot, presente, mediaId, filename, size) {
   const img = el.querySelector(".logo-preview");
   const statusEl = el.querySelector(".slot-status");
   const apercuImg = document.getElementById(APERCU_IMG_PAR_SLOT[slot]);
-  
+
   if (presente) {
     if (mediaId !== undefined) {
       activeSettingsMedias[`${slot}_media_id`] = mediaId;
@@ -3161,10 +3355,10 @@ function afficherImageSlot(slot, presente, mediaId, filename, size) {
     const nameStr = filename ? `${filename}` : "image";
     const sizeStr = size ? ` (${formatBytes(size)})` : "";
     statusEl.textContent = `${nameStr}${sizeStr}`;
-    
-    if (apercuImg) { 
-      apercuImg.src = img.src; 
-      apercuImg.classList.remove("hidden"); 
+
+    if (apercuImg) {
+      apercuImg.src = img.src;
+      apercuImg.classList.remove("hidden");
     }
   } else {
     activeSettingsMedias[`${slot}_media_id`] = null;
@@ -3172,7 +3366,7 @@ function afficherImageSlot(slot, presente, mediaId, filename, size) {
     statusEl.textContent = "Aucune image choisie.";
     if (apercuImg) apercuImg.classList.add("hidden");
   }
-  
+
   debouncedRegenererSettingsPdf();
 }
 
@@ -3182,7 +3376,7 @@ function ouvrirMediaPicker(slot) {
   mediaPickerSlot = slot;
   const type = SLOT_TYPE_MEDIA[slot];
   const modal = document.getElementById("media-picker-modal");
-  
+
   if (!modal) {
     const div = document.createElement("div");
     div.id = "media-picker-modal";
@@ -3195,7 +3389,7 @@ function ouvrirMediaPicker(slot) {
       </div>`;
     document.body.appendChild(div);
   }
-  
+
   (async () => {
     const listEl = document.getElementById("media-picker-list");
     listEl.innerHTML = "Chargement...";
@@ -3204,18 +3398,18 @@ function ouvrirMediaPicker(slot) {
       listEl.innerHTML = "<p>Aucune image dans la bibliothèque.</p>";
       return;
     }
-    
+
     listEl.innerHTML = medias.map(m => `
       <div class="media-card" style="border:1px solid #ddd;border-radius:8px;padding:8px;text-align:center;cursor:pointer;" onclick="selectMediaFromPicker(${m.id}, '${escapeHtml(m.filename)}', ${m.size})">
         <img src="/parametres/medias/${m.id}/fichier" style="max-width:100%;max-height:80px;object-fit:contain;margin-bottom:6px;">
         <p style="font-size:0.75rem;margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(m.filename)}</p>
       </div>`).join("");
   })();
-  
+
   ouvrirModale("media-picker-modal");
 }
 
-window.selectMediaFromPicker = async function(mediaId, filename, size) {
+window.selectMediaFromPicker = async function (mediaId, filename, size) {
   await avecChargement(document.querySelector(".modal-close-x"), () => api(`/parametres/image/${mediaPickerSlot}/activer`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -3346,6 +3540,7 @@ const selectionEditeur = new Set();
 let idsAffichesEditeur = [];
 
 function categorieLabel(c) {
+  if (!c) return "Autre";
   return LABELS_MOMENTS[c] || c.replace(/_/g, " ");
 }
 
@@ -3527,7 +3722,7 @@ function initEditeurListenersOnce() {
 function editeurRowHtml(chant) {
   const refrainApercu = chant.refrain ? chant.refrain.slice(0, 45) : (chant.couplets[0] || "").slice(0, 45);
   const titleEsc = escapeHtml(chant.titre || "(sans titre)");
-  
+
   // Progress bar of confidence score
   const pct = Math.round((chant.confiance ?? 1) * 100);
   let confClass = "low";
@@ -3539,7 +3734,7 @@ function editeurRowHtml(chant) {
     confClass = "medium";
     statusBadge = `<span class="status-badge status-warning">À vérifier</span>`;
   }
-  
+
   const progressHtml = `
     <div class="progress-bar-cell">
       <div class="progress-bar-wrapper">
@@ -3548,10 +3743,10 @@ function editeurRowHtml(chant) {
       <span style="font-size:0.75rem;font-weight:600;">${pct}%</span>
     </div>
   `;
-  
+
   const vis = chant.actif !== false ? "public" : "prive";
-  const visBadge = vis === "public" 
-    ? `<span class="visibility-badge public">Public</span>` 
+  const visBadge = vis === "public"
+    ? `<span class="visibility-badge public">Public</span>`
     : `<span class="visibility-badge">Privé</span>`;
 
   const dateMod = chant.created_at ? new Date(chant.created_at).toLocaleDateString("fr-FR") : "-";
@@ -3587,16 +3782,16 @@ async function actualiserEditeur() {
   // Populate categories dropdowns dynamically if not already done
   const categoryFilters = document.getElementById("filter-categorie");
   if (categoryFilters && categoryFilters.children.length <= 1) {
-    categoryFilters.innerHTML = `<option value="">Toutes</option>` + 
+    categoryFilters.innerHTML = `<option value="">Toutes</option>` +
       CATEGORIES.map(c => `<option value="${c}">${categorieLabel(c)}</option>`).join("");
-    
+
     // Set up bulk categories dropdown too
-    document.getElementById("bulk-categorie").innerHTML = 
+    document.getElementById("bulk-categorie").innerHTML =
       CATEGORIES.map(c => `<option value="${c}">${categorieLabel(c)}</option>`).join("");
   }
 
   const q = document.getElementById("edit-q").value.trim().toLowerCase();
-  
+
   // Load full chants list (increase limit to 500 to fetch them all)
   const chants = await api(`/chants?limit=500`);
   editeurChantsCache = chants;
@@ -3620,7 +3815,7 @@ async function actualiserEditeur() {
 
   // Search filter
   if (q) {
-    filtered = filtered.filter(c => 
+    filtered = filtered.filter(c =>
       (c.titre || "").toLowerCase().includes(q) ||
       (c.refrain || "").toLowerCase().includes(q) ||
       (c.auteur || "").toLowerCase().includes(q) ||
@@ -3680,9 +3875,9 @@ async function actualiserEditeur() {
   const pageChants = filtered.slice(start, end);
 
   // Update pagination info labels
-  document.getElementById("pagination-current-range").textContent = 
+  document.getElementById("pagination-current-range").textContent =
     filtered.length > 0 ? `${start + 1}-${end} sur ${filtered.length}` : "0-0 sur 0";
-  
+
   document.getElementById("btn-pagination-prev").disabled = editeurPageCurrent === 1;
   document.getElementById("btn-pagination-next").disabled = end >= filtered.length;
 
@@ -3875,7 +4070,7 @@ document.getElementById("tge-inserer").addEventListener("click", () => {
 function fermerTexteGrandEditeur() {
   const valeurActuelle = document.getElementById("tge-textarea").value;
   if (valeurActuelle !== tgeValeurInitiale &&
-      !confirm("Abandonner les modifications de ce texte ?")) {
+    !confirm("Abandonner les modifications de ce texte ?")) {
     return false;
   }
   tgeOnValider = null;
@@ -3923,40 +4118,40 @@ function genererMotsCles() {
   const couplets = document.getElementById("ce-couplets").value;
   const selectCat = document.getElementById("ce-categorie");
   const categorie = selectCat.options[selectCat.selectedIndex] ? selectCat.options[selectCat.selectedIndex].text : "";
-  
+
   const texteComplet = `${titre} ${categorie} ${refrain} ${couplets}`;
-  
+
   const mots = texteComplet
     .normalize("NFKD")
     .replace(/[̀-ͯ]/g, "")
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, " ")
     .split(/\s+/);
-  
+
   const stopWords = new Set([
-    "le", "la", "les", "de", "du", "des", "un", "une", "et", "en", "pour", "dans", "sur", "par", 
+    "le", "la", "les", "de", "du", "des", "un", "une", "et", "en", "pour", "dans", "sur", "par",
     "avec", "ce", "ces", "cette", "mon", "ton", "son", "notre", "votre", "leur", "nos", "vos", "leurs",
-    "aux", "au", "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "est", "sont", "ont", "a", 
+    "aux", "au", "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "est", "sont", "ont", "a",
     "ai", "as", "avez", "suis", "es", "sommes", "etes", "l", "d", "s", "c", "j", "m", "t", "qu", "y",
     "qui", "que", "quoi", "dont", "ou", "où", "mais", "donc", "or", "ni", "car", "ne", "pas", "plus", "tout",
     "tous", "toutes", "chaque", "autre", "autres", "sans", "sous", "vers", "chez"
   ]);
-  
+
   const occurrences = {};
   for (let m of mots) {
     if (m.length < 3) continue;
     if (stopWords.has(m)) continue;
     occurrences[m] = (occurrences[m] || 0) + 1;
   }
-  
+
   const tries = Object.keys(occurrences).sort((a, b) => occurrences[b] - occurrences[a]);
   const keywords = tries.slice(0, 12);
-  
+
   const originalWords = texteComplet
     .toLowerCase()
     .replace(/[^a-z0-9àâäéèêëîïôöùûüçœæ]+/gi, " ")
     .split(/\s+/);
-  
+
   const mapNormalize = {};
   for (let w of originalWords) {
     const norm = w.normalize("NFKD").replace(/[̀-ͯ]/g, "");
@@ -3964,7 +4159,7 @@ function genererMotsCles() {
       mapNormalize[norm] = w;
     }
   }
-  
+
   const keywordsAccented = keywords.map(k => mapNormalize[k] || k);
   document.getElementById("ce-mots-cles").value = keywordsAccented.join(", ");
 }
@@ -3983,7 +4178,7 @@ function ouvrirDetailsChantDynamique(chant, source, indexOrId, startInEditMode =
   currentDetailChant = chant;
   currentDetailSource = source;
   currentDetailIndexOrId = indexOrId;
-  
+
   if (startInEditMode) {
     afficherDetailsChantModification();
   } else {
@@ -3995,7 +4190,7 @@ function ouvrirDetailsChantDynamique(chant, source, indexOrId, startInEditMode =
 function afficherDetailsChantLecture() {
   const chant = currentDetailChant;
   const modalContent = document.querySelector("#chant-details-modal .modal-content");
-  
+
   const coupletsHtml = (chant.couplets || []).map((c, idx) => `
     <div style="display:flex; gap:12px;">
       <span style="font-weight:700; color:#2563eb; font-size:0.95rem;">${idx + 1}.</span>
@@ -4005,9 +4200,9 @@ function afficherDetailsChantLecture() {
 
   const vis = chant.actif !== false ? "public" : "prive";
   const visText = vis === "public" ? "Rendre privé" : "Rendre public";
-  
+
   const isImport = currentDetailSource === "import";
-  const scoreBadge = isImport 
+  const scoreBadge = isImport
     ? `<span style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px; margin-right: 8px;">Confiance: ${Math.round((chant.confiance ?? 1) * 100)}%</span>`
     : "";
 
@@ -4115,13 +4310,13 @@ function afficherDetailsChantLecture() {
 function afficherDetailsChantModification() {
   const chant = currentDetailChant;
   const modalContent = document.querySelector("#chant-details-modal .modal-content");
-  
+
   const coupletsTexte = (chant.couplets || []).join("\n\n");
-  
+
   const categoriesHtml = CATEGORIES.map(c => `
     <option value="${c}" ${c === chant.categorie ? "selected" : ""}>${categorieLabel(c)}</option>
   `).join("");
-  
+
   const languesHtml = Object.entries(NOMS_LANGUES).map(([code, name]) => `
     <option value="${code}" ${code === (chant.langue || "fr") ? "selected" : ""}>${name}</option>
   `).join("");
@@ -4209,12 +4404,12 @@ function afficherDetailsChantModification() {
               body: JSON.stringify({ nom: nomNettoye }),
             });
             CATEGORIES = res.categories;
-            
+
             // Re-populate and select newly created category
             dynSelectCat.innerHTML = CATEGORIES.map(c => `
               <option value="${c}" ${c === nomNettoye ? "selected" : ""}>${categorieLabel(c)}</option>
             `).join("");
-            
+
             alert(`La catégorie "${nomNettoye}" a été créée et envoyée à l'administrateur pour validation. Elle est utilisable immédiatement.`);
           } catch (err) {
             alert("Erreur de création de la catégorie: " + err.message);
@@ -4309,7 +4504,7 @@ function afficherDetailsChantModification() {
             state.refrain = chantModifie.refrain;
             state.couplets = chantModifie.couplets;
             state.total_couplets = chantModifie.couplets ? chantModifie.couplets.length : 0;
-            
+
             const row = document.querySelector(`.moment-row[data-moment="${momentKey}"]`);
             if (row) {
               renderMomentBody(row, momentKey);
@@ -4321,7 +4516,7 @@ function afficherDetailsChantModification() {
         if (typeof regenererApercuSiPossible === "function") {
           regenererApercuSiPossible();
         }
-        
+
         afficherDetailsChantLecture();
       });
     }
@@ -4336,7 +4531,7 @@ async function ouvrirDetailsChant(id, startInEditMode = false) {
   if (!chant && window.editeurChantsCache) {
     chant = window.editeurChantsCache.find(c => c.id === id);
   }
-  
+
   if (chant) {
     ouvrirDetailsChantDynamique(chant, "editeur", id, startInEditMode);
   } else {
@@ -4381,85 +4576,85 @@ document.getElementById("ce-fermer").addEventListener("click", () => {
 document.getElementById("chant-editor-form").addEventListener("submit", async (e) => {
   e.preventDefault();
   await avecChargementSubmit(e.target, async () => {
-  const id = document.getElementById("ce-id").value;
-  let titre = document.getElementById("ce-titre").value.trim();
-  const refrain = document.getElementById("ce-refrain").value.trim();
-  const couplets = getCoupletsFromFields();
+    const id = document.getElementById("ce-id").value;
+    let titre = document.getElementById("ce-titre").value.trim();
+    const refrain = document.getElementById("ce-refrain").value.trim();
+    const couplets = getCoupletsFromFields();
 
-  if (!titre) {
-    if (refrain) {
-      titre = refrain.slice(0, 30) + "...";
-    } else if (couplets.length > 0) {
-      titre = couplets[0].slice(0, 30) + "...";
-    } else {
-      titre = "Chant sans titre";
+    if (!titre) {
+      if (refrain) {
+        titre = refrain.slice(0, 30) + "...";
+      } else if (couplets.length > 0) {
+        titre = couplets[0].slice(0, 30) + "...";
+      } else {
+        titre = "Chant sans titre";
+      }
     }
-  }
 
-  let categorie = document.getElementById("ce-categorie").value;
-  if (categorie === "Autre") {
-    const nouvelleCategorie = document.getElementById("ce-nouvelle-categorie").value.trim();
-    if (nouvelleCategorie) {
-      const res = await api("/categories", {
+    let categorie = document.getElementById("ce-categorie").value;
+    if (categorie === "Autre") {
+      const nouvelleCategorie = document.getElementById("ce-nouvelle-categorie").value.trim();
+      if (nouvelleCategorie) {
+        const res = await api("/categories", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nom: nouvelleCategorie }),
+        });
+        CATEGORIES = res.categories;
+        peuplerSelectsCategories();
+        categorie = nouvelleCategorie;
+      }
+    }
+
+    const payload = {
+      titre,
+      categorie,
+      refrain: refrain || null,
+      couplets,
+      code_reference: document.getElementById("ce-code").value || null,
+      occasions: document.getElementById("ce-occasions").value.split(",").map((s) => s.trim()).filter(Boolean),
+      slug: document.getElementById("ce-slug").value.trim() || null,
+      langue: document.getElementById("ce-langue").value,
+      mots_cles: document.getElementById("ce-mots-cles").value.split(",").map((s) => s.trim()).filter(Boolean),
+      actif: document.getElementById("ce-actif").checked,
+      favori: document.getElementById("ce-favori").checked,
+      chant_principal: document.getElementById("ce-chant-principal").checked,
+      tonalite: document.getElementById("ce-tonalite").value.trim() || null,
+      duree_estimee: document.getElementById("ce-duree-estimee").value.trim() || null,
+      remarques: document.getElementById("ce-remarques").value.trim() || null,
+    };
+
+    if (editImportIndex !== null) {
+      const chosenAction = document.querySelector('input[name="ce-iw-action"]:checked')?.value || "save";
+      const chosenReplaceSelect = document.getElementById("ce-iw-replace-select");
+      const chosenReplaceId = chosenReplaceSelect ? Number(chosenReplaceSelect.value) : null;
+
+      const item = importWorkspaceChants[editImportIndex];
+      Object.assign(item, payload);
+      item.action = chosenAction;
+      item.replace_id = chosenReplaceId;
+
+      afficherImportWorkspace(importWorkspaceChants);
+      fermerModale("chant-editor");
+      editImportIndex = null;
+      return;
+    }
+
+    if (id) {
+      await api(`/chants/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+    } else {
+      await api("/chants", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nom: nouvelleCategorie }),
+        body: JSON.stringify(payload),
       });
-      CATEGORIES = res.categories;
-      peuplerSelectsCategories();
-      categorie = nouvelleCategorie;
     }
-  }
-
-  const payload = {
-    titre,
-    categorie,
-    refrain: refrain || null,
-    couplets,
-    code_reference: document.getElementById("ce-code").value || null,
-    occasions: document.getElementById("ce-occasions").value.split(",").map((s) => s.trim()).filter(Boolean),
-    slug: document.getElementById("ce-slug").value.trim() || null,
-    langue: document.getElementById("ce-langue").value,
-    mots_cles: document.getElementById("ce-mots-cles").value.split(",").map((s) => s.trim()).filter(Boolean),
-    actif: document.getElementById("ce-actif").checked,
-    favori: document.getElementById("ce-favori").checked,
-    chant_principal: document.getElementById("ce-chant-principal").checked,
-    tonalite: document.getElementById("ce-tonalite").value.trim() || null,
-    duree_estimee: document.getElementById("ce-duree-estimee").value.trim() || null,
-    remarques: document.getElementById("ce-remarques").value.trim() || null,
-  };
-  
-  if (editImportIndex !== null) {
-    const chosenAction = document.querySelector('input[name="ce-iw-action"]:checked')?.value || "save";
-    const chosenReplaceSelect = document.getElementById("ce-iw-replace-select");
-    const chosenReplaceId = chosenReplaceSelect ? Number(chosenReplaceSelect.value) : null;
-    
-    const item = importWorkspaceChants[editImportIndex];
-    Object.assign(item, payload);
-    item.action = chosenAction;
-    item.replace_id = chosenReplaceId;
-    
-    afficherImportWorkspace(importWorkspaceChants);
     fermerModale("chant-editor");
-    editImportIndex = null;
-    return;
-  }
-
-  if (id) {
-    await api(`/chants/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  } else {
-    await api("/chants", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(payload),
-    });
-  }
-  fermerModale("chant-editor");
-  await actualiserEditeur();
+    await actualiserEditeur();
   });
 });
 
@@ -4615,10 +4810,10 @@ document.getElementById("import-form").addEventListener("submit", async (e) => {
 
 function afficherImportWorkspace(chants) {
   importWorkspaceChants = chants;
-  
+
   document.getElementById("import-setup-section").style.display = "none";
   const resultDiv = document.getElementById("import-result");
-  
+
   if (!chants || chants.length === 0) {
     resultDiv.innerHTML = `
       <div style="text-align:center; padding: 40px; background:white; border-radius:16px; border:1px solid #e2e8f0;">
@@ -4661,7 +4856,7 @@ function afficherImportWorkspace(chants) {
     const isDuplicate = c.doublons && c.doublons.length > 0;
     const isIgnored = c.action === "ignore";
     const badge = isDuplicate ? `<span class="status-badge status-warning" style="margin-left: 6px;">Doublon</span>` : "";
-    
+
     const pct = Math.round((c.confiance ?? 1) * 100);
     let confClass = "low";
     let statusBadge = `<span class="status-badge status-danger">Échec</span>`;
@@ -4747,7 +4942,7 @@ function afficherImportWorkspace(chants) {
   // Bind Listeners
   document.getElementById("iw-btn-annuler").addEventListener("click", annulerImportWorkspace);
   document.getElementById("iw-btn-confirmer").addEventListener("click", confirmerImportWorkspace);
-  
+
   const selectAll = document.getElementById("iw-select-all");
   selectAll.addEventListener("change", (e) => {
     document.querySelectorAll(".iw-row-checkbox").forEach(cb => {
@@ -4766,7 +4961,7 @@ function afficherImportWorkspace(chants) {
 
     row.querySelector(".iw-click-target").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, false));
     row.querySelector(".btn-edit-iw").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, true));
-    
+
     row.querySelector(".iw-row-checkbox").addEventListener("change", (e) => {
       c.action = e.target.checked ? null : "ignore";
       row.style.opacity = e.target.checked ? "1" : "0.5";
@@ -4805,7 +5000,7 @@ async function confirmerImportWorkspace() {
   const payloadChants = importWorkspaceChants.map((item, index) => {
     const row = document.querySelector(`#iw-table-body tr[data-index="${index}"]`);
     const isChecked = row ? row.querySelector(".iw-row-checkbox").checked : true;
-    
+
     // Action overrides: if unchecked, ignore!
     let finalAction = item.action || (item.doublons && item.doublons.length > 0 ? "replace" : "save");
     if (!isChecked) {
@@ -4856,7 +5051,7 @@ async function confirmerImportWorkspace() {
 
 function ouvrirImportDetails(chant) {
   const contentEl = document.getElementById("import-detail-content");
-  
+
   const trust = typeof chant.confiance === "number" ? chant.confiance : 1;
   const pct = Math.round(trust * 100);
   let statusBadge = `<span class="status-badge status-danger" style="display:inline-block; margin-bottom:8px;">Confiance Faible</span>`;
@@ -4948,15 +5143,15 @@ document.getElementById("btn-reset-bibliotheque").addEventListener("click", asyn
     // Fetch all chants for backup
     const backupChants = await api("/chants?limit=100000");
     const dataStr = JSON.stringify(backupChants, null, 2);
-    const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-    
+    const dataUri = 'data:application/json;charset=utf-8,' + encodeURIComponent(dataStr);
+
     const exportFileDefaultName = 'depliantapp_dataset_export.json';
-    
+
     const linkElement = document.createElement('a');
     linkElement.setAttribute('href', dataUri);
     linkElement.setAttribute('download', exportFileDefaultName);
     linkElement.click();
-    
+
     statusEl.textContent = "Suppression en cours...";
     const res = await avecChargement(e.currentTarget, () => api(`/chants/all?confirmation=${encodeURIComponent(confirmation)}`, { method: "DELETE" }));
     statusEl.textContent = `${res.deleted} chant(s) supprimé(s). Bibliothèque vide. Sauvegarde téléchargée.`;
@@ -4992,14 +5187,14 @@ function depliantCardHtml(feuillet) {
   const estAMoi = feuillet.chorale_id === (IDENTITE.type === "chorale" ? IDENTITE.compte_id : 0) || IDENTITE.type === "super";
   const attribution = !estAMoi && feuillet.chorale_nom
     ? `<div class="depliant-card-attribution">Composé par ${escapeHtml(feuillet.chorale_nom)}</div>` : "";
-  
+
   const format = feuillet.one_page_mode ? "1 page paysage" : "2 pages paysage";
   const nbChants = feuillet.moments ? feuillet.moments.filter(m => m.type === "chant").length : 0;
-  
+
   const favorisIds = JSON.parse(localStorage.getItem("depliants_favoris") || "[]");
   const estFavori = favorisIds.includes(feuillet.id);
 
-  const badgeHtml = estAMoi 
+  const badgeHtml = estAMoi
     ? `<span class="depliant-badge badge-prive">Privé</span>`
     : `<span class="depliant-badge badge-public">Communauté</span>`;
 
@@ -5052,12 +5247,12 @@ function initDepliantsListenersOnce() {
       document.querySelectorAll(".tab-filter-btn").forEach((b) => b.classList.remove("active"));
       btn.classList.add("active");
       currentDepliantsTab = btn.dataset.tab;
-      
+
       const porteeSelect = document.getElementById("depliants-portee");
       if (porteeSelect) {
         porteeSelect.value = (currentDepliantsTab === "mine" ? "mine" : "tous");
       }
-      
+
       actualiserDepliants();
     });
   });
@@ -5126,7 +5321,7 @@ async function chargerApercuPdf(container, id) {
 
 async function actualiserDepliants() {
   initDepliantsListenersOnce();
-  
+
   // Close any remaining context menu
   const oldMenu = document.querySelector(".context-menu-popover");
   if (oldMenu) oldMenu.remove();
@@ -5161,7 +5356,7 @@ async function actualiserDepliants() {
       const dateStr = formaterDateAffichage(f.date).toLowerCase();
       const lieuStr = (f.lieu || "").toLowerCase();
       const choraleStr = (f.chorale_nom || "").toLowerCase();
-      
+
       // Check if any chant title inside moments matches search
       const matchesChants = f.moments && f.moments.some((m) => {
         if (m.type === "chant" && m.chant_titre) {
@@ -5170,10 +5365,10 @@ async function actualiserDepliants() {
         return false;
       });
 
-      return dateStr.includes(currentDepliantsSearch) || 
-             lieuStr.includes(currentDepliantsSearch) || 
-             choraleStr.includes(currentDepliantsSearch) ||
-             matchesChants;
+      return dateStr.includes(currentDepliantsSearch) ||
+        lieuStr.includes(currentDepliantsSearch) ||
+        choraleStr.includes(currentDepliantsSearch) ||
+        matchesChants;
     });
   }
 
@@ -5255,12 +5450,12 @@ async function actualiserDepliants() {
   if (filtered.length === 0) {
     mineContainer.style.display = "none";
     publicsContainer.style.display = "none";
-    
+
     const container = document.querySelector(".depliants-groups-container");
     if (currentDepliantsTab === "mine" && feuillets.filter(f => f.chorale_id === IDENTITE.compte_id).length === 0) {
       container.innerHTML = etatVideHtml("📄", "Vous n'avez encore créé aucun feuillet.",
         `<button type="button" id="btn-creer-premier-depliant" class="btn-primary" style="margin-top: 12px; padding:8px 16px; border-radius:8px; border:none; background:#1F4A7C; color:white; cursor:pointer;">Créer mon premier feuillet</button>`);
-      
+
       const btn = document.getElementById("btn-creer-premier-depliant");
       if (btn) {
         btn.addEventListener("click", () => document.getElementById("btn-nouveau-depliant").click());
@@ -5306,7 +5501,7 @@ async function actualiserDepliants() {
 
       // Share
       card.querySelector('[data-action="partager"]').addEventListener("click", () => partagerPdf(id));
-      
+
       // Modifier
       card.querySelector('[data-action="modifier"]').addEventListener("click", () => modifierDepliant(id));
 
@@ -5333,7 +5528,7 @@ async function actualiserDepliants() {
       // Dots menu (responsive popover / bottom sheet)
       card.querySelector('[data-action="dots"]').addEventListener("click", (e) => {
         e.stopPropagation();
-        
+
         // Remove previous menus
         const existing = document.querySelector(".context-menu-popover, .mobile-bottom-sheet-backdrop");
         if (existing) existing.remove();
@@ -5372,7 +5567,7 @@ async function actualiserDepliants() {
             </div>
           `;
           document.body.appendChild(sheetBackdrop);
-          
+
           setTimeout(() => sheetBackdrop.classList.add("visible"), 10);
 
           const closeSheet = () => {
@@ -5493,7 +5688,7 @@ async function clonerDepliant(id) {
 async function renommerDepliant(id, ancienneDate) {
   const nouvelleDate = prompt("Nouveau nom (Date de la célébration) :", ancienneDate);
   if (!nouvelleDate || nouvelleDate.trim() === "" || nouvelleDate === ancienneDate) return;
-  
+
   try {
     const orig = await api(`/feuillets/${id}`);
     await api(`/feuillets/${id}`, {
@@ -5520,7 +5715,7 @@ async function renommerDepliant(id, ancienneDate) {
 function voirInfosDepliant(f) {
   const format = f.one_page_mode ? "1 page paysage" : "2 pages paysage";
   const nbChants = f.moments ? f.moments.filter(m => m.type === "chant").length : 0;
-  
+
   let dateCreationStr = "Non précisé";
   if (f.created_at) {
     try {
@@ -5670,13 +5865,13 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
   feuilletCourantId = null;
   tailleTexteManuelle = null;
   document.getElementById("feuillet-form").reset();
-  
+
   // Restore localStorage parameters after form reset
   ["f-type-celebration", "f-president", "f-animateur", "f-chorale-info"].forEach((id) => {
     const el = document.getElementById(id);
     if (el) el.value = localStorage.getItem(id) || "";
   });
-  
+
   const onePageCheck = document.getElementById("f-one-page-mode");
   if (onePageCheck) {
     onePageCheck.checked = localStorage.getItem("f-one-page-mode") === "true";
@@ -5686,7 +5881,7 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
     const saved = localStorage.getItem("f-banniere-active");
     banniereCheck.checked = saved === null ? true : saved === "true";
   }
-  
+
   document.getElementById("composer-result").innerHTML = indiceComposerHtml();
   viderChantsSpeciaux();
   document.querySelectorAll("#moments-container .moment-row").forEach((row, i) => {
@@ -5694,13 +5889,13 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
     momentsState[moment] = { type: "aucun", ordre: i * 10 };
     row.querySelector(".moment-type").value = "aucun";
     row.querySelector(".moment-ordre-input").value = i * 10;
-    
+
     // Also make sure all radios are unchecked
     row.querySelectorAll(".moment-mode-radio").forEach((r) => r.checked = false);
     // Collapse the edit panel
     const editPanel = row.querySelector(".moment-edit-panel");
     if (editPanel) editPanel.classList.add("collapsed");
-    
+
     renderMomentBody(row, moment);
   });
   changerVue("composer");
@@ -5760,10 +5955,10 @@ async function actualiserAdminChorales() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({}),
         }));
-        
+
         document.getElementById("reset-modal-nom").textContent = chorale ? chorale.nom : "Chorale";
         document.getElementById("reset-modal-mdp").textContent = res.mot_de_passe_initial;
-        
+
         document.getElementById("btn-copy-reset-mdp").onclick = () => {
           if (navigator.clipboard) {
             navigator.clipboard.writeText(res.mot_de_passe_initial);
@@ -5780,7 +5975,7 @@ async function actualiserAdminChorales() {
           copyBtn.innerHTML = "<span>✓</span> Copié !";
           setTimeout(() => { copyBtn.innerHTML = "<span>📋</span> Copier"; }, 2000);
         };
-        
+
         ouvrirModale("admin-reset-modal");
         await actualiserAdminChorales();
       } catch (err) {
@@ -5941,7 +6136,7 @@ async function actualiserAdminCategories() {
   list.innerHTML = categories.length
     ? categories.map(adminCategorieCardHtml).join("")
     : `<p class="hint">Aucune catégorie en attente de validation.</p>`;
-  
+
   list.querySelectorAll(".demande-card").forEach((el) => {
     const id = Number(el.dataset.id);
     el.querySelector(".btn-valider").addEventListener("click", async (e) => {
@@ -5952,7 +6147,7 @@ async function actualiserAdminCategories() {
       const res = await api("/meta");
       CATEGORIES = res.categories;
     });
-    
+
     el.querySelector(".btn-rejeter").addEventListener("click", async (e) => {
       const motif = prompt("Saisissez le motif de rejet (qui sera envoyé par message au créateur) :");
       if (motif === null) return; // Cancelled
@@ -6163,7 +6358,7 @@ function exporterPVStatistiques() {
   const s = dernieresStats;
   const timestamp = new Date().toLocaleString("fr-FR");
   const isoDate = new Date().toISOString().slice(0, 10);
-  
+
   let report = `================================================================================
 PROCÈS-VERBAL TECHNIQUE - AUDIT ET STATISTIQUES DE LA PLATEFORME DEPLIANTAPP
 ================================================================================
@@ -6185,28 +6380,28 @@ Status Système : Opérationnel
 --------------------------------------------------------------------------------
 Chorales actives et volume de production de dépliants :
 ${s.feuillets_par_chorale.map(f => {
-  return `* ${f.chorale_nom.padEnd(35)} : ${String(f.nombre).padStart(4)} dépliants (Dernier en date : ${f.dernier ? f.dernier.slice(0, 10) : 'Aucun'})`;
-}).join('\n')}
+    return `* ${f.chorale_nom.padEnd(35)} : ${String(f.nombre).padStart(4)} dépliants (Dernier en date : ${f.dernier ? f.dernier.slice(0, 10) : 'Aucun'})`;
+  }).join('\n')}
 
 3. STATISTIQUES D'ORGANISATION LITURGIQUE
 --------------------------------------------------------------------------------
 Répartition de la bibliothèque globale par catégorie liturgique :
 ${s.chants_par_categorie.map(c => {
-  return `* ${categorieLabel(c.categorie).padEnd(35)} : ${String(c.nombre).padStart(4)} chants`;
-}).join('\n')}
+    return `* ${categorieLabel(c.categorie).padEnd(35)} : ${String(c.nombre).padStart(4)} chants`;
+  }).join('\n')}
 
 4. COMPILATION DE L'ACTIVITÉ RÉCENTE
 --------------------------------------------------------------------------------
 Derniers dépliants générés sur la plateforme :
 ${s.feuillets_recents.map(f => {
-  const dateStr = f.date ? f.date.slice(0, 10) : '—';
-  return `* Le ${dateStr} à ${f.lieu || '—'} par [${f.chorale_nom || 'Inconnue'}]`;
-}).join('\n')}
+    const dateStr = f.date ? f.date.slice(0, 10) : '—';
+    return `* Le ${dateStr} à ${f.lieu || '—'} par [${f.chorale_nom || 'Inconnue'}]`;
+  }).join('\n')}
 
 Derniers chants ajoutés à la bibliothèque commune :
 ${s.chants_recents.map(c => {
-  return `* "${c.titre}" [Catégorie: ${categorieLabel(c.categorie)}]`;
-}).join('\n')}
+    return `* "${c.titre}" [Catégorie: ${categorieLabel(c.categorie)}]`;
+  }).join('\n')}
 
 --------------------------------------------------------------------------------
 5. RECOMMANDATIONS ET AIDE À LA DÉCISION
@@ -6246,14 +6441,14 @@ function getArchivedThreads() {
   return JSON.parse(localStorage.getItem("messagerie_archived_threads") || "[]");
 }
 
-window.isConversationArchived = function() {
+window.isConversationArchived = function () {
   if (IDENTITE.type === "super" && messagerieChoraleActive) {
     return getArchivedThreads().includes(messagerieChoraleActive);
   }
   return false;
 };
 
-window.basculerArchiveConversation = function() {
+window.basculerArchiveConversation = function () {
   if (IDENTITE.type !== "super" || !messagerieChoraleActive) return;
   const list = getArchivedThreads();
   const idx = list.indexOf(messagerieChoraleActive);
@@ -6272,7 +6467,7 @@ function formatGroupDate(dateStr) {
   const today = new Date();
   const yesterday = new Date(today);
   yesterday.setDate(yesterday.getDate() - 1);
-  
+
   if (d.toDateString() === today.toDateString()) {
     return "Aujourd'hui";
   } else if (d.toDateString() === yesterday.toDateString()) {
@@ -6306,7 +6501,7 @@ function getAttachmentIcon(filename) {
 
 function messageBulleHtml(m, allMessages) {
   const deMoi = m.expediteur_type === IDENTITE.type;
-  
+
   // Citations / Réponses
   let replyHtml = "";
   if (m.parent_id) {
@@ -6319,14 +6514,14 @@ function messageBulleHtml(m, allMessages) {
       replyHtml = `<div class="message-reply-ref">↩️ Message d'origine supprimé</div>`;
     }
   }
-  
+
   // Pièces jointes
   let mediaHtml = "";
   if (m.piece_jointe_filename) {
     const isImage = (m.piece_jointe_content_type || "").startsWith("image/");
     const isVideo = (m.piece_jointe_content_type || "").startsWith("video/");
     const isAudio = (m.piece_jointe_content_type || "").startsWith("audio/");
-    
+
     if (isImage) {
       mediaHtml = `<img class="message-image-preview" src="/messages/${m.id}/piece-jointe" alt="${escapeHtml(m.piece_jointe_filename)}" onclick="window.open(this.src)">`;
     } else if (isVideo) {
@@ -6347,11 +6542,11 @@ function messageBulleHtml(m, allMessages) {
         </div>`;
     }
   }
-  
+
   // Statut de lecture
   let statusIcon = "✓"; // Envoyé
   if (m.lu) statusIcon = "✓✓"; // Lu
-  
+
   // Reac icons
   let reacHtml = "";
   if (m.reactions) {
@@ -6363,9 +6558,9 @@ function messageBulleHtml(m, allMessages) {
           return `<button type="button" class="reaction-badge ${hasReacted ? "my-reaction" : ""}" onclick="reactToMessage(${m.id}, '${emoji}')">${emoji} <span class="reaction-count">${users.length}</span></button>`;
         }).join("") + `</div>`;
       }
-    } catch(e) {}
+    } catch (e) { }
   }
-  
+
   // Menu contextuel au survol
   const authorName = m.expediteur_type === "super" ? "Admin" : "Chorale";
   let hoverMenu = `
@@ -6387,13 +6582,13 @@ function messageBulleHtml(m, allMessages) {
     hoverMenu += `<button class="hover-menu-btn" type="button" onclick="deleteMessage(${m.id})" title="Supprimer">🗑️</button>`;
   }
   hoverMenu += `</div>`;
-  
+
   const formattedText = m.supprime
     ? `<span style="font-style: italic; color: #94a3b8;">Ce message a été supprimé.</span>`
     : (m.texte ? escapeHtml(m.texte).replace(/\n/g, "<br>") : "");
-  
+
   const editBadge = (m.modifie && !m.supprime) ? ` <span style="font-size:0.7rem;opacity:0.7;">(modifié)</span>` : "";
-  
+
   return `
     <div class="message-item ${deMoi ? "sent" : "received"}" data-id="${m.id}">
       ${hoverMenu}
@@ -6410,7 +6605,7 @@ function messageBulleHtml(m, allMessages) {
     </div>`;
 }
 
-window.replyToMessage = function(id, author, text) {
+window.replyToMessage = function (id, author, text) {
   activeReplyMessageId = id;
   const replyBar = document.getElementById("reply-preview-bar");
   document.getElementById("reply-preview-author").textContent = author;
@@ -6418,7 +6613,7 @@ window.replyToMessage = function(id, author, text) {
   replyBar.classList.remove("hidden");
 };
 
-window.editMessage = function(id, text) {
+window.editMessage = function (id, text) {
   activeEditMessageId = id;
   const input = document.getElementById("messagerie-texte");
   input.value = text;
@@ -6426,7 +6621,7 @@ window.editMessage = function(id, text) {
   document.getElementById("btn-messagerie-send").disabled = false;
 };
 
-window.deleteMessage = async function(id) {
+window.deleteMessage = async function (id) {
   if (!confirm("Voulez-vous vraiment supprimer ce message ?")) return;
   try {
     await api(`/messages/${id}`, { method: "DELETE" });
@@ -6436,7 +6631,7 @@ window.deleteMessage = async function(id) {
   }
 };
 
-window.reactToMessage = async function(id, emoji) {
+window.reactToMessage = async function (id, emoji) {
   try {
     const formData = new FormData();
     formData.append("emoji", emoji);
@@ -6450,7 +6645,7 @@ window.reactToMessage = async function(id, emoji) {
 async function chargerFilMessagerie() {
   const fil = document.getElementById("messagerie-fil");
   if (!fil) return;
-  
+
   if (IDENTITE.type === "super" && !messagerieChoraleActive) {
     fil.innerHTML = `
       <div class="empty-chat-state">
@@ -6459,10 +6654,10 @@ async function chargerFilMessagerie() {
       </div>`;
     return;
   }
-  
+
   const url = IDENTITE.type === "super" ? `/messages?chorale_id=${messagerieChoraleActive}` : "/messages";
   const messages = await api(url);
-  
+
   if (!messages.length) {
     fil.innerHTML = `
       <div class="empty-chat-state">
@@ -6474,7 +6669,7 @@ async function chargerFilMessagerie() {
     actualiserInfoPanel(0);
     return;
   }
-  
+
   // Group and render messages
   let html = "";
   let lastGroupDate = "";
@@ -6486,16 +6681,16 @@ async function chargerFilMessagerie() {
     }
     html += messageBulleHtml(m, messages);
   });
-  
+
   fil.innerHTML = html;
   fil.scrollTop = fil.scrollHeight;
-  
+
   actualiserChatHeader();
-  
+
   // Compter le nombre de fichiers joints
   const fileCount = messages.filter(m => m.piece_jointe_filename).length;
   actualiserInfoPanel(fileCount);
-  
+
   // Marquer comme lu
   const urlLu = IDENTITE.type === "super" ? `/messages/lu?chorale_id=${messagerieChoraleActive}` : "/messages/lu";
   await api(urlLu, { method: "POST" });
@@ -6506,7 +6701,7 @@ function actualiserChatHeader() {
   const nameEl = document.getElementById("chat-header-name");
   const statusEl = document.getElementById("chat-header-status");
   const avatarEl = document.getElementById("chat-header-avatar");
-  
+
   if (IDENTITE.type === "super" && messagerieChoraleActive) {
     const activeThread = globalThreads.find(t => t.chorale_id === messagerieChoraleActive);
     if (activeThread) {
@@ -6524,7 +6719,7 @@ function actualiserChatHeader() {
 function actualiserInfoPanel(nombreFichiers) {
   const container = document.getElementById("info-panel-details");
   if (!container) return;
-  
+
   let nom = "Administrateur";
   let role = "Super-admin";
   if (IDENTITE.type === "super" && messagerieChoraleActive) {
@@ -6534,7 +6729,7 @@ function actualiserInfoPanel(nombreFichiers) {
       role = "Chorale";
     }
   }
-  
+
   container.innerHTML = `
     <div class="info-avatar">${nom.charAt(0).toUpperCase()}</div>
     <h5 class="info-name">${escapeHtml(nom)}</h5>
@@ -6556,18 +6751,18 @@ function actualiserInfoPanel(nombreFichiers) {
   `;
 }
 
-window.selectConversation = function(choraleId, choraleNom) {
+window.selectConversation = function (choraleId, choraleNom) {
   messagerieChoraleActive = choraleId;
   document.querySelectorAll(".conversation-item").forEach(item => {
     item.classList.toggle("active", Number(item.dataset.id) === choraleId);
   });
-  
+
   // En mobile, on bascule vers la zone de chat
   if (window.innerWidth <= 768) {
     document.querySelector(".messagerie-sidebar").classList.add("inactive-tab");
     document.querySelector(".messagerie-chat-area").classList.add("active-tab");
   }
-  
+
   chargerFilMessagerie();
 };
 
@@ -6583,16 +6778,16 @@ async function actualiserBadgeMessagerie() {
 async function chargerInboxSuperAdmin() {
   const threads = await api("/messages/chorales");
   globalThreads = threads;
-  
+
   const container = document.getElementById("conversations-list");
   if (!container) return;
-  
+
   const searchVal = document.getElementById("messagerie-search").value.toLowerCase();
   const filterVal = document.querySelector(".filter-tab.active") ? document.querySelector(".filter-tab.active").dataset.filter : "all";
   const archivedList = getArchivedThreads();
-  
+
   let filtered = threads.filter(t => t.chorale_nom.toLowerCase().includes(searchVal));
-  
+
   if (filterVal === "unread") {
     filtered = filtered.filter(t => t.non_lus > 0);
   } else if (filterVal === "archived") {
@@ -6600,7 +6795,7 @@ async function chargerInboxSuperAdmin() {
   } else {
     filtered = filtered.filter(t => !archivedList.includes(t.chorale_id));
   }
-  
+
   if (!filtered.length) {
     container.innerHTML = `<p class="hint" style="text-align:center;padding:20px;">Aucune conversation.</p>`;
     if (!messagerieChoraleActive) {
@@ -6612,21 +6807,21 @@ async function chargerInboxSuperAdmin() {
     }
     return;
   }
-  
+
   container.innerHTML = filtered.map(t => {
     const activeClass = t.chorale_id === messagerieChoraleActive ? "active" : "";
     const unreadBadge = t.non_lus > 0 ? `<span class="unread-badge">${t.non_lus}</span>` : "";
-    
+
     // Simule la présence en ligne si dernière activité de moins d'1h
-    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T")+"Z").getTime() < 3600000) : false;
-    
+    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 3600000) : false;
+
     let lastMsgPreview = "Aucun message";
     let lastMsgTime = "";
     if (t.dernier_message) {
       lastMsgPreview = t.dernier_message.texte || "Fichier joint";
-      lastMsgTime = new Date(t.dernier_message.created_at.replace(" ", "T")+"Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      lastMsgTime = new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     }
-    
+
     return `
       <div class="conversation-item ${activeClass}" data-id="${t.chorale_id}" onclick="selectConversation(${t.chorale_id}, '${escapeHtml(t.chorale_nom)}')">
         <div class="conversation-avatar">
@@ -6645,7 +6840,7 @@ async function chargerInboxSuperAdmin() {
         </div>
       </div>`;
   }).join("");
-  
+
   if (!messagerieChoraleActive && filtered.length) {
     selectConversation(filtered[0].chorale_id, filtered[0].chorale_nom);
   }
@@ -6656,17 +6851,17 @@ function initMessagerieEventListeners() {
   const fileInput = document.getElementById("messagerie-piece-jointe");
   const attachMenu = document.getElementById("btn-attach-menu");
   const attachPopover = document.getElementById("attach-popover");
-  
+
   if (attachMenu && attachPopover && fileInput) {
     attachMenu.addEventListener("click", (e) => {
       e.stopPropagation();
       attachPopover.classList.toggle("hidden");
     });
-    
+
     document.addEventListener("click", () => {
       attachPopover.classList.add("hidden");
     });
-    
+
     attachPopover.querySelectorAll(".attach-item").forEach(item => {
       item.addEventListener("click", () => {
         const type = item.dataset.type;
@@ -6674,24 +6869,24 @@ function initMessagerieEventListeners() {
         else if (type === "video") fileInput.accept = "video/*";
         else if (type === "audio") fileInput.accept = "audio/*";
         else fileInput.removeAttribute("accept");
-        
+
         fileInput.click();
         attachPopover.classList.add("hidden");
       });
     });
   }
-  
+
   // Nom du fichier et validation d'envoi
   const sendBtn = document.getElementById("btn-messagerie-send");
   const msgText = document.getElementById("messagerie-texte");
   const fileLabel = document.getElementById("messagerie-piece-jointe-nom");
-  
+
   function updateSendButtonState() {
     const hasText = msgText.value.trim().length > 0;
     const hasFile = fileInput.files && fileInput.files.length > 0;
     if (sendBtn) sendBtn.disabled = !(hasText || hasFile);
   }
-  
+
   if (msgText) msgText.addEventListener("input", updateSendButtonState);
   if (fileInput) {
     fileInput.addEventListener("change", (e) => {
@@ -6702,7 +6897,7 @@ function initMessagerieEventListeners() {
       updateSendButtonState();
     });
   }
-  
+
   // Emoji Picker
   const emojiBtn = document.getElementById("btn-emoji-picker");
   if (emojiBtn && msgText) {
@@ -6733,13 +6928,13 @@ function initMessagerieEventListeners() {
         popover.classList.toggle("hidden");
       }
     });
-    
+
     document.addEventListener("click", () => {
       const pop = document.getElementById("emoji-popover");
       if (pop) pop.classList.add("hidden");
     });
   }
-  
+
   // Annulation réponse (citation)
   const btnCloseReply = document.getElementById("btn-close-reply-preview");
   if (btnCloseReply) {
@@ -6748,7 +6943,7 @@ function initMessagerieEventListeners() {
       document.getElementById("reply-preview-bar").classList.add("hidden");
     });
   }
-  
+
   // Envoi Formulaire
   const msgForm = document.getElementById("messagerie-form");
   if (msgForm) {
@@ -6756,9 +6951,9 @@ function initMessagerieEventListeners() {
       e.preventDefault();
       const texte = msgText.value.trim();
       if (!texte && !piecJointeSelectionnee) return;
-      
+
       const statusEl = document.getElementById("btn-messagerie-send");
-      
+
       try {
         if (activeEditMessageId) {
           // Mode modification
@@ -6775,26 +6970,26 @@ function initMessagerieEventListeners() {
           if (IDENTITE.type === "super" && messagerieChoraleActive) {
             formData.append("chorale_id", messagerieChoraleActive);
           }
-          
+
           await avecChargementSubmit(statusEl, () => fetch("/messages", { method: "POST", body: formData }));
           activeReplyMessageId = null;
           document.getElementById("reply-preview-bar").classList.add("hidden");
         }
-        
+
         msgText.value = "";
         piecJointeSelectionnee = null;
         if (fileInput) fileInput.value = "";
         if (fileLabel) fileLabel.textContent = "";
         updateSendButtonState();
-        
+
         await chargerFilMessagerie();
         if (IDENTITE.type === "super") await chargerInboxSuperAdmin();
-      } catch(err) {
+      } catch (err) {
         alert("Erreur lors de l'action : " + err.message);
       }
     });
   }
-  
+
   // Recherche et filtres sidebar
   const searchInput = document.getElementById("messagerie-search");
   if (searchInput) {
@@ -6802,7 +6997,7 @@ function initMessagerieEventListeners() {
       if (IDENTITE.type === "super") chargerSidebarMessagerie(globalThreads);
     });
   }
-  
+
   const filtersContainer = document.getElementById("messagerie-filters");
   if (filtersContainer) {
     filtersContainer.querySelectorAll(".filter-tab").forEach(tab => {
@@ -6813,7 +7008,7 @@ function initMessagerieEventListeners() {
       });
     });
   }
-  
+
   // Toggle info panel
   const btnToggleInfo = document.getElementById("btn-toggle-info-panel");
   const infoPanel = document.getElementById("messagerie-info-panel");
@@ -6821,7 +7016,7 @@ function initMessagerieEventListeners() {
     btnToggleInfo.addEventListener("click", () => {
       infoPanel.classList.toggle("hidden");
     });
-    
+
     const btnCloseInfo = document.getElementById("btn-close-info-panel");
     if (btnCloseInfo) {
       btnCloseInfo.addEventListener("click", () => {
@@ -6844,14 +7039,14 @@ function initMessagerieEventListeners() {
 function chargerSidebarMessagerie(threads) {
   const container = document.getElementById("conversations-list");
   if (!container) return;
-  
+
   const searchVal = document.getElementById("messagerie-search").value.toLowerCase();
   const activeFilterTab = document.querySelector(".filter-tab.active");
   const filterVal = activeFilterTab ? activeFilterTab.dataset.filter : "all";
   const archivedList = getArchivedThreads();
-  
+
   let filtered = threads.filter(t => t.chorale_nom.toLowerCase().includes(searchVal));
-  
+
   if (filterVal === "unread") {
     filtered = filtered.filter(t => t.non_lus > 0);
   } else if (filterVal === "archived") {
@@ -6859,24 +7054,24 @@ function chargerSidebarMessagerie(threads) {
   } else {
     filtered = filtered.filter(t => !archivedList.includes(t.chorale_id));
   }
-  
+
   if (!filtered.length) {
     container.innerHTML = `<p class="hint" style="text-align:center;padding:20px;">Aucune conversation.</p>`;
     return;
   }
-  
+
   container.innerHTML = filtered.map(t => {
     const activeClass = t.chorale_id === messagerieChoraleActive ? "active" : "";
     const unreadBadge = t.non_lus > 0 ? `<span class="unread-badge">${t.non_lus}</span>` : "";
-    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T")+"Z").getTime() < 3600000) : false;
-    
+    const isOnline = t.dernier_message ? (Date.now() - new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").getTime() < 10000000) : false;
+
     let lastMsgPreview = "Aucun message";
     let lastMsgTime = "";
     if (t.dernier_message) {
       lastMsgPreview = t.dernier_message.texte || "Fichier joint";
-      lastMsgTime = new Date(t.dernier_message.created_at.replace(" ", "T")+"Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
+      lastMsgTime = new Date(t.dernier_message.created_at.replace(" ", "T") + "Z").toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" });
     }
-    
+
     return `
       <div class="conversation-item ${activeClass}" data-id="${t.chorale_id}" onclick="selectConversation(${t.chorale_id}, '${escapeHtml(t.chorale_nom)}')">
         <div class="conversation-avatar">
@@ -6899,7 +7094,7 @@ function chargerSidebarMessagerie(threads) {
 
 async function demarrerMessagerie() {
   initMessagerieEventListeners();
-  
+
   if (IDENTITE.type === "super") {
     // Admin : Affiche recherche + filtres
     document.getElementById("messagerie-search-wrapper").style.display = "flex";
@@ -6909,7 +7104,7 @@ async function demarrerMessagerie() {
     // Chorale : Masque recherche + filtres
     document.getElementById("messagerie-search-wrapper").style.display = "none";
     document.getElementById("messagerie-filters").style.display = "none";
-    
+
     // Rôle Chorale : Une seule conversation avec l'Administrateur
     const container = document.getElementById("conversations-list");
     if (container) {
@@ -6930,7 +7125,7 @@ async function demarrerMessagerie() {
         </div>`;
     }
   }
-  
+
   await chargerFilMessagerie();
   arreterMessagerie();
   messagerieIntervalle = setInterval(async () => {
@@ -6954,20 +7149,20 @@ document.getElementById("admin-chorale-form").addEventListener("submit", async (
   const nom = document.getElementById("admin-chorale-nom").value.trim();
   const username = document.getElementById("admin-chorale-username").value.trim();
   const successContainer = document.getElementById("admin-chorale-success-container");
-  
+
   statusEl.textContent = "Création de la chorale en cours…";
   successContainer.classList.add("hidden");
-  
+
   try {
     const res = await avecChargementSubmit(e.target, () => api("/chorales", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ nom, username }),
     }));
-    
+
     statusEl.textContent = "";
     document.getElementById("admin-chorale-form").reset();
-    
+
     // Render Success Card
     successContainer.innerHTML = `
       <div class="settings-card admin-card-success" style="padding: 20px; border-radius: 16px; display: flex; align-items: center; justify-content: space-between; gap: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 24px;">
@@ -6989,7 +7184,7 @@ document.getElementById("admin-chorale-form").addEventListener("submit", async (
       </div>
     `;
     successContainer.classList.remove("hidden");
-    
+
     // Bind reset password click
     document.getElementById("btn-reset-pw-success").addEventListener("click", async (btnEvent) => {
       const id = Number(btnEvent.currentTarget.dataset.id);
@@ -7097,23 +7292,23 @@ function updateHeaderAndProfileAvatar() {
   const badge = document.getElementById("identite-badge");
   const headerAvatar = document.getElementById("header-user-avatar");
   const profileAvatar = document.getElementById("profil-avatar");
-  
+
   if (!IDENTITE.authenticated) return;
-  
+
   // Set badge name
   let displayName = IDENTITE.type === "super" ? "Super-admin" : IDENTITE.nom;
-  
+
   // Check if there are saved extra info for nom_complet
   const extraInfos = JSON.parse(localStorage.getItem(`profil_extra_${IDENTITE.username}`) || "{}");
   if (extraInfos.nom_complet) {
     displayName = extraInfos.nom_complet;
   }
-  
+
   if (badge) badge.textContent = displayName;
-  
+
   // Initials
   const initials = (displayName || "?").charAt(0).toUpperCase();
-  
+
   // Avatar image
   const storedAvatar = localStorage.getItem(`profil_avatar_${IDENTITE.username}`);
   if (storedAvatar) {
@@ -7129,7 +7324,7 @@ function updateHeaderAndProfileAvatar() {
       profileAvatar.innerHTML = "";
       profileAvatar.textContent = initials;
     }
-    
+
     // Fallback to chorale logo if active
     if (IDENTITE.type === "chorale") {
       api("/parametres").then(params => {
@@ -7138,7 +7333,7 @@ function updateHeaderAndProfileAvatar() {
           if (headerAvatar) headerAvatar.innerHTML = imgHtml;
           if (profileAvatar) profileAvatar.innerHTML = imgHtml;
         }
-      }).catch(err => {});
+      }).catch(err => { });
     }
   }
 }
@@ -7146,13 +7341,13 @@ function updateHeaderAndProfileAvatar() {
 function ouvrirCardActionsSheet(id, row) {
   const sheet = document.getElementById("bottom-sheet-card-actions");
   if (!sheet) return;
-  
+
   const state = momentsState[id] || { type: "aucun" };
   const isSpecial = id.startsWith("special-");
   const label = isSpecial ? (state.label || "Chant spécial") : (LABELS_MOMENTS[id] || id);
-  
+
   document.getElementById("card-actions-sheet-title").textContent = `Actions : ${label}`;
-  
+
   // Show/Hide preview action
   const actionEye = document.getElementById("sheet-action-eye");
   if (state.type === "chant" && state.chant_id) {
@@ -7166,28 +7361,28 @@ function ouvrirCardActionsSheet(id, row) {
   const eyeBtn = document.getElementById("sheet-action-eye");
   const pencilBtn = document.getElementById("sheet-action-pencil");
   const trashBtn = document.getElementById("sheet-action-trash");
-  
+
   const replaceEl = (el) => {
     const clone = el.cloneNode(true);
     el.parentNode.replaceChild(clone, el);
     return clone;
   };
-  
+
   const cleanBook = replaceEl(bookBtn);
   const cleanEye = replaceEl(eyeBtn);
   const cleanPencil = replaceEl(pencilBtn);
   const cleanTrash = replaceEl(trashBtn);
-  
+
   cleanBook.addEventListener("click", () => {
     sheet.classList.add("hidden");
     ouvrirPicker(id);
   });
-  
+
   cleanEye.addEventListener("click", () => {
     sheet.classList.add("hidden");
     if (state.chant_id) ouvrirDetailsChant(state.chant_id, false);
   });
-  
+
   cleanPencil.addEventListener("click", () => {
     sheet.classList.add("hidden");
     if (state.type === "chant" && state.chant_id) {
@@ -7197,7 +7392,7 @@ function ouvrirCardActionsSheet(id, row) {
       if (editPanel) editPanel.classList.remove("collapsed");
     }
   });
-  
+
   cleanTrash.addEventListener("click", () => {
     sheet.classList.add("hidden");
     if (isSpecial) {
@@ -7213,7 +7408,7 @@ function ouvrirCardActionsSheet(id, row) {
       regenererApercuSiPossible();
     }
   });
-  
+
   sheet.classList.remove("hidden");
 }
 
@@ -7237,11 +7432,11 @@ function initMobileLayout() {
     btnExtras.addEventListener("click", () => {
       sheetExtras.classList.remove("hidden");
     });
-    
+
     const closeExtras = () => sheetExtras.classList.add("hidden");
     sheetExtras.querySelector(".bottom-sheet-backdrop").addEventListener("click", closeExtras);
     sheetExtras.querySelector(".btn-close-extras").addEventListener("click", closeExtras);
-    
+
     sheetExtras.querySelectorAll(".extra-menu-item[data-target-view]").forEach(btn => {
       btn.addEventListener("click", () => {
         const view = btn.getAttribute("data-target-view");
@@ -7295,7 +7490,7 @@ function initMobileLayout() {
       if (refreshBtn) refreshBtn.click();
     });
   }
-  
+
   const btnClosePv = document.getElementById("btn-close-mobile-preview");
   if (btnClosePv && pvCol) {
     btnClosePv.addEventListener("click", () => {
