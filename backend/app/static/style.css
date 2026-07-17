@@ -5255,6 +5255,16 @@ input.special-label:focus {
   #btn-close-chat-mobile {
     display: flex !important;
   }
+
+  /* Dangerous zone input & button confirmation full width on mobile */
+  .inline-confirm-group {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .inline-confirm-group input,
+  .inline-confirm-group button {
+    width: 100%;
+  }
 }
 
 /* Bouton spécial retour mobile chat */
