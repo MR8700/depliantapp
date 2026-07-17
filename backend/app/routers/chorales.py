@@ -63,7 +63,8 @@ def reset_password(
 
 class PlanificationSuppression(BaseModel):
     raison: str
-    delai_jours: int
+    delai_jours: Optional[int] = None
+    date_butoir: Optional[str] = None
 
 
 class AnnulationSuppression(BaseModel):
@@ -80,7 +81,7 @@ def planifier_suppression(
 ):
     if not auth.get_chorale(chorale_id):
         raise HTTPException(status_code=404, detail="Chorale introuvable")
-    auth.planifier_suppression_chorale(chorale_id, payload.delai_jours, payload.raison)
+    auth.planifier_suppression_chorale(chorale_id, payload.delai_jours, payload.raison, payload.date_butoir)
     return {"message": "Suppression planifiée"}
 
 

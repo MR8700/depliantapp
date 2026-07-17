@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
 <title>DepliantApp</title>
-<link rel="stylesheet" href="/style.css?v=22">
+<link rel="stylesheet" href="/style.css?v=23">
 <link rel="manifest" href="/manifest.json">
 <meta name="theme-color" content="#1a3c6e">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -2223,7 +2223,13 @@
           <option value="7">7 jours</option>
           <option value="15" selected>15 jours</option>
           <option value="30">30 jours</option>
+          <option value="custom">Choisir une date sur le calendrier...</option>
         </select>
+      </div>
+
+      <div id="planifier-suppr-date-custom-group" class="form-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-date-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Date de suppression définitive</label>
+        <input type="date" id="planifier-suppr-date-custom" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
       </div>
 
       <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #dc2626; color: white; cursor: pointer; margin-top: 8px;">
@@ -2398,6 +2404,6 @@
 
 <!-- Import workspace rendered inline in view-importer -->
 
-<script src="/app.js?v=22"></script>
+<script src="/app.js?v=23"></script>
 </body>
 </html>

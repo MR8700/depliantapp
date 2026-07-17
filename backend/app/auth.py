@@ -285,9 +285,29 @@ def verify_session_token(token: str) -> Optional[Identite]:
     return Identite(type=type_compte, compte_id=compte_id, username=username)
 
 
-def planifier_suppression_chorale(chorale_id: int, delai_jours: int, raison: str) -> None:
+def planifier_suppression_chorale(chorale_id: int, delai_jours: Optional[int], raison: str, date_butoir: Optional[str] = None) -> None:
     from datetime import datetime, timezone, timedelta
-    date_butoir = (datetime.now(timezone.utc) + timedelta(days=delai_jours)).isoformat()
+    
+    if date_butoir:
+        if len(date_butoir) == 10:  # YYYY-MM-DD
+            try:
+                date_butoir_dt = datetime.strptime(date_butoir, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+                # Set to end of day to give full time
+                date_butoir_dt = date_butoir_dt.replace(hour=23, minute=59, second=59)
+                date_butoir = date_butoir_dt.isoformat()
+            except Exception:
+                pass
+        try:
+            target_dt = datetime.fromisoformat(date_butoir.replace("Z", "+00:00"))
+            now_dt = datetime.now(timezone.utc)
+            diff = target_dt - now_dt
+            delai_jours = max(1, diff.days)
+        except Exception:
+            delai_jours = delai_jours or 15
+    else:
+        delai_jours = delai_jours or 15
+        date_butoir = (datetime.now(timezone.utc) + timedelta(days=delai_jours)).isoformat()
+
     horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(

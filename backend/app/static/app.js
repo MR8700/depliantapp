@@ -3917,53 +3917,55 @@ async function actualiserEditeur() {
   }
 
   // Re-bind listeners for table rows
-  tableBody.querySelectorAll("tr").forEach((row) => {
-    const id = Number(row.dataset.id);
-    const chant = chants.find(c => c.id === id);
+  if (filtered.length > 0) {
+    tableBody.querySelectorAll("tr").forEach((row) => {
+      const id = Number(row.dataset.id);
+      const chant = chants.find(c => c.id === id);
 
-    // Row Click to Open details modal
-    row.querySelector(".chant-click-target").addEventListener("click", () => {
-      ouvrirDetailsChant(id);
-    });
+      // Row Click to Open details modal
+      row.querySelector(".chant-click-target").addEventListener("click", () => {
+        ouvrirDetailsChant(id);
+      });
 
-    // Checkbox selector
-    row.querySelector(".chant-checkbox").addEventListener("change", (e) => {
-      if (e.target.checked) selectionEditeur.add(id); else selectionEditeur.delete(id);
-      majBulkBar();
-      majSelectAllEtat();
-    });
+      // Checkbox selector
+      row.querySelector(".chant-checkbox").addEventListener("change", (e) => {
+        if (e.target.checked) selectionEditeur.add(id); else selectionEditeur.delete(id);
+        majBulkBar();
+        majSelectAllEtat();
+      });
 
-    // Action Modifier
-    row.querySelector(".btn-edit-song").addEventListener("click", () => {
-      ouvrirEditeurChant(id);
-    });
+      // Action Modifier
+      row.querySelector(".btn-edit-song").addEventListener("click", () => {
+        ouvrirEditeurChant(id);
+      });
 
-    // Action Supprimer
-    row.querySelector(".btn-delete-song").addEventListener("click", async (e) => {
-      if (IDENTITE.type === "super") {
-        if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
-        await avecChargement(e.currentTarget, async () => {
-          await api(`/chants/${id}`, { method: "DELETE" });
-        });
-      } else {
-        const raison = demanderMotifSuppression();
-        if (!raison) return;
-        await avecChargement(e.currentTarget, async () => {
-          await api("/moderation/demandes", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ type_cible: "chant", cible_id: id, raison: raison }),
+      // Action Supprimer
+      row.querySelector(".btn-delete-song").addEventListener("click", async (e) => {
+        if (IDENTITE.type === "super") {
+          if (!confirm(`Supprimer ce chant "${chant.titre}" ?`)) return;
+          await avecChargement(e.currentTarget, async () => {
+            await api(`/chants/${id}`, { method: "DELETE" });
           });
-        });
-      }
-      await actualiserEditeur();
-    });
+        } else {
+          const raison = demanderMotifSuppression();
+          if (!raison) return;
+          await avecChargement(e.currentTarget, async () => {
+            await api("/moderation/demandes", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ type_cible: "chant", cible_id: id, raison: raison }),
+            });
+          });
+        }
+        await actualiserEditeur();
+      });
 
-    // Action Details
-    row.querySelector(".btn-details-song").addEventListener("click", () => {
-      ouvrirImportDetails(chant);
+      // Action Details
+      row.querySelector(".btn-details-song").addEventListener("click", () => {
+        ouvrirImportDetails(chant);
+      });
     });
-  });
+  }
 
   majSelectAllEtat();
 }
@@ -6061,6 +6063,9 @@ async function actualiserAdminChorales() {
         document.getElementById("planifier-suppr-raison-select").value = "Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.";
         document.querySelector(".id-planifier-suppr-custom-raison-group").classList.add("hidden");
         document.getElementById("planifier-suppr-raison-custom").value = "";
+        document.getElementById("planifier-suppr-delai").value = "15";
+        document.getElementById("planifier-suppr-date-custom-group").classList.add("hidden");
+        document.getElementById("planifier-suppr-date-custom").value = "";
 
         ouvrirModale("admin-planifier-suppression-modal");
       });
@@ -6127,6 +6132,24 @@ function initChoralesDeletionLifecycle() {
   setupReasonSelectToggler("annuler-suppr-raison-select", ".id-annuler-suppr-custom-raison-group");
   setupReasonSelectToggler("revision-raison-select", ".id-revision-custom-raison-group");
 
+  const delaySelect = document.getElementById("planifier-suppr-delai");
+  const customDateGroup = document.getElementById("planifier-suppr-date-custom-group");
+  const customDateInput = document.getElementById("planifier-suppr-date-custom");
+  if (delaySelect && customDateGroup) {
+    delaySelect.addEventListener("change", () => {
+      if (delaySelect.value === "custom") {
+        customDateGroup.classList.remove("hidden");
+        const targetDate = new Date();
+        targetDate.setDate(targetDate.getDate() + 15);
+        customDateInput.value = targetDate.toISOString().split("T")[0];
+        customDateInput.min = new Date().toISOString().split("T")[0];
+      } else {
+        customDateGroup.classList.add("hidden");
+        customDateInput.value = "";
+      }
+    });
+  }
+
   const planForm = document.getElementById("admin-planifier-suppr-form");
   if (planForm) {
     planForm.addEventListener("submit", async (e) => {
@@ -6135,18 +6158,30 @@ function initChoralesDeletionLifecycle() {
       const selectVal = document.getElementById("planifier-suppr-raison-select").value;
       const customVal = document.getElementById("planifier-suppr-raison-custom").value.trim();
       const raison = selectVal === "autre" ? customVal : selectVal;
-      const delai = Number(document.getElementById("planifier-suppr-delai").value);
 
       if (!raison) {
         alert("Veuillez renseigner une raison.");
         return;
       }
 
+      const delaiVal = document.getElementById("planifier-suppr-delai").value;
+      let payload = { raison: raison };
+      if (delaiVal === "custom") {
+        const dateVal = document.getElementById("planifier-suppr-date-custom").value;
+        if (!dateVal) {
+          alert("Veuillez sélectionner une date sur le calendrier.");
+          return;
+        }
+        payload.date_butoir = dateVal;
+      } else {
+        payload.delai_jours = Number(delaiVal);
+      }
+
       try {
         await avecChargementSubmit(e.target, () => api(`/chorales/${id}/planifier-suppression`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ raison: raison, delai_jours: delai }),
+          body: JSON.stringify(payload),
         }));
         fermerModale("admin-planifier-suppression-modal");
         await actualiserAdminChorales();
