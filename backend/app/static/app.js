@@ -8367,23 +8367,20 @@ async function init() {
     initApropos();
     initChoralesDeletionLifecycle();
 
-    const promises = [
-      actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),
-      actualiserListeBibliotheque().catch(e => console.error("Library error:", e)),
-      api("/parametres").catch(e => {
-        console.error("Params error:", e);
-        return { chorale: "DepliantApp" };
-      })
-    ];
-
+    // Lancer les chargements de données en arrière-plan (non-bloquants pour le splash screen)
+    actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e));
+    actualiserListeBibliotheque().catch(e => console.error("Library error:", e));
     if (IDENTITE.type === "super") {
-      promises.push(actualiserAdmin().catch(e => console.error("Admin error:", e)));
+      actualiserAdmin().catch(e => console.error("Admin error:", e));
     } else {
-      promises.push(actualiserEditeur().catch(e => console.error("Editor error:", e)));
+      actualiserEditeur().catch(e => console.error("Editor error:", e));
     }
 
-    const results = await Promise.all(promises);
-    const params = results[2];
+    // Seul le paramètre du titre est bloquant pour l'en-tête de la page principale
+    const params = await api("/parametres").catch(e => {
+      console.error("Params error:", e);
+      return { chorale: "DepliantApp" };
+    });
     document.getElementById("app-title").textContent = params.chorale || "DepliantApp";
 
     if (IDENTITE.type === "super" && !window.location.hash) {
