@@ -24,6 +24,15 @@ def write_parametres(data: dict, identite: auth.Identite = Depends(identite_cour
     return res
 
 
+@router.get("/global")
+def read_global_parametres(identite: auth.Identite = Depends(identite_courante)):
+    """Retourne la configuration globale de l'application (chorale_id = 0),
+    notamment pour afficher les informations de GO Technologie sur la page À propos,
+    quel que soit l'utilisateur connecté."""
+    return config.get_config(0)
+
+
+
 # --- Pool partagé de médias (logos, bannières) : voir config.py -----------
 
 @router.get("/medias")

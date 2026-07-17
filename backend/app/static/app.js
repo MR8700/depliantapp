@@ -415,6 +415,7 @@ function afficherVueDirect(nomVue) {
   if (nomVue === "depliants") actualiserDepliants();
   if (nomVue === "admin") actualiserAdmin();
   if (nomVue === "statistiques") actualiserStatistiques();
+  if (nomVue === "apropos") chargerApropos();
   if (nomVue === "messagerie") demarrerMessagerie(); else arreterMessagerie();
   if (nomVue === "composer") {
     if (!listChantsCache || listChantsCache.length === 0) {
@@ -7758,6 +7759,334 @@ function initFloatingToolbox() {
   }
 }
 
+async function chargerApropos() {
+  try {
+    const settings = await api("/parametres/global");
+
+    document.getElementById("apropos-hero-slogan").textContent = settings.got_slogan || "";
+    document.getElementById("apropos-entreprise-title").textContent = settings.got_nom_entreprise || "GO Technologie (GOT)";
+
+    const presText = settings.got_presentation || "";
+    const presEl = document.getElementById("apropos-entreprise-text");
+    presEl.innerHTML = presText.split("\n\n").map(p => `<p>${escapeHtml(p)}</p>`).join("");
+
+    document.getElementById("apropos-mission-text").textContent = settings.got_mission || "";
+    document.getElementById("apropos-vision-text").textContent = settings.got_vision || "";
+
+    let valeurs = [];
+    try { valeurs = JSON.parse(settings.got_valeurs || "[]"); } catch (e) { console.error(e); }
+    const valeursEl = document.getElementById("apropos-valeurs-grid");
+    valeursEl.innerHTML = valeurs.map(v => `
+      <div class="modern-card hover-glow">
+        <div class="card-icon">${escapeHtml(v.icon || "□")}</div>
+        <h3>${escapeHtml(v.title || "")}</h3>
+        <p>${escapeHtml(v.desc || "")}</p>
+      </div>
+    `).join("");
+
+    document.getElementById("apropos-app-desc").textContent = settings.got_app_description || "";
+
+    let features = [];
+    try { features = JSON.parse(settings.got_app_features || "[]"); } catch (e) { console.error(e); }
+    const featuresEl = document.getElementById("apropos-app-features");
+    featuresEl.innerHTML = features.map(f => `
+      <div class="modern-card hover-glow">
+        <div class="card-icon">${escapeHtml(f.icon || "⚙️")}</div>
+        <h3>${escapeHtml(f.title || "")}</h3>
+        <p>${escapeHtml(f.desc || "")}</p>
+      </div>
+    `).join("");
+
+    let whyList = [];
+    try { whyList = JSON.parse(settings.got_why_timeline || "[]"); } catch (e) { console.error(e); }
+    const timelineEl = document.getElementById("apropos-why-timeline");
+    timelineEl.innerHTML = whyList.map(item => `
+      <div class="timeline-item">
+        <div class="timeline-marker"></div>
+        <div class="timeline-card">
+          <h4>${escapeHtml(item.title || "")}</h4>
+          <p>${escapeHtml(item.desc || "")}</p>
+        </div>
+      </div>
+    `).join("");
+
+    let engagements = [];
+    try { engagements = JSON.parse(settings.got_engagements || "[]"); } catch (e) { console.error(e); }
+    const engagementsEl = document.getElementById("apropos-engagements-grid");
+    engagementsEl.innerHTML = engagements.map(eng => `
+      <div class="modern-card hover-glow">
+        <div class="card-icon">${escapeHtml(eng.icon || "✨")}</div>
+        <h3>${escapeHtml(eng.title || "")}</h3>
+        <p>${escapeHtml(eng.desc || "")}</p>
+      </div>
+    `).join("");
+
+    document.getElementById("apropos-confidentialite-text").textContent = settings.got_politique_confidentialite || "";
+
+    let securite = [];
+    try { securite = JSON.parse(settings.got_securite || "[]"); } catch (e) { console.error(e); }
+    const securiteEl = document.getElementById("apropos-securite-grid");
+    securiteEl.innerHTML = securite.map(sec => `
+      <div class="modern-card hover-glow" style="padding: 16px;">
+        <h4 style="margin:0 0 6px 0; color:#1f4a7c; font-size:0.95rem; font-weight:700; display:flex; align-items:center; gap:8px;">
+          <span>${escapeHtml(sec.icon || "🔒")}</span> ${escapeHtml(sec.title || "")}
+        </h4>
+        <p style="margin:0; font-size:0.8rem; color:#64748b; line-height:1.4;">${escapeHtml(sec.desc || "")}</p>
+      </div>
+    `).join("");
+
+    let utilisation = [];
+    try { utilisation = JSON.parse(settings.got_utilisation_donnees || "[]"); } catch (e) { console.error(e); }
+    const utilisationEl = document.getElementById("apropos-donnees-list");
+    utilisationEl.innerHTML = utilisation.map(item => `
+      <li>${escapeHtml(item)}</li>
+    `).join("");
+
+    let droits = [];
+    try { droits = JSON.parse(settings.got_droits_utilisateurs || "[]"); } catch (e) { console.error(e); }
+    const droitsEl = document.getElementById("apropos-droits-grid");
+    droitsEl.innerHTML = droits.map(d => `
+      <div class="modern-card hover-glow" style="padding: 16px; border-left: 4px solid #10b981;">
+        <h4 style="margin:0 0 6px 0; color:#065f46; font-size:0.95rem; font-weight:700; display:flex; align-items:center; gap:8px;">
+          <span>${escapeHtml(d.icon || "✓")}</span> ${escapeHtml(d.title || "")}
+        </h4>
+        <p style="margin:0; font-size:0.8rem; color:#475569; line-height:1.4;">${escapeHtml(d.desc || "")}</p>
+      </div>
+    `).join("");
+
+    document.getElementById("apropos-contact-entreprise").textContent = settings.got_nom_entreprise || "GO Technologie (GOT)";
+    document.getElementById("apropos-contact-email").textContent = settings.got_contact_email || "marerichard10@gmail.com";
+    document.getElementById("apropos-contact-adresse").textContent = settings.got_contact_adresse || "Burkina Faso";
+
+    const telEl = document.getElementById("apropos-contact-telephone");
+    const telRow = document.getElementById("apropos-contact-tel-row");
+    if (settings.got_contact_telephone) {
+      telEl.textContent = settings.got_contact_telephone;
+      telRow.style.display = "";
+    } else {
+      telRow.style.display = "none";
+    }
+
+    const links = [
+      { id: "apropos-social-web", val: settings.got_contact_siteweb },
+      { id: "apropos-social-facebook", val: settings.got_contact_facebook },
+      { id: "apropos-social-linkedin", val: settings.got_contact_linkedin },
+      { id: "apropos-social-github", val: settings.got_contact_github },
+      { id: "apropos-social-whatsapp", val: settings.got_contact_whatsapp }
+    ];
+
+    let visibleSocials = 0;
+    links.forEach(link => {
+      const el = document.getElementById(link.id);
+      if (el) {
+        if (link.val) {
+          el.href = link.val;
+          el.style.display = "";
+          visibleSocials++;
+        } else {
+          el.style.display = "none";
+        }
+      }
+    });
+
+    const socialContainer = document.getElementById("apropos-social-container");
+    if (socialContainer) {
+      socialContainer.style.display = visibleSocials > 0 ? "" : "none";
+    }
+
+    const sigText = settings.got_signature || "";
+    const sigEl = document.getElementById("apropos-signature-text");
+    sigEl.innerHTML = sigText.split("\n\n").map(p => `<p style="margin: 0 0 12px 0;">${escapeHtml(p)}</p>`).join("");
+
+    document.getElementById("apropos-footer-year").textContent = new Date().getFullYear();
+
+  } catch (err) {
+    console.error("Erreur À propos :", err);
+  }
+}
+
+async function chargerAproposAdmin() {
+  try {
+    const settings = await api("/parametres/global");
+
+    document.getElementById("adm-got-nom").value = settings.got_nom_entreprise || "";
+    document.getElementById("adm-got-logo").value = settings.got_logo || "";
+    document.getElementById("adm-got-slogan").value = settings.got_slogan || "";
+    document.getElementById("adm-got-presentation").value = settings.got_presentation || "";
+    document.getElementById("adm-got-mission").value = settings.got_mission || "";
+    document.getElementById("adm-got-vision").value = settings.got_vision || "";
+
+    document.getElementById("adm-got-valeurs").value = settings.got_valeurs || "";
+    document.getElementById("adm-got-features").value = settings.got_app_features || "";
+    document.getElementById("adm-got-why").value = settings.got_why_timeline || "";
+    document.getElementById("adm-got-engagements").value = settings.got_engagements || "";
+    document.getElementById("adm-got-app-description").value = settings.got_app_description || "";
+    document.getElementById("adm-got-confidentialite").value = settings.got_politique_confidentialite || "";
+    document.getElementById("adm-got-securite").value = settings.got_securite || "";
+    document.getElementById("adm-got-utilisation").value = settings.got_utilisation_donnees || "";
+    document.getElementById("adm-got-droits").value = settings.got_droits_utilisateurs || "";
+
+    document.getElementById("adm-got-email").value = settings.got_contact_email || "";
+    document.getElementById("adm-got-tel").value = settings.got_contact_telephone || "";
+    document.getElementById("adm-got-adresse").value = settings.got_contact_adresse || "";
+    document.getElementById("adm-got-siteweb").value = settings.got_contact_siteweb || "";
+    document.getElementById("adm-got-facebook").value = settings.got_contact_facebook || "";
+    document.getElementById("adm-got-linkedin").value = settings.got_contact_linkedin || "";
+    document.getElementById("adm-got-github").value = settings.got_contact_github || "";
+    document.getElementById("adm-got-whatsapp").value = settings.got_contact_whatsapp || "";
+    document.getElementById("adm-got-signature").value = settings.got_signature || "";
+
+  } catch (err) {
+    console.error("Erreur Admin À propos :", err);
+  }
+}
+
+function initApropos() {
+  const form = document.getElementById("admin-apropos-form");
+  if (form) {
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const statusEl = document.getElementById("admin-apropos-status");
+      statusEl.style.color = "#475569";
+      statusEl.textContent = "Enregistrement en cours…";
+
+      const jsonTextareas = [
+        { id: "adm-got-valeurs", label: "Valeurs" },
+        { id: "adm-got-features", label: "Fonctionnalités" },
+        { id: "adm-got-why", label: "Timeline" },
+        { id: "adm-got-engagements", label: "Engagements" },
+        { id: "adm-got-securite", label: "Sécurité" },
+        { id: "adm-got-utilisation", label: "Utilisation" },
+        { id: "adm-got-droits", label: "Droits" }
+      ];
+
+      for (const field of jsonTextareas) {
+        const el = document.getElementById(field.id);
+        const value = el.value.trim();
+        if (value) {
+          try {
+            JSON.parse(value);
+          } catch (err) {
+            statusEl.style.color = "#ef4444";
+            statusEl.textContent = `Erreur JSON dans "${field.label}" : ${err.message}`;
+            return;
+          }
+        }
+      }
+
+      const payload = {
+        got_nom_entreprise: document.getElementById("adm-got-nom").value.trim(),
+        got_logo: document.getElementById("adm-got-logo").value.trim(),
+        got_slogan: document.getElementById("adm-got-slogan").value.trim(),
+        got_presentation: document.getElementById("adm-got-presentation").value.trim(),
+        got_mission: document.getElementById("adm-got-mission").value.trim(),
+        got_vision: document.getElementById("adm-got-vision").value.trim(),
+        got_valeurs: document.getElementById("adm-got-valeurs").value.trim(),
+        got_app_features: document.getElementById("adm-got-features").value.trim(),
+        got_why_timeline: document.getElementById("adm-got-why").value.trim(),
+        got_engagements: document.getElementById("adm-got-engagements").value.trim(),
+        got_app_description: document.getElementById("adm-got-app-description").value.trim(),
+        got_politique_confidentialite: document.getElementById("adm-got-confidentialite").value.trim(),
+        got_securite: document.getElementById("adm-got-securite").value.trim(),
+        got_utilisation_donnees: document.getElementById("adm-got-utilisation").value.trim(),
+        got_droits_utilisateurs: document.getElementById("adm-got-droits").value.trim(),
+        got_contact_email: document.getElementById("adm-got-email").value.trim(),
+        got_contact_telephone: document.getElementById("adm-got-tel").value.trim(),
+        got_contact_adresse: document.getElementById("adm-got-adresse").value.trim(),
+        got_contact_siteweb: document.getElementById("adm-got-siteweb").value.trim(),
+        got_contact_facebook: document.getElementById("adm-got-facebook").value.trim(),
+        got_contact_linkedin: document.getElementById("adm-got-linkedin").value.trim(),
+        got_contact_github: document.getElementById("adm-got-github").value.trim(),
+        got_contact_whatsapp: document.getElementById("adm-got-whatsapp").value.trim(),
+        got_signature: document.getElementById("adm-got-signature").value.trim()
+      };
+
+      try {
+        await avecChargementSubmit(e.target, () => api("/parametres", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        }));
+
+        statusEl.style.color = "#10b981";
+        statusEl.textContent = "Configuration enregistrée !";
+        setTimeout(() => { statusEl.textContent = ""; }, 3000);
+      } catch (err) {
+        statusEl.style.color = "#ef4444";
+        statusEl.textContent = `Erreur : ${err.message}`;
+      }
+    });
+  }
+
+  const tabChorales = document.getElementById("tab-admin-chorales");
+  const tabApropos = document.getElementById("tab-admin-apropos");
+  const contentChorales = document.getElementById("admin-content-chorales");
+  const contentApropos = document.getElementById("admin-content-apropos");
+
+  if (tabChorales && tabApropos) {
+    tabChorales.addEventListener("click", () => {
+      tabChorales.classList.add("active");
+      tabApropos.classList.remove("active");
+      contentChorales.classList.remove("hidden");
+      contentApropos.classList.add("hidden");
+    });
+
+    tabApropos.addEventListener("click", () => {
+      tabApropos.classList.add("active");
+      tabChorales.classList.remove("active");
+      contentApropos.classList.remove("hidden");
+      contentChorales.classList.add("hidden");
+      chargerAproposAdmin();
+    });
+  }
+
+  const btnBackToTop = document.getElementById("btn-back-to-top");
+  const viewApropos = document.getElementById("view-apropos");
+  if (btnBackToTop && viewApropos) {
+    viewApropos.addEventListener("scroll", () => {
+      if (viewApropos.scrollTop > 300) {
+        btnBackToTop.classList.remove("hidden");
+      } else {
+        btnBackToTop.classList.add("hidden");
+      }
+    });
+
+    btnBackToTop.addEventListener("click", () => {
+      viewApropos.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  const stickyNav = document.querySelector(".apropos-sticky-nav");
+  const sections = document.querySelectorAll("#view-apropos .scroll-offset");
+  const navItems = document.querySelectorAll(".sticky-nav-item");
+  if (stickyNav && sections.length > 0 && navItems.length > 0) {
+    const observerOptions = {
+      root: viewApropos,
+      rootMargin: "-20% 0px -60% 0px",
+      threshold: 0
+    };
+
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (entry.isIntersecting) {
+          const id = entry.target.getAttribute("id");
+          navItems.forEach(item => {
+            const href = item.getAttribute("href");
+            if (href && href.endsWith("#" + id)) {
+              item.classList.add("active");
+              item.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+            } else {
+              item.classList.remove("active");
+            }
+          });
+        }
+      });
+    }, observerOptions);
+
+    sections.forEach(sec => observer.observe(sec));
+  }
+}
+
 // --- init ---
 async function init() {
   const debutChargement = Date.now();
@@ -7783,6 +8112,7 @@ async function init() {
     initComposer();
     document.getElementById("composer-result").innerHTML = indiceComposerHtml();
     initMobileLayout();
+    initApropos();
 
     const promises = [
       actualiserBadgeMessagerie().catch(e => console.error("Badge error:", e)),

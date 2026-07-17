@@ -56,6 +56,7 @@
   <button data-view="editeur" class="nav-btn">Éditeur</button>
   <button data-view="importer" class="nav-btn">Importer</button>
   <button data-view="reglages" class="nav-btn">Réglages</button>
+  <button data-view="apropos" class="nav-btn">À propos</button>
   <button data-view="messagerie" id="nav-messagerie" class="nav-btn">Messagerie <span id="badge-messagerie" class="badge-non-lus hidden"></span></button>
   <button data-view="statistiques" id="nav-statistiques" class="nav-btn hidden">Statistiques</button>
   <button data-view="admin" id="nav-admin" class="nav-btn hidden">Administration</button>
@@ -798,6 +799,304 @@
   </section>
 
   <!-- Réglages -->
+  <!-- À propos GOT -->
+  <section id="view-apropos" class="view">
+    <!-- Hero Section -->
+    <div class="apropos-hero">
+      <div class="hero-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+      </div>
+      <div class="hero-content">
+        <div class="hero-left">
+          <h1 id="apropos-hero-title">À propos</h1>
+          <p id="apropos-hero-slogan" class="hero-subtitle"></p>
+          <div class="hero-actions">
+            <a href="#/apropos#got-entreprise" class="btn-primary-hero">Découvrir l'entreprise</a>
+            <a href="#/apropos#got-contact" class="btn-secondary-hero">Nous contacter</a>
+          </div>
+        </div>
+        <div class="hero-right">
+          <!-- Inline modern SVG Logo for GOT -->
+          <div class="got-logo-wrapper">
+            <svg class="got-logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="got-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#3b82f6" />
+                  <stop offset="100%" stop-color="#1d4ed8" />
+                </linearGradient>
+                <filter id="got-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="2" dy="4" stdDeviation="3" flood-opacity="0.3"/>
+                </filter>
+              </defs>
+              <circle cx="50" cy="50" r="45" fill="none" stroke="url(#got-grad)" stroke-width="5" filter="url(#got-shadow)"/>
+              <path d="M35 30 H65 V42 H50 V58 H35 Z" fill="url(#got-grad)" />
+              <path d="M50 48 H65 V70 H50 Z" fill="url(#got-grad)" opacity="0.8" />
+              <circle cx="65" cy="48" r="4" fill="#60a5fa" />
+            </svg>
+            <div class="got-logo-text">GO Technologie</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Sticky Navbar -->
+    <div class="apropos-sticky-nav no-print">
+      <a href="#/apropos#got-entreprise" class="sticky-nav-item active">Entreprise</a>
+      <a href="#/apropos#got-mission" class="sticky-nav-item">Mission</a>
+      <a href="#/apropos#got-vision" class="sticky-nav-item">Vision</a>
+      <a href="#/apropos#got-valeurs" class="sticky-nav-item">Valeurs</a>
+      <a href="#/apropos#got-application" class="sticky-nav-item">Application</a>
+      <a href="#/apropos#got-why" class="sticky-nav-item">Pourquoi ?</a>
+      <a href="#/apropos#got-engagements" class="sticky-nav-item">Engagements</a>
+      <a href="#/apropos#got-confidentialite" class="sticky-nav-item">Confidentialité</a>
+      <a href="#/apropos#got-securite" class="sticky-nav-item">Sécurité</a>
+      <a href="#/apropos#got-donnees" class="sticky-nav-item">Données</a>
+      <a href="#/apropos#got-droits" class="sticky-nav-item">Vos droits</a>
+      <a href="#/apropos#got-contact" class="sticky-nav-item">Contact</a>
+    </div>
+
+    <!-- Main Content Container -->
+    <div class="apropos-container">
+      
+      <!-- Section: Notre entreprise -->
+      <section id="got-entreprise" class="apropos-section scroll-offset">
+        <div class="section-grid">
+          <div class="section-left">
+            <span class="section-tag">Qui sommes-nous ?</span>
+            <h2 id="apropos-entreprise-title">GO Technologie (GOT)</h2>
+            <div id="apropos-entreprise-text" class="section-paragraphs"></div>
+          </div>
+          <div class="section-right">
+            <!-- Modern Tech SVG Illustration -->
+            <svg class="tech-illustration" viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+              <rect x="20" y="20" width="160" height="110" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
+              <rect x="30" y="30" width="140" height="75" rx="6" fill="#1e293b"/>
+              <line x1="40" y1="45" x2="110" y2="45" stroke="#3b82f6" stroke-width="6" stroke-linecap="round"/>
+              <line x1="40" y1="60" x2="80" y2="60" stroke="#10b981" stroke-width="6" stroke-linecap="round"/>
+              <line x1="40" y1="75" x2="130" y2="75" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+              <line x1="40" y1="90" x2="100" y2="90" stroke="#64748b" stroke-width="4" stroke-linecap="round"/>
+              <rect x="120" y="45" width="40" height="20" rx="4" fill="#2563eb" opacity="0.3"/>
+              <circle cx="145" cy="55" r="8" fill="#3b82f6"/>
+              <path d="M70 130 H130 L140 145 H60 Z" fill="#cbd5e1"/>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Mission & Vision -->
+      <div class="section-two-cols">
+        <section id="got-mission" class="apropos-section scroll-offset">
+          <div class="modern-card hover-glow">
+            <div class="card-icon">🎯</div>
+            <h3>Notre mission</h3>
+            <p id="apropos-mission-text"></p>
+          </div>
+        </section>
+
+        <section id="got-vision" class="apropos-section scroll-offset">
+          <div class="modern-card hover-glow">
+            <div class="card-icon">🚀</div>
+            <h3>Notre vision</h3>
+            <p id="apropos-vision-text"></p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Section: Nos valeurs -->
+      <section id="got-valeurs" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Nos valeurs</h2>
+          <p>Les principes cardinaux qui animent chacun de nos projets au quotidien.</p>
+        </div>
+        <div id="apropos-valeurs-grid" class="valeurs-grid">
+          <!-- Dynamic Valeurs Cards -->
+        </div>
+      </section>
+
+      <!-- Section: À propos de l'application -->
+      <section id="got-application" class="apropos-section scroll-offset">
+        <div class="app-card">
+          <div class="app-card-header">
+            <span class="app-tag">L'application</span>
+            <h2>À propos de l'application</h2>
+            <p id="apropos-app-desc" class="app-lead-text"></p>
+          </div>
+          <div id="apropos-app-features" class="features-grid">
+            <!-- Dynamic Features Cards -->
+          </div>
+          <div class="app-card-footer">
+            <p>Notre objectif est de réduire le temps consacré à la mise en page afin que les équipes puissent se concentrer sur l'essentiel : la préparation de la célébration.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Pourquoi cette application ? (Timeline) -->
+      <section id="got-why" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Pourquoi cette application ?</h2>
+          <p>Le parcours menant de l'identification des frictions à l'aboutissement de notre solution automatique.</p>
+        </div>
+        <div id="apropos-why-timeline" class="timeline-container">
+          <!-- Dynamic Timeline Items -->
+        </div>
+      </section>
+
+      <!-- Section: Nos engagements -->
+      <section id="got-engagements" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Nos engagements</h2>
+          <p>Notre pacte de confiance et de rigueur technique envers notre communauté.</p>
+        </div>
+        <div id="apropos-engagements-grid" class="engagements-grid">
+          <!-- Dynamic Engagements -->
+        </div>
+      </section>
+
+      <!-- Section: Politique de confidentialité -->
+      <section id="got-confidentialite" class="apropos-section scroll-offset">
+        <div class="shield-card">
+          <div class="shield-icon-wrapper">
+            <span class="shield-icon">🛡️</span>
+          </div>
+          <div class="shield-content">
+            <h2>Politique de confidentialité</h2>
+            <p id="apropos-confidentialite-text"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Sécurité des données -->
+      <section id="got-securite" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Sécurité des données</h2>
+          <p>Des infrastructures et protocoles robustes garantissant la protection intégrale de vos informations.</p>
+        </div>
+        <div class="security-layout">
+          <div id="apropos-securite-grid" class="security-grid">
+            <!-- Dynamic Safety Cards -->
+          </div>
+          <div class="security-illustration-block">
+            <svg class="security-illustration" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="75" cy="75" r="70" fill="#f0f9ff" stroke="#e0f2fe" stroke-width="2"/>
+              <circle cx="75" cy="75" r="50" fill="#1e3a8a"/>
+              <path d="M75 45 C85 45 95 40 95 40 V75 C95 90 75 105 75 105 C75 105 55 90 55 75 V40 C55 40 65 45 75 45 Z" fill="#3b82f6"/>
+              <path d="M67 73 L73 79 L84 66" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <circle cx="35" cy="45" r="6" fill="#10b981"/>
+              <line x1="35" y1="45" x2="58" y2="58" stroke="#10b981" stroke-width="2" stroke-dasharray="2 2"/>
+              <circle cx="115" cy="105" r="6" fill="#10b981"/>
+              <line x1="92" y1="92" x2="115" y2="105" stroke="#10b981" stroke-width="2" stroke-dasharray="2 2"/>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Utilisation des données -->
+      <section id="got-donnees" class="apropos-section scroll-offset">
+        <div class="data-use-card">
+          <div class="data-use-header">
+            <h3>Comment nous utilisons vos données</h3>
+            <p>La transparence est au cœur de notre éthique. Vos données servent uniquement à assurer le bon fonctionnement de vos services :</p>
+          </div>
+          <ul id="apropos-donnees-list" class="data-use-list">
+            <!-- Dynamic Data Use Items -->
+          </ul>
+          <div class="data-use-footer">
+            <span class="highlight-badge">⚠️</span>
+            <p class="highlight-text">Nous ne collectons aucune donnée sans objectif légitime.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Vos droits -->
+      <section id="got-droits" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Vos droits concernant vos données</h2>
+          <p>Vous conservez la maîtrise et la propriété pleine et entière de toutes vos informations.</p>
+        </div>
+        <div id="apropos-droits-grid" class="droits-grid">
+          <!-- Dynamic Rights Items -->
+        </div>
+      </section>
+
+      <!-- Section: Nous contacter -->
+      <section id="got-contact" class="apropos-section scroll-offset">
+        <div class="contact-card-premium">
+          <div class="contact-header">
+            <span class="contact-tag">Contact</span>
+            <h2>Nous contacter</h2>
+            <p>Une question, un besoin d'assistance ou une proposition de projet ? Écrivez-nous ou retrouvez nos coordonnées officielles ci-dessous.</p>
+          </div>
+          <div class="contact-grid">
+            <div class="contact-info-block">
+              <div class="contact-item">
+                <span class="contact-icon">🏢</span>
+                <div class="contact-details">
+                  <span class="contact-label">Entreprise</span>
+                  <span id="apropos-contact-entreprise" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item">
+                <span class="contact-icon">📧</span>
+                <div class="contact-details">
+                  <span class="contact-label">Email</span>
+                  <span id="apropos-contact-email" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item" id="apropos-contact-tel-row">
+                <span class="contact-icon">📞</span>
+                <div class="contact-details">
+                  <span class="contact-label">Téléphone</span>
+                  <span id="apropos-contact-telephone" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item">
+                <span class="contact-icon">🌍</span>
+                <div class="contact-details">
+                  <span class="contact-label">Localisation</span>
+                  <span id="apropos-contact-adresse" class="contact-value"></span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="contact-social-block" id="apropos-social-container">
+              <span class="social-title">Retrouvez-nous en ligne :</span>
+              <div class="social-links-grid">
+                <a href="#" id="apropos-social-web" class="social-link-btn" target="_blank">🌐 Site web</a>
+                <a href="#" id="apropos-social-facebook" class="social-link-btn" target="_blank">📘 Facebook</a>
+                <a href="#" id="apropos-social-linkedin" class="social-link-btn" target="_blank">💼 LinkedIn</a>
+                <a href="#" id="apropos-social-github" class="social-link-btn" target="_blank">🐙 GitHub</a>
+                <a href="#" id="apropos-social-whatsapp" class="social-link-btn" target="_blank">💬 WhatsApp</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Signature Section -->
+      <section id="got-signature" class="signature-section no-print">
+        <div class="signature-quote-card">
+          <div class="quote-mark">“</div>
+          <blockquote id="apropos-signature-text"></blockquote>
+          <cite class="quote-author">L'équipe de GO Technologie</cite>
+        </div>
+      </section>
+
+      <!-- Section: Footer -->
+      <footer class="apropos-footer no-print">
+        <p>&copy; <span id="apropos-footer-year"></span> <strong>GO Technologie (GOT)</strong>. Tous droits réservés.</p>
+        <p class="footer-version">DepliantApp &bull; Conçu avec rigueur et passion.</p>
+      </footer>
+      
+    </div>
+  </section>
+
+  <!-- Back to Top Button -->
+  <button type="button" id="btn-back-to-top" class="btn-back-to-top no-print hidden" title="Retour en haut">
+    <span>▲</span>
+  </button>
+
   <section id="view-reglages" class="view">
     <div class="reglages-layout-tabs hidden-desktop">
       <button type="button" id="tab-reglages-form" class="layout-tab-btn active">Paramètres</button>
@@ -1091,16 +1390,22 @@
   </section>
 
   <section id="view-admin" class="view">
-    <div class="library-header" style="margin-bottom: 24px;">
+    <div class="library-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
-        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Administration &gt; Chorales</div>
-        <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Chorales</h1>
-        <p style="font-size: 0.85rem; color: #64748B; margin: 4px 0 0 0;">Gérez les chorales de la plateforme.</p>
+        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Administration</div>
+        <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Administration</h1>
+      </div>
+      <!-- Tab Controls for Admin Panel -->
+      <div class="admin-tabs no-print" style="display: flex; gap: 8px;">
+        <button type="button" id="tab-admin-chorales" class="admin-tab-btn active">👥 Chorales</button>
+        <button type="button" id="tab-admin-apropos" class="admin-tab-btn">⚙️ À propos (GOT)</button>
       </div>
     </div>
 
-    <!-- Create Chorale Card -->
-    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+    <!-- Wrapper for Chorales Tab Content -->
+    <div id="admin-content-chorales" class="admin-tab-content">
+      <!-- Create Chorale Card -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
       <div class="settings-card-header">
         <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">👥 Créer une chorale</h4>
       </div>
@@ -1173,6 +1478,158 @@
       </div>
       <div class="settings-card-body" style="padding-top: 16px;">
         <ul id="admin-masques-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+    </div> <!-- End of admin-content-chorales -->
+
+    <!-- Wrapper for About Page Configuration Tab Content -->
+    <div id="admin-content-apropos" class="admin-tab-content hidden">
+      <!-- About GOT Page Form -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+        <div class="settings-card-header">
+          <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C;">⚙️ Configurer la page À propos</h4>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <form id="admin-apropos-form" style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-nom">Nom de l'entreprise</label>
+                <input id="adm-got-nom" type="text" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-logo">URL du logo</label>
+                <input id="adm-got-logo" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-slogan">Slogan (Hero)</label>
+              <input id="adm-got-slogan" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-presentation">Présentation de l'entreprise</label>
+              <textarea id="adm-got-presentation" rows="6" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-mission">Mission</label>
+                <textarea id="adm-got-mission" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-vision">Vision</label>
+                <textarea id="adm-got-vision" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.8rem; color: #475569;">
+              💡 <strong>Note sur la structure des listes</strong> : Les valeurs, fonctionnalités de l'appli, engagements, protocoles de sécurité, droits, et utilisation des données sont stockés au format JSON.
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-valeurs">Valeurs (Format JSON)</label>
+                <textarea id="adm-got-valeurs" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-features">Fonctionnalités (Format JSON)</label>
+                <textarea id="adm-got-features" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-why">Timeline "Pourquoi ?" (Format JSON)</label>
+                <textarea id="adm-got-why" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-engagements">Engagements (Format JSON)</label>
+                <textarea id="adm-got-engagements" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-app-description">Texte de présentation de l'application</label>
+              <textarea id="adm-got-app-description" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-confidentialite">Politique de confidentialité</label>
+              <textarea id="adm-got-confidentialite" rows="4" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-securite">Sécurité des données (Format JSON)</label>
+                <textarea id="adm-got-securite" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-utilisation">Utilisation des données (Format JSON)</label>
+                <textarea id="adm-got-utilisation" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-droits">Droits des utilisateurs (Format JSON)</label>
+              <textarea id="adm-got-droits" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+            </div>
+
+            <h4 style="margin: 8px 0 0 0; font-size: 0.95rem; color: #1F4A7C; border-bottom: 1px solid #E2E8F0; padding-bottom: 6px;">📞 Informations de contact & Liens</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-email">Adresse e-mail (settings.contact_email)</label>
+                <input id="adm-got-email" type="email" placeholder="marerichard10@gmail.com" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-tel">Téléphone (Optionnel)</label>
+                <input id="adm-got-tel" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-adresse">Localisation / Adresse</label>
+                <input id="adm-got-adresse" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-siteweb">Site Web (Optionnel)</label>
+                <input id="adm-got-siteweb" type="url" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-facebook">Facebook (Optionnel)</label>
+                <input id="adm-got-facebook" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-linkedin">LinkedIn (Optionnel)</label>
+                <input id="adm-got-linkedin" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-github">GitHub (Optionnel)</label>
+                <input id="adm-got-github" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-whatsapp">WhatsApp (Optionnel)</label>
+                <input id="adm-got-whatsapp" type="text" placeholder="Ex: https://wa.me/..." style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-signature">Signature finale de GOT</label>
+              <textarea id="adm-got-signature" rows="4" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="margin-top: 12px; display: flex; gap: 12px;">
+              <button type="submit" class="btn-primary" style="padding: 10px 24px; border-radius: 8px; border: none; background: #2563eb; color: white; font-weight: 600; font-size: 0.9rem; cursor: pointer;">
+                Enregistrer la configuration
+              </button>
+              <span id="admin-apropos-status" class="hint" style="align-self: center; font-weight: 500;"></span>
+            </div>
+          </form>
+        </div>
       </div>
     </div>
   </section>
@@ -1766,6 +2223,10 @@
       <button type="button" class="extra-menu-item" data-target-view="messagerie">
         <span class="extra-icon">✉️</span>
         <span class="extra-label">Messagerie</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="apropos">
+        <span class="extra-icon">ℹ️</span>
+        <span class="extra-label">À propos</span>
       </button>
       <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="statistiques">
         <span class="extra-icon">📊</span>

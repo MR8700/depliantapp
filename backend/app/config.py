@@ -36,6 +36,77 @@ DEFAULTS = {
     "annonce": "",
     "priere_texte_defaut": "",
     **{f"{slot}_media_id": None for slot in IMAGE_SLOTS},
+    # GOT About Page parameters
+    "got_nom_entreprise": "GO Technologie (GOT)",
+    "got_logo": "/favicon.svg",
+    "got_slogan": "Découvrez GO Technologie (GOT), notre vision, nos engagements et les principes qui guident le développement de cette application.",
+    "got_presentation": "GO Technologie (GOT) est une entreprise spécialisée dans le développement de solutions informatiques innovantes, la conception de logiciels sur mesure et l'accompagnement des organisations dans leur transformation numérique.\n\nNous mettons la technologie au service des entreprises, des institutions, des associations et des communautés religieuses afin de simplifier leurs activités quotidiennes grâce à des applications fiables, intuitives et sécurisées.\n\nNotre ambition est de développer des solutions modernes qui répondent aux réalités africaines tout en respectant les standards internationaux de qualité.",
+    "got_mission": "Concevoir des solutions numériques performantes qui améliorent la productivité, facilitent la gestion des informations et offrent une expérience utilisateur simple, sécurisée et durable.",
+    "got_vision": "Devenir une référence africaine dans le développement de logiciels innovants, en proposant des produits fiables, accessibles et capables d'accompagner durablement la transformation numérique des organisations.",
+    "got_valeurs": json.dumps([
+        {"icon": "💡", "title": "Innovation", "desc": "Anticiper les besoins et concevoir des solutions avant-gardistes adaptées aux réalités de nos utilisateurs."},
+        {"icon": "⭐", "title": "Excellence", "desc": "Garantir un standard supérieur de qualité, de performance et de rigueur technique dans toutes nos réalisations."},
+        {"icon": "👁️", "title": "Transparence", "desc": "Bâtir des relations basées sur la clarté, l'intégrité et la communication ouverte avec nos partenaires."},
+        {"icon": "🛡️", "title": "Sécurité", "desc": "Assurer la protection robuste et continue des systèmes et des données confiés par nos utilisateurs."},
+        {"icon": "🍃", "title": "Simplicité", "desc": "Créer des interfaces épurées et intuitives qui rendent la technologie complexe accessible à tous."},
+        {"icon": "🔒", "title": "Respect de la vie privée", "desc": "Placer la confidentialité au cœur du développement, en limitant la collecte au strict nécessaire."},
+        {"icon": "❤️", "title": "Satisfaction client", "desc": "Placer l'humain et les retours utilisateurs au centre de notre processus d'amélioration continue."}
+    ], ensure_ascii=False),
+    "got_app_description": "Cette application accompagne les communautés chrétiennes dans la préparation des célébrations liturgiques.",
+    "got_app_features": json.dumps([
+        {"icon": "📄", "title": "Préparer des feuillets", "desc": "Mise en page rapide et structurée de vos livrets de messe."},
+        {"icon": "📚", "title": "Bibliothèque de chants", "desc": "Accès instantané à un répertoire partagé et modifiable de chants liturgiques."},
+        {"icon": "📅", "title": "Organisation des moments", "desc": "Planification précise des lectures, prières et chants moment par moment."},
+        {"icon": "⚡", "title": "Génération automatique", "desc": "Création instantanée du livret final en format PDF optimisé."},
+        {"icon": "👥", "title": "Collaboration des équipes", "desc": "Travail concerté entre animateurs, chorales et prêtres."}
+    ], ensure_ascii=False),
+    "got_why_timeline": json.dumps([
+        {"title": "Difficultés passées", "desc": "Perte de temps en mise en page manuelle répétitive, erreurs de saisie dans les paroles et documents dispensés."},
+        {"title": "Centralisation", "desc": "Création d'une bibliothèque partagée de chants pour harmoniser et conserver le répertoire commun."},
+        {"title": "Automatisation", "desc": "Génération automatisée des feuillets PDF en un clic à partir des chants sélectionnés."},
+        {"title": "Bénéfice & Gain de temps", "desc": "Réduction drastique du temps de préparation, permettant aux équipes de se concentrer pleinement sur la liturgie."}
+    ], ensure_ascii=False),
+    "got_engagements": json.dumps([
+        {"icon": "🤝", "title": "Fiable", "desc": "Une plateforme stable, disponible et testée pour vos célébrations."},
+        {"icon": "⚡", "title": "Rapide", "desc": "Des temps de réponse optimaux et des téléchargements instantanés."},
+        {"icon": "🔒", "title": "Sécurisée", "desc": "Des protocoles de sécurité robustes pour protéger votre compte et vos données."},
+        {"icon": "🔄", "title": "Mises à jour régulières", "desc": "Des améliorations continues basées sur les retours de la communauté."},
+        {"icon": "🙌", "title": "Respect des utilisateurs", "desc": "Pas de publicité intrusive, pas de traçage abusif, respect total de votre attention."}
+    ], ensure_ascii=False),
+    "got_politique_confidentialite": "La protection de vos données constitue une priorité absolue pour GO Technologie (GOT). Nous collectons uniquement les informations nécessaires au fonctionnement normal et à la personnalisation de vos feuillets. Nous ne vendons jamais vos données personnelles à des tiers. Les informations de compte ne sont utilisées que pour fournir les services demandés et optimiser la qualité de l'application.",
+    "got_securite": json.dumps([
+        {"icon": "🔑", "title": "HTTPS / TLS", "desc": "Toutes les connexions et transferts de données sont chiffrés avec des certificats SSL/TLS sécurisés."},
+        {"icon": "🛡️", "title": "Authentification sécurisée", "desc": "Mots de passe hachés avec des algorithmes sécurisés et gestion de session robuste."},
+        {"icon": "👥", "title": "Gestion des rôles", "desc": "Permissions distinctes selon les rôles (chorale, modérateur, administrateur)."},
+        {"icon": "💾", "title": "Sauvegardes régulières", "desc": "Base de données sauvegardée périodiquement pour éviter toute perte accidentelle."},
+        {"icon": "📝", "title": "Journalisation", "desc": "Suivi des actions système critiques pour détecter les anomalies et tentatives d'intrusion."},
+        {"icon": "🔄", "title": "Mises à jour de sécurité", "desc": "Application rapide des correctifs sur les serveurs et dépendances logicielles."}
+    ], ensure_ascii=False),
+    "got_utilisation_donnees": json.dumps([
+        "Créer et authentifier le compte",
+        "Gérer et personnaliser le profil",
+        "Créer, enregistrer et éditer vos feuillets liturgiques",
+        "Synchroniser vos modifications entre vos différents appareils",
+        "Sécuriser l'accès et détecter les connexions suspectes",
+        "Produire des statistiques d'utilisation anonymes pour améliorer l'application",
+        "Assurer le support technique et répondre aux demandes d'assistance"
+    ], ensure_ascii=False),
+    "got_droits_utilisateurs": json.dumps([
+        {"icon": "👁️", "title": "Consulter ses données", "desc": "Droit d'accéder à l'ensemble des informations de compte vous concernant."},
+        {"icon": "✏️", "title": "Modifier ses données", "desc": "Droit de rectifier vos informations personnelles ou celles de votre chorale."},
+        {"icon": "🗑️", "title": "Demander la suppression", "desc": "Droit de demander la fermeture de votre compte et la purge de vos données associées."},
+        {"icon": "↩️", "title": "Retirer son consentement", "desc": "Droit de revenir sur vos autorisations d'utilisation à tout moment."},
+        {"icon": "ℹ️", "title": "Demander des informations", "desc": "Droit d'obtenir des éclaircissements sur le traitement de vos informations personnelles."}
+    ], ensure_ascii=False),
+    "got_contact_email": "marerichard10@gmail.com",
+    "got_contact_telephone": "",
+    "got_contact_adresse": "Burkina Faso",
+    "got_contact_siteweb": "",
+    "got_contact_facebook": "",
+    "got_contact_linkedin": "",
+    "got_contact_github": "",
+    "got_contact_whatsapp": "",
+    "got_signature": "Chez GO Technologie (GOT), nous croyons que la technologie doit être simple, utile et accessible.\n\nChaque solution que nous développons est pensée pour répondre à des besoins concrets, avec une exigence constante de qualité, de sécurité et d'innovation.\n\nNotre objectif est de créer des outils qui font gagner du temps, renforcent la collaboration et accompagnent durablement la transformation numérique de nos utilisateurs."
 }
 
 
