@@ -17,9 +17,14 @@ export interface Chant {
   remarques: string | null;
   source_file: string | null;
   confiance: number;
+  // Validation manuelle du badge "à vérifier" -- distincte de `confiance`
+  // (score ML), voir schemas.Chant côté backend.
+  valide_manuellement: boolean;
+  propose_par_chorale_id: number | null;
+  propose_par_chorale_nom: string | null;
 }
 
-export type ChantCreate = Omit<Chant, "id" | "source_file" | "confiance">;
+export type ChantCreate = Omit<Chant, "id" | "source_file" | "confiance" | "valide_manuellement" | "propose_par_chorale_id" | "propose_par_chorale_nom">;
 
 export type ChantUpdate = Partial<ChantCreate>;
 

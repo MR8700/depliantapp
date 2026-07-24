@@ -670,6 +670,80 @@ function slugifyClient(text) {
     .replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
 }
 
+// Calcule l'état affiché du badge d'un chant -- factorisé pour être réutilisé
+// à la fois au premier rendu (chantCardHtml) et après un clic sur le badge
+// (gererClicBadgeEtat), qui met juste à jour l'élément existant plutôt que
+// de re-render toute la carte (éviterait de perdre les listeners externes
+// attachés aux boutons d'action ★/👁/✏ après l'insertion du HTML).
+// `valide_manuellement` est distinct de `confiance` (score ML) : voir
+// schemas.Chant côté backend -- jamais les confondre.
+function calculerEtatBadge(chant) {
+  if (chant.actif === false) {
+    return { texte: "Archivé", classe: "badge-archive", clickable: false };
+  }
+  if (chant.valide_manuellement) {
+    // Actif par validation humaine explicite -- l'admin peut cliquer pour annuler.
+    return { texte: "Actif", classe: "badge-actif", clickable: IDENTITE && IDENTITE.type === "super" };
+  }
+  if (chant.confiance < 0.7) {
+    const texte = chant.propose_par_chorale_nom ? `À vérifier · proposé par ${chant.propose_par_chorale_nom}` : "À vérifier";
+    return { texte, classe: "badge-a-verifier", clickable: true };
+  }
+  return { texte: "Actif", classe: "badge-actif", clickable: false };
+}
+
+// Applique un état de badge à un <span> déjà dans le DOM (après un clic),
+// re-attache ou retire le onclick selon que le nouvel état reste cliquable.
+// `baseClass` diffère selon le contexte : "card-status-badge" pour les
+// cartes de liste, "cd-badge" pour la modale de détail d'un chant.
+function appliquerEtatBadge(element, chant, baseClass = "card-status-badge") {
+  const etat = calculerEtatBadge(chant);
+  element.textContent = etat.texte;
+  element.className = `${baseClass} ${etat.classe}${etat.clickable ? " card-status-badge-clickable" : ""}`;
+  element.dataset.valide = chant.valide_manuellement ? "1" : "0";
+  element.title = etat.clickable
+    ? (IDENTITE && IDENTITE.type === "super"
+        ? (chant.valide_manuellement ? "Cliquer pour repasser ce chant en « à vérifier »" : "Cliquer pour valider ce chant")
+        : "Cliquer pour proposer la validation de ce chant à l'administrateur")
+    : "";
+  if (etat.clickable) {
+    element.onclick = (e) => { e.stopPropagation(); gererClicBadgeEtat(chant.id, element, baseClass); };
+  } else {
+    element.onclick = null;
+  }
+}
+
+async function gererClicBadgeEtat(chantId, element, baseClass = "card-status-badge") {
+  if (element.dataset.enCours === "1") return;
+  element.dataset.enCours = "1";
+  const estAdmin = IDENTITE && IDENTITE.type === "super";
+  const estValide = element.dataset.valide === "1";
+  try {
+    let chant;
+    if (estAdmin) {
+      chant = await api(`/chants/${chantId}/${estValide ? "retirer-validation" : "valider"}`, { method: "POST" });
+    } else {
+      chant = await api(`/chants/${chantId}/proposer-validation`, { method: "POST" });
+      alert("Proposition envoyée à l'administrateur pour confirmation.");
+    }
+    appliquerEtatBadge(element, chant, baseClass);
+    // Garde les caches locaux cohérents pour le prochain re-rendu complet
+    // (recherche, tri, pagination...) sans avoir à tout recharger maintenant.
+    if (window.listChantsCache) {
+      const idx = window.listChantsCache.findIndex((c) => c.id === chantId);
+      if (idx !== -1) window.listChantsCache[idx] = chant;
+    }
+    if (window.editeurChantsCache) {
+      const idx = window.editeurChantsCache.findIndex((c) => c.id === chantId);
+      if (idx !== -1) window.editeurChantsCache[idx] = chant;
+    }
+  } catch (err) {
+    alert(`Erreur : ${err.message}`);
+  } finally {
+    delete element.dataset.enCours;
+  }
+}
+
 function chantCardHtml(chant) {
   const catClass = `cat-pill-${(chant.categorie || "autre").toLowerCase()}`;
 
@@ -692,15 +766,14 @@ function chantCardHtml(chant) {
   };
   const icon = icons[(chant.categorie || "").toLowerCase()] || "🎵";
 
-  let stateText = "Actif";
-  let stateClass = "badge-actif";
-  if (chant.actif === false) {
-    stateText = "Archivé";
-    stateClass = "badge-archive";
-  } else if (chant.confiance < 0.7) {
-    stateText = "À vérifier";
-    stateClass = "badge-a-verifier";
-  }
+  const etatBadge = calculerEtatBadge(chant);
+  const badgeAttrs = etatBadge.clickable
+    ? `onclick="event.stopPropagation(); gererClicBadgeEtat(${chant.id}, this)" data-valide="${chant.valide_manuellement ? "1" : "0"}" title="${
+        IDENTITE && IDENTITE.type === "super"
+          ? (chant.valide_manuellement ? "Cliquer pour repasser ce chant en « à vérifier »" : "Cliquer pour valider ce chant")
+          : "Cliquer pour proposer la validation de ce chant à l'administrateur"
+      }"`
+    : "";
 
   const refrainApercu = chant.refrain ? chant.refrain.slice(0, 80) : (chant.couplets && chant.couplets[0] ? chant.couplets[0].slice(0, 80) : "");
   const occasionsText = (chant.occasions && chant.occasions.length > 0) ? chant.occasions.join(", ") : "N/A";
@@ -762,7 +835,7 @@ function chantCardHtml(chant) {
         ${tagsHtml ? `<div class="card-tags">${tagsHtml}</div>` : ""}
       </div>
       <div class="card-right-aside">
-        <span class="card-status-badge ${stateClass}">${stateText}</span>
+        <span class="card-status-badge ${etatBadge.classe}${etatBadge.clickable ? " card-status-badge-clickable" : ""}" ${badgeAttrs}>${escapeHtml(etatBadge.texte)}</span>
         ${actionButtonsHtml}
       </div>
     </li>
@@ -2779,17 +2852,9 @@ function ouvrirDetailChant(chant) {
     tagsList.innerHTML = `<span class="hint">Aucun mot-clé</span>`;
   }
 
-  let stateText = "Actif";
-  let etatClass = "badge-actif";
-  if (chant.actif === false) {
-    stateText = "Archivé";
-    etatClass = "badge-archive";
-  } else if (chant.confiance < 0.7) {
-    stateText = "À vérifier";
-    etatClass = "badge-a-verifier";
-  }
-
-  document.getElementById("cd-hist-etat").innerHTML = `<span class="cd-badge ${etatClass}">${stateText}</span>`;
+  const cdHistEtat = document.getElementById("cd-hist-etat");
+  cdHistEtat.innerHTML = `<span class="cd-badge"></span>`;
+  appliquerEtatBadge(cdHistEtat.querySelector(".cd-badge"), chant, "cd-badge");
 
   const dateCreation = chant.created_at ? new Date(chant.created_at).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" }) : "N/A";
   document.getElementById("cd-hist-creation").textContent = dateCreation;

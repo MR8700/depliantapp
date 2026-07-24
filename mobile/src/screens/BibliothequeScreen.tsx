@@ -1,10 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rechercherChants, basculerFavori, dupliquerChant } from "../api/chants";
+import { rechercherChants, basculerFavori, dupliquerChant, proposerValidationChant, validerChant, retirerValidationChant } from "../api/chants";
 import { getMeta } from "../api/meta";
 import { fusionnerDansCache, lireCache } from "../storage/chantsCache";
 import { useIdentite } from "../context/IdentiteContext";
@@ -159,6 +159,23 @@ export default function BibliothequeScreen() {
     });
   }
 
+  // Clic sur le badge "à vérifier"/"Actif" : la chorale propose seulement,
+  // l'admin valide/annule directement (voir routers/chants.py).
+  async function onChangerEtatChant(chant: Chant) {
+    try {
+      let misAJour: Chant;
+      if (estSuperAdmin) {
+        misAJour = chant.valide_manuellement ? await retirerValidationChant(chant.id) : await validerChant(chant.id);
+      } else {
+        misAJour = await proposerValidationChant(chant.id);
+        Alert.alert("Proposition envoyée", "L'administrateur va confirmer.");
+      }
+      setChants((prev) => prev.map((c) => (c.id === chant.id ? misAJour : c)));
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "Impossible de mettre à jour l'état");
+    }
+  }
+
   async function onDupliquer(chant: Chant) {
     try {
       await dupliquerChant(chant);
@@ -287,6 +304,7 @@ export default function BibliothequeScreen() {
                   onModifier={() => { setModeEditionDirecte(true); setChantSelectionne(item); }}
                   onDupliquer={() => onDupliquer(item)}
                   onFavori={() => onToggleFavori(item)}
+                  onChangerEtat={() => onChangerEtatChant(item)}
                 />
               </View>
             )}

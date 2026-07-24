@@ -51,6 +51,13 @@ class Chant(ChantBase):
     id: int
     source_file: Optional[str] = None
     confiance: float = 1.0
+    # Validation manuelle du badge "à vérifier" -- distincte de `confiance`
+    # (score du classifieur ML) pour ne jamais confondre "le modèle est sûr
+    # de lui" et "un humain a validé" (voir crud.py::valider_chant /
+    # proposer_validation_chant, jamais réglable via ChantCreate/ChantUpdate).
+    valide_manuellement: bool = False
+    propose_par_chorale_id: Optional[int] = None
+    propose_par_chorale_nom: Optional[str] = None
 
 
 class BulkCategorize(BaseModel):

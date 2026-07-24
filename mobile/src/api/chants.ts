@@ -76,3 +76,19 @@ export function bulkCategoriser(ids: number[], categorie: string): Promise<{ upd
 export function bulkSupprimer(ids: number[]): Promise<{ deleted: number }> {
   return apiFetch<{ deleted: number }>("/chants/bulk_delete", { method: "POST", body: { ids } });
 }
+
+// --- Badge "à vérifier" : proposition (chorale) / validation (admin) -----
+// Une chorale ne fait jamais passer un chant hors de "à vérifier" elle-même,
+// elle propose seulement -- le super-admin confirme (voir routers/chants.py).
+
+export function proposerValidationChant(id: number): Promise<Chant> {
+  return apiFetch<Chant>(`/chants/${id}/proposer-validation`, { method: "POST" });
+}
+
+export function validerChant(id: number): Promise<Chant> {
+  return apiFetch<Chant>(`/chants/${id}/valider`, { method: "POST" });
+}
+
+export function retirerValidationChant(id: number): Promise<Chant> {
+  return apiFetch<Chant>(`/chants/${id}/retirer-validation`, { method: "POST" });
+}

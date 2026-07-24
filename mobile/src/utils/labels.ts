@@ -63,8 +63,11 @@ export type EtatChant = "actif" | "a-verifier" | "archive";
 
 // Seuil et libellés identiques à chantCardHtml() côté web -- distinct du
 // scoring ML de l'Éditeur/Import (voir utils/confiance.ts, seuils 0.8/0.4).
-export function etatChant(chant: { actif: boolean; confiance: number }): EtatChant {
+// `valide_manuellement` est une validation humaine explicite, distincte de
+// `confiance` (score ML) -- voir schemas.Chant côté backend.
+export function etatChant(chant: { actif: boolean; confiance: number; valide_manuellement?: boolean }): EtatChant {
   if (chant.actif === false) return "archive";
+  if (chant.valide_manuellement) return "actif";
   if (chant.confiance < 0.7) return "a-verifier";
   return "actif";
 }

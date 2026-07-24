@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from .. import auth, crud, schemas
-from ..deps import identite_courante, require_superadmin
+from ..deps import identite_courante, require_chorale, require_superadmin
 from ..ml import classifier, duplicates
 
 _TAILLE_MAX_PARTITION = 15 * 1024 * 1024  # 15 Mo
@@ -95,6 +95,38 @@ def delete_chant(chant_id: int, _identite: auth.Identite = Depends(require_super
     if not crud.delete_chant(chant_id):
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return {"ok": True}
+
+
+# --- Badge "à vérifier" : proposition (chorale) / validation (admin) ------
+# Distinct de `confiance` (score ML) -- voir schemas.Chant::valide_manuellement.
+# Une chorale ne fait jamais passer un chant hors de "à vérifier" elle-même ;
+# elle propose seulement, le super-admin confirme (même règle que partout
+# ailleurs dans l'appli : jamais de validation directe côté chorale).
+
+@router.post("/{chant_id}/proposer-validation", response_model=schemas.Chant)
+def proposer_validation(chant_id: int, identite: auth.Identite = Depends(require_chorale)):
+    chant = crud.proposer_validation_chant(chant_id, identite.compte_id)
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return chant
+
+
+@router.post("/{chant_id}/valider", response_model=schemas.Chant)
+def valider(chant_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    chant = crud.valider_chant(chant_id)
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return chant
+
+
+@router.post("/{chant_id}/retirer-validation", response_model=schemas.Chant)
+def retirer_validation(chant_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Repasse un chant validé en "à vérifier" -- pour corriger une
+    validation faite par erreur (voir crud.retirer_validation_chant)."""
+    chant = crud.retirer_validation_chant(chant_id)
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return chant
 
 
 @router.get("/{chant_id}/suggestion", response_model=Optional[schemas.Suggestion])

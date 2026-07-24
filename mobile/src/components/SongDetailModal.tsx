@@ -77,6 +77,7 @@ export default function SongDetailModal({
           await ajouterAOutbox(payload);
           const localPlaceholder: Chant = {
             ...payload, id: -Date.now(), source_file: null, confiance: 1,
+            valide_manuellement: false, propose_par_chorale_id: null, propose_par_chorale_nom: null,
           };
           onCreated?.(localPlaceholder);
           Alert.alert("Enregistré hors-ligne", "Ce chant sera envoyé à la bibliothèque partagée dès que la connexion sera rétablie.");

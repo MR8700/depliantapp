@@ -10,14 +10,24 @@ interface Props {
   onModifier: () => void;
   onDupliquer: () => void;
   onFavori: () => void;
+  /** Appelé au clic sur le badge d'état, quand il est cliquable (voir
+   * calcul ci-dessous) -- la chorale propose une validation, l'admin
+   * valide/annule. Absent = badge non-cliquable. */
+  onChangerEtat?: () => void;
 }
 
 // Reproduit chantCardHtml() (app.js) à l'identique : même contenu (pastille
 // catégorie, titre, référence, aperçu du refrain, langue/occasions,
 // mots-clés, badge d'état) et mêmes actions selon le rôle (super:
 // voir/modifier/dupliquer -- chorale: voir/favori).
-export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, onModifier, onDupliquer, onFavori }: Props) {
+export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, onModifier, onDupliquer, onFavori, onChangerEtat }: Props) {
   const etat = etatChant(chant);
+  // Cliquable si "à vérifier" (chorale propose / admin valide), ou si
+  // "actif" par validation manuelle explicite (admin peut annuler).
+  const badgeCliquable = !!onChangerEtat && (etat === "a-verifier" || (etat === "actif" && chant.valide_manuellement && estSuperAdmin));
+  const libelleEtat = etat === "a-verifier" && chant.propose_par_chorale_nom
+    ? `À vérifier · ${chant.propose_par_chorale_nom}`
+    : LABEL_ETAT[etat];
   const apercu = (chant.refrain || chant.couplets[0] || "").slice(0, 80);
   const occasionsText = chant.occasions.length > 0 ? chant.occasions.join(", ") : "N/A";
   const nomLangue = NOMS_LANGUES[chant.langue] || chant.langue || "Français";
@@ -46,7 +56,13 @@ export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, on
         )}
       </View>
       <View style={styles.aside}>
-        <Text style={[styles.badgeEtat, { color: COULEUR_ETAT[etat], borderColor: COULEUR_ETAT[etat] }]}>{LABEL_ETAT[etat]}</Text>
+        {badgeCliquable ? (
+          <Pressable hitSlop={6} onPress={(e) => { e.stopPropagation(); onChangerEtat?.(); }}>
+            <Text style={[styles.badgeEtat, styles.badgeEtatCliquable, { color: COULEUR_ETAT[etat], borderColor: COULEUR_ETAT[etat] }]}>{libelleEtat}</Text>
+          </Pressable>
+        ) : (
+          <Text style={[styles.badgeEtat, { color: COULEUR_ETAT[etat], borderColor: COULEUR_ETAT[etat] }]}>{libelleEtat}</Text>
+        )}
         <View style={styles.actions}>
           <Pressable hitSlop={8} onPress={(e) => { e.stopPropagation(); onVoir(); }}><Text style={styles.action}>👁</Text></Pressable>
           {estSuperAdmin ? (
@@ -90,6 +106,7 @@ const styles = StyleSheet.create({
   tagPlus: { color: "#94a3b8" },
   aside: { alignItems: "flex-end", justifyContent: "space-between", gap: 8 },
   badgeEtat: { fontSize: 10, fontWeight: "700", borderWidth: 1, borderRadius: 999, paddingHorizontal: 6, paddingVertical: 2 },
+  badgeEtatCliquable: { textDecorationLine: "underline" },
   actions: { flexDirection: "row", gap: 10 },
   action: { fontSize: 16 },
 });

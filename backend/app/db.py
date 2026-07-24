@@ -132,6 +132,12 @@ CREATE TABLE IF NOT EXISTS chants (
     duree_estimee TEXT,
     tonalite TEXT,
     remarques TEXT,
+    valide_manuellement INTEGER NOT NULL DEFAULT 0,
+    -- Pas de REFERENCES chorales(id) ici : `chants` est déclarée avant
+    -- `chorales` plus bas dans ce schéma, et Postgres (contrairement à
+    -- SQLite) exige que la table référencée existe déjà au moment du CREATE
+    -- TABLE -- ça casserait une toute première installation sur base vide.
+    propose_par_chorale_id INTEGER,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -381,6 +387,12 @@ CREATE TABLE IF NOT EXISTS chants (
     duree_estimee TEXT,
     tonalite TEXT,
     remarques TEXT,
+    valide_manuellement INTEGER NOT NULL DEFAULT 0,
+    -- Pas de REFERENCES chorales(id) : `chants` est créée avant `chorales`
+    -- plus bas dans ce script, Postgres exigerait sinon que la table
+    -- référencée existe déjà à ce stade (voir commentaire équivalent dans
+    -- SCHEMA_SQLITE).
+    propose_par_chorale_id INTEGER,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -559,6 +571,8 @@ ALTER TABLE chants ADD COLUMN IF NOT EXISTS chant_principal INTEGER NOT NULL DEF
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS duree_estimee TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS tonalite TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS remarques TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS valide_manuellement INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS propose_par_chorale_id INTEGER;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES messages(id);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS modifie INTEGER NOT NULL DEFAULT 0;
@@ -603,6 +617,10 @@ def _init_sqlite() -> None:
                 conn.execute("ALTER TABLE chants ADD COLUMN tonalite TEXT")
             if "remarques" not in colonnes:
                 conn.execute("ALTER TABLE chants ADD COLUMN remarques TEXT")
+            if "valide_manuellement" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN valide_manuellement INTEGER NOT NULL DEFAULT 0")
+            if "propose_par_chorale_id" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN propose_par_chorale_id INTEGER")
 
         conn.executescript(SCHEMA_SQLITE)
 

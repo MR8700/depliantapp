@@ -2749,6 +2749,19 @@ button[type="submit"],
   margin-right: 4px;
 }
 
+.card-status-badge-clickable {
+  cursor: pointer;
+  transition: filter 0.15s, transform 0.1s;
+}
+
+.card-status-badge-clickable:hover {
+  filter: brightness(0.95);
+}
+
+.card-status-badge-clickable:active {
+  transform: scale(0.96);
+}
+
 /* PAGINATION */
 .library-pagination-row {
   display: flex;

@@ -52,6 +52,9 @@ def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
         duree_estimee=row["duree_estimee"] if "duree_estimee" in list(row.keys()) else None,
         tonalite=row["tonalite"] if "tonalite" in list(row.keys()) else None,
         remarques=row["remarques"] if "remarques" in list(row.keys()) else None,
+        valide_manuellement=bool(row["valide_manuellement"]) if "valide_manuellement" in list(row.keys()) and row["valide_manuellement"] is not None else False,
+        propose_par_chorale_id=row["propose_par_chorale_id"] if "propose_par_chorale_id" in list(row.keys()) else None,
+        propose_par_chorale_nom=row["propose_par_chorale_nom"] if "propose_par_chorale_nom" in list(row.keys()) else None,
     )
 
 
@@ -95,6 +98,12 @@ _MASQUE_CLAUSE = (
 )
 
 
+_CHANT_SELECT = (
+    "SELECT chants.*, pc.nom AS propose_par_chorale_nom FROM chants "
+    "LEFT JOIN chorales pc ON pc.id = chants.propose_par_chorale_id"
+)
+
+
 def get_chant(chant_id: int, chorale_id_appelant: Optional[int] = None) -> Optional[schemas.Chant]:
     """chorale_id_appelant est optionnel et laissé à None par tous les
     appels INTERNES (rendu d'un feuillet déjà composé, détection de
@@ -104,17 +113,17 @@ def get_chant(chant_id: int, chorale_id_appelant: Optional[int] = None) -> Optio
     with get_connection() as conn:
         if chorale_id_appelant is not None:
             row = conn.execute(
-                f"SELECT * FROM chants WHERE id = ? AND {_MASQUE_CLAUSE.format(table='chants')}",
+                _CHANT_SELECT + f" WHERE chants.id = ? AND {_MASQUE_CLAUSE.format(table='chants')}",
                 (chant_id, "chant", chorale_id_appelant),
             ).fetchone()
         else:
-            row = conn.execute("SELECT * FROM chants WHERE id = ?", (chant_id,)).fetchone()
+            row = conn.execute(_CHANT_SELECT + " WHERE chants.id = ?", (chant_id,)).fetchone()
         return _row_to_chant(row) if row else None
 
 
 def get_chant_by_reference(code_reference: str) -> Optional[schemas.Chant]:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM chants WHERE code_reference = ?", (code_reference,)).fetchone()
+        row = conn.execute(_CHANT_SELECT + " WHERE chants.code_reference = ?", (code_reference,)).fetchone()
         return _row_to_chant(row) if row else None
 
 
@@ -267,7 +276,7 @@ def revoquer_partition(partition_id: int) -> Optional[dict]:
 
 def get_chant_by_slug(slug: str) -> Optional[schemas.Chant]:
     with get_connection() as conn:
-        row = conn.execute("SELECT * FROM chants WHERE slug = ?", (slug,)).fetchone()
+        row = conn.execute(_CHANT_SELECT + " WHERE chants.slug = ?", (slug,)).fetchone()
         return _row_to_chant(row) if row else None
 
 
@@ -283,10 +292,10 @@ def list_chants(
 ) -> list[schemas.Chant]:
     clauses = []
     params: list = []
-    from_clause = "chants"
+    from_clause = "chants LEFT JOIN chorales pc ON pc.id = chants.propose_par_chorale_id"
     fts_q = _fts_query(q) if (q and db.BACKEND == "sqlite") else None
     if fts_q:
-        from_clause = "chants JOIN chants_fts ON chants.id = chants_fts.rowid"
+        from_clause += " JOIN chants_fts ON chants.id = chants_fts.rowid"
         clauses.append("chants_fts MATCH ?")
         params.append(fts_q)
     elif q:
@@ -317,7 +326,7 @@ def list_chants(
         order = "chants.titre"
     with get_connection() as conn:
         rows = conn.execute(
-            f"SELECT chants.* FROM {from_clause} {where} ORDER BY {order} LIMIT ? OFFSET ?",
+            f"SELECT chants.*, pc.nom AS propose_par_chorale_nom FROM {from_clause} {where} ORDER BY {order} LIMIT ? OFFSET ?",
             (*params, limit, offset),
         ).fetchall()
         return [_row_to_chant(r, resume=resume) for r in rows]
@@ -405,6 +414,43 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 chant_id,
             ),
         )
+    return get_chant(chant_id)
+
+
+def proposer_validation_chant(chant_id: int, chorale_id: int) -> Optional[schemas.Chant]:
+    """Une chorale propose qu'un chant "à vérifier" est en fait correct --
+    n'affecte jamais confiance/valide_manuellement, juste un repère visuel
+    ("proposé par X") en attendant que le super-admin confirme (voir
+    valider_chant). Écrase une éventuelle proposition précédente d'une
+    autre chorale -- la dernière proposition l'emporte, pas de file."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chants SET propose_par_chorale_id = ? WHERE id = ?", (chorale_id, chant_id))
+        if cur.rowcount == 0:
+            return None
+    return get_chant(chant_id)
+
+
+def valider_chant(chant_id: int) -> Optional[schemas.Chant]:
+    """Validation manuelle par le super-admin -- fait sortir définitivement
+    le chant de l'état "à vérifier", indépendamment du score `confiance`
+    (voir schemas.Chant). Conserve `propose_par_chorale_id` tel quel, pour
+    garder la trace de qui l'avait proposé."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chants SET valide_manuellement = 1 WHERE id = ?", (chant_id,))
+        if cur.rowcount == 0:
+            return None
+    return get_chant(chant_id)
+
+
+def retirer_validation_chant(chant_id: int) -> Optional[schemas.Chant]:
+    """Repasse un chant validé manuellement en "à vérifier" -- pour corriger
+    une validation faite par erreur (voir routers/chants.py). N'efface pas
+    la proposition de la chorale : si elle avait raison, il suffira de
+    revalider."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chants SET valide_manuellement = 0 WHERE id = ?", (chant_id,))
+        if cur.rowcount == 0:
+            return None
     return get_chant(chant_id)
 
 
