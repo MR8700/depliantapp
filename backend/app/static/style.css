@@ -828,6 +828,11 @@ button[type="submit"],
   background: #6a4c93;
 }
 
+#composer-result .btn-effacer {
+  background: var(--danger);
+  flex: none;
+}
+
 .taille-texte-controle {
   display: flex;
   align-items: center;
@@ -3708,6 +3713,11 @@ input.special-label:focus {
   color: white;
 }
 
+.btn-pv-tool-danger:hover {
+  background: var(--danger);
+  color: white;
+}
+
 .btn-text-tool {
   width: auto;
   padding: 0 8px;
@@ -3744,6 +3754,93 @@ input.special-label:focus {
   flex: 1;
   border: none !important;
   box-shadow: none !important;
+}
+
+/* --- Génération du feuillet : état de chargement dans l'aperçu lui-même --
+   remplace l'ancien splash plein écran (voir afficherChargementGeneration
+   dans app.js) : un fond flouté suggérant une page + un pourcentage simulé
+   qui approche 92% puis saute à 100% à la réception, annulable. */
+.apercu-generation-etat {
+  position: relative;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 480px;
+  overflow: hidden;
+}
+
+.apercu-generation-fond-flou {
+  position: absolute;
+  inset: 12px;
+  background:
+    repeating-linear-gradient(
+      to bottom,
+      rgba(30, 41, 59, 0.14) 0px, rgba(30, 41, 59, 0.14) 10px,
+      transparent 10px, transparent 26px
+    ),
+    #f1f5f9;
+  border-radius: 6px;
+  filter: blur(7px);
+  opacity: 0.9;
+}
+
+.apercu-generation-contenu {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.82);
+  color: white;
+  padding: 28px 36px;
+  border-radius: 12px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.25);
+}
+
+.apercu-generation-pourcentage {
+  font-size: 2.2rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.apercu-generation-barre {
+  width: 180px;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 999px;
+  overflow: hidden;
+}
+
+.apercu-generation-barre-remplissage {
+  height: 100%;
+  background: #60a5fa;
+  border-radius: 999px;
+  transition: width 0.2s ease-out;
+}
+
+.apercu-generation-texte {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #cbd5e1;
+}
+
+.btn-annuler-generation {
+  margin-top: 6px;
+  background: rgba(255, 255, 255, 0.1) !important;
+  border: 1px solid rgba(255, 255, 255, 0.3) !important;
+  color: white !important;
+  padding: 6px 16px !important;
+  border-radius: 999px !important;
+  font-size: 0.8rem !important;
+  flex: none !important;
+  cursor: pointer;
+}
+
+.btn-annuler-generation:hover {
+  background: rgba(255, 255, 255, 0.2) !important;
 }
 
 /* --- Fixed Bottom Bar --- */

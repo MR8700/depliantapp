@@ -2321,6 +2321,13 @@ function initComposer() {
       regenererApercuSiPossible(true);
     });
   }
+  const btnSupprimerApercu = document.getElementById("pv-btn-supprimer");
+  if (btnSupprimerApercu) {
+    btnSupprimerApercu.addEventListener("click", () => {
+      if (!feuilletCourantId) return;
+      supprimerFeuilletDepuisComposer(feuilletCourantId);
+    });
+  }
 
   // Bottom bar buttons actions
   const btnSaveDraft = document.getElementById("btn-save-draft");
@@ -3017,24 +3024,73 @@ const TAILLE_TEXTE_PLAFOND = 32;
 // (pas une erreur HTTP, la connexion elle-même est coupée pendant le
 // réveil) avant qu'un simple nouvel essai ne fonctionne. Un seul retry après
 // une courte pause suffit à couvrir ce cas sans masquer une vraie panne.
-async function fetchAvecRetry(url, tentatives = 2, delaiMs = 1500) {
+async function fetchAvecRetry(url, tentatives = 2, delaiMs = 1500, signal) {
   for (let i = 0; i < tentatives; i++) {
     try {
-      return await fetch(url);
+      return await fetch(url, signal ? { signal } : undefined);
     } catch (err) {
+      if (err.name === "AbortError") throw err; // annulation volontaire -- ne pas retenter
       if (i === tentatives - 1) throw err;
       await new Promise((resolve) => setTimeout(resolve, delaiMs));
     }
   }
 }
 
+// --- Progression simulée de la génération du feuillet -----------------
+// Remplace l'ancien splash plein écran : l'aperçu lui-même affiche un fond
+// flouté avec un pourcentage qui approche 92% de façon décélérée tant que la
+// vraie réponse n'est pas là (on ne connaît pas la progression réelle côté
+// serveur), puis saute à 100% à la réception. Annulable à tout moment.
+let generationEnCoursControleur = null;
+
+function afficherChargementGeneration(resultDiv, onAnnuler) {
+  resultDiv.innerHTML = `
+    <div class="apercu-generation-etat">
+      <div class="apercu-generation-fond-flou"></div>
+      <div class="apercu-generation-contenu">
+        <div class="apercu-generation-pourcentage" id="generation-pourcentage">0%</div>
+        <div class="apercu-generation-barre"><div class="apercu-generation-barre-remplissage" id="generation-barre" style="width:0%"></div></div>
+        <p class="apercu-generation-texte">Génération du feuillet…</p>
+        <button type="button" class="btn-annuler-generation" id="btn-annuler-generation">✕ Annuler</button>
+      </div>
+    </div>
+  `;
+  document.getElementById("btn-annuler-generation").addEventListener("click", onAnnuler);
+
+  let valeur = 0;
+  const pourcentageEl = document.getElementById("generation-pourcentage");
+  const barreEl = document.getElementById("generation-barre");
+  const intervalle = setInterval(() => {
+    const restant = 92 - valeur;
+    valeur = Math.min(92, valeur + Math.max(0.4, restant * 0.06));
+    if (pourcentageEl) pourcentageEl.textContent = `${Math.round(valeur)}%`;
+    if (barreEl) barreEl.style.width = `${valeur}%`;
+  }, 200);
+
+  return {
+    terminer: () => {
+      clearInterval(intervalle);
+      if (pourcentageEl) pourcentageEl.textContent = "100%";
+      if (barreEl) barreEl.style.width = "100%";
+    },
+    arreter: () => clearInterval(intervalle),
+  };
+}
+
 async function afficherResultatFeuillet(feuilletId) {
   const resultDiv = document.getElementById("composer-result");
   nettoyerMomentsEnCause();
-  resultDiv.innerHTML = `<p class="hint">Génération du PDF…</p>`;
+
+  if (generationEnCoursControleur) generationEnCoursControleur.abort();
+  const controleur = new AbortController();
+  generationEnCoursControleur = controleur;
+
+  const progression = afficherChargementGeneration(resultDiv, () => controleur.abort());
+
   const pdfUrl = `/feuillets/${feuilletId}/pdf?t=${Date.now()}`;
   try {
-    const res = await fetchAvecRetry(pdfUrl);
+    const res = await fetchAvecRetry(pdfUrl, 2, 1500, controleur.signal);
+    progression.terminer();
     if (!res.ok) {
       const texte = await res.text();
       let detail = texte;
@@ -3089,11 +3145,42 @@ async function afficherResultatFeuillet(feuilletId) {
       });
     });
   } catch (err) {
+    progression.arreter();
+    if (err.name === "AbortError") {
+      resultDiv.innerHTML = `<p class="hint">Génération annulée.</p>`;
+      return;
+    }
     resultDiv.innerHTML = `
       <p class="hint">Le serveur n'a pas répondu (connexion coupée). C'est fréquent juste après une période d'inactivité -- réessaie dans quelques secondes.</p>
       <button type="button" class="btn-outline" onclick="afficherResultatFeuillet(${feuilletId})">Réessayer</button>
     `;
+  } finally {
+    if (generationEnCoursControleur === controleur) generationEnCoursControleur = null;
   }
+}
+
+// Supprime le feuillet actuellement affiché dans le Composer -- même règle
+// que partout ailleurs (voir executerActionDepliant("supprimer")) : une
+// chorale ne supprime jamais directement, elle passe par une demande de
+// modération ; seul le super-admin supprime immédiatement.
+async function supprimerFeuilletDepuisComposer(feuilletId) {
+  if (IDENTITE.type === "super") {
+    if (!confirm("Supprimer définitivement ce feuillet ?")) return;
+    await api(`/feuillets/${feuilletId}`, { method: "DELETE" });
+  } else {
+    const raison = demanderMotifSuppression();
+    if (!raison) return;
+    await api("/moderation/demandes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type_cible: "feuillet", cible_id: feuilletId, raison }),
+    });
+    alert("Demande de suppression envoyée -- le super-admin va l'examiner.");
+    return;
+  }
+  feuilletCourantId = null;
+  document.getElementById("composer-result").innerHTML =
+    `<p class="hint">💡 Renseigne la date, choisis au moins un chant, puis clique sur « Créer le feuillet et générer le PDF ». L'aperçu s'affichera ici.</p>`;
 }
 
 async function partagerPdf(feuilletId) {
@@ -3140,8 +3227,6 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
   e.preventDefault();
   const payload = construireFeuilletPayload();
   const resultDiv = document.getElementById("composer-result");
-  resultDiv.textContent = "Génération en cours…";
-  afficherSplashGeneration();
   try {
     await avecChargementSubmit(e.target, async () => {
       const idAvant = feuilletCourantId;
@@ -3167,9 +3252,7 @@ document.getElementById("feuillet-form").addEventListener("submit", async (e) =>
       }
     });
   } catch (err) {
-    resultDiv.textContent = `Erreur : ${err.message}`;
-  } finally {
-    masquerSplash();
+    resultDiv.innerHTML = `<p class="hint">Erreur : ${escapeHtml(err.message)}</p>`;
   }
 });
 
@@ -6068,11 +6151,6 @@ document.getElementById("btn-nouveau-depliant").addEventListener("click", () => 
 document.getElementById("depliants-portee").addEventListener("change", actualiserDepliants);
 
 // --- Splash ---
-function afficherSplashGeneration() {
-  document.getElementById("splash-message").textContent = "Génération du feuillet…";
-  document.getElementById("splash").classList.remove("hidden");
-}
-
 function masquerSplash() {
   document.getElementById("splash").classList.add("hidden");
 }
