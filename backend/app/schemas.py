@@ -23,6 +23,8 @@ class ChantBase(BaseModel):
     duree_estimee: Optional[str] = None
     tonalite: Optional[str] = None
     remarques: Optional[str] = None
+    auteur: Optional[str] = None
+    compositeur: Optional[str] = None
 
 
 class ChantCreate(ChantBase):
@@ -45,6 +47,8 @@ class ChantUpdate(BaseModel):
     duree_estimee: Optional[str] = None
     tonalite: Optional[str] = None
     remarques: Optional[str] = None
+    auteur: Optional[str] = None
+    compositeur: Optional[str] = None
 
 
 class Chant(ChantBase):
@@ -91,6 +95,17 @@ class Partition(BaseModel):
     signaux: dict = Field(default_factory=dict)
     created_at: str
     decide_le: Optional[str] = None
+
+
+class ChantMedia(BaseModel):
+    id: int
+    chant_id: int
+    type: Literal["audio", "video"]
+    filename: str
+    content_type: Optional[str] = None
+    chorale_id: Optional[int] = None
+    chorale_nom: Optional[str] = None
+    created_at: str
 
 
 # --- Feuillet (livret de messe) ---

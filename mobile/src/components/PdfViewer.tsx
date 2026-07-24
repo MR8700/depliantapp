@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
-import { WebView } from "react-native-webview";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { PdfView } from "@kishannareshpal/expo-pdf";
 import * as Sharing from "expo-sharing";
 
 interface Props {
@@ -11,13 +12,15 @@ interface Props {
   onFermer?: () => void;
 }
 
-// Aperçu PDF simplifié : WebView sur le fichier local téléchargé (Android
-// WebView moderne intègre PDFium et l'affiche directement) + un bouton
-// "Ouvrir avec..." de secours si l'affichage inline échoue sur un appareil
-// donné. Pas de live-preview débattue comme le web (nécessiterait un
-// composant PDF natif dédié, hors Expo Go) -- voir memory pour ce choix assumé.
+// Aperçu PDF : rendu natif via @kishannareshpal/expo-pdf (PDFium) sur le
+// fichier local téléchargé. Remplace une première version basée sur
+// react-native-webview -- WebView n'embarque PAS de rendu PDF sur Android
+// (contrairement à l'hypothèse initiale) : l'aperçu restait systématiquement
+// vide sur appareil réel (confirmé sur Samsung/Android 13), d'où ce
+// composant natif dédié. Le bouton "Ouvrir avec..." reste en secours.
 export default function PdfViewer({ uri, chargement, erreur, momentsEnCause, onFermer }: Props) {
-  const [erreurAffichage, setErreurAffichage] = useState(false);
+  const insets = useSafeAreaInsets();
+  const [erreurAffichage, setErreurAffichage] = useState<string | null>(null);
 
   async function ouvrirAvec() {
     if (!uri) return;
@@ -65,18 +68,20 @@ export default function PdfViewer({ uri, chargement, erreur, momentsEnCause, onF
       {erreurAffichage ? (
         <View style={styles.centre}>
           <Text style={styles.texteChargement}>
-            L'aperçu intégré n'est pas disponible sur cet appareil -- utilise "Ouvrir le PDF" ci-dessous.
+            L'aperçu intégré n'a pas pu s'afficher ({erreurAffichage}) -- utilise "Ouvrir le PDF" ci-dessous.
           </Text>
         </View>
       ) : (
-        <>
-          <Text style={styles.astuce}>
-            Si l'aperçu ci-dessous reste vide, utilise le bouton "Ouvrir le PDF" -- ça reste le moyen le plus fiable de le consulter.
-          </Text>
-          <WebView source={{ uri }} style={{ flex: 1 }} onError={() => setErreurAffichage(true)} />
-        </>
+        <PdfView
+          uri={uri}
+          style={{ flex: 1 }}
+          fitMode="width"
+          pagingEnabled
+          doubleTapToZoom
+          onError={({ message }) => setErreurAffichage(message)}
+        />
       )}
-      <View style={styles.barreOutils}>
+      <View style={[styles.barreOutils, { paddingBottom: insets.bottom + 10 }]}>
         <Pressable style={styles.boutonPrincipal} onPress={ouvrirAvec}>
           <Text style={styles.texteBoutonPrincipal}>Ouvrir le PDF</Text>
         </Pressable>
@@ -97,7 +102,6 @@ const styles = StyleSheet.create({
   texteErreur: { fontSize: 14, color: "#7f1d1d", textAlign: "center" },
   listeMoments: { marginTop: 12 },
   momentEnCause: { fontSize: 13, color: "#991b1b" },
-  astuce: { fontSize: 11, color: "#94a3b8", textAlign: "center", padding: 8, backgroundColor: "#f8fafc" },
   barreOutils: { flexDirection: "row", padding: 10, gap: 10, backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#e2e8f0" },
   boutonPrincipal: { flex: 2, alignItems: "center", paddingVertical: 12, backgroundColor: "#2563eb", borderRadius: 10 },
   texteBoutonPrincipal: { color: "#fff", fontWeight: "700", fontSize: 14 },

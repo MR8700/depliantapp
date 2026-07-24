@@ -3,13 +3,16 @@ import {
   ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   getParametres, sauvegarderParametres, listerMedias, urlImageActive, urlMedia,
   uploaderEtActiverImage, activerImageDuPool, retirerImage, telechargerApercuPdf, ImageSlot, Media,
 } from "../api/parametres";
 import { jetonAuthorizationHeader } from "../api/client";
 import { entrainerModele } from "../api/ml";
-import { supprimerTouteLaBibliotheque } from "../api/chants";
+import { supprimerTouteLaBibliotheque, rechercherChants } from "../api/chants";
 import { synchroniserBibliotheque, dernieresSyncLe } from "../storage/sync";
 import { lireOutbox } from "../storage/chantsOutbox";
 import PdfViewer from "../components/PdfViewer";
@@ -22,6 +25,7 @@ const SLOTS: { cle: ImageSlot; label: string }[] = [
 ];
 
 export default function ReglagesScreen() {
+  const insets = useSafeAreaInsets();
   const [chorale, setChorale] = useState("");
   const [paroisse, setParoisse] = useState("");
   const [contact, setContact] = useState("");
@@ -33,6 +37,7 @@ export default function ReglagesScreen() {
   const [pickerSlot, setPickerSlot] = useState<ImageSlot | null>(null);
   const [medias, setMedias] = useState<Media[]>([]);
   const [confirmationSuppression, setConfirmationSuppression] = useState("");
+  const [suppressionEnCours, setSuppressionEnCours] = useState(false);
   const [onePageMode, setOnePageMode] = useState(false);
   const [apercuVisible, setApercuVisible] = useState(false);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
@@ -41,6 +46,12 @@ export default function ReglagesScreen() {
   const [syncEnCours, setSyncEnCours] = useState(false);
   const [derniereSync, setDerniereSync] = useState<string | null>(null);
   const [enAttenteOutbox, setEnAttenteOutbox] = useState(0);
+  // Aperçu local instantané pendant l'envoi -- le web voit son image tout de
+  // suite (data URI côté navigateur) ; sans ça, mobile n'affichait le
+  // nouveau logo/bannière qu'une fois l'upload terminé, ce qui semblait figé
+  // sur une connexion lente.
+  const [apercusLocaux, setApercusLocaux] = useState<Partial<Record<ImageSlot, string>>>({});
+  const [slotsEnEnvoi, setSlotsEnEnvoi] = useState<Set<ImageSlot>>(new Set());
   const timerAuto = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const charger = async () => {
@@ -120,11 +131,16 @@ export default function ReglagesScreen() {
     const resultat = await ImagePicker.launchImageLibraryAsync({ mediaTypes: ["images"], quality: 0.8 });
     if (resultat.canceled || !resultat.assets[0]) return;
     const asset = resultat.assets[0];
+    setApercusLocaux((prev) => ({ ...prev, [slot]: asset.uri }));
+    setSlotsEnEnvoi((prev) => new Set(prev).add(slot));
     try {
       await uploaderEtActiverImage(slot, asset.uri, asset.fileName ?? "image.jpg", asset.mimeType ?? "image/jpeg");
       setEntetesAuth({ ...entetesAuth }); // force le re-rendu de l'<Image> (nouvelle image active)
     } catch (erreur: any) {
+      setApercusLocaux((prev) => { const suivant = { ...prev }; delete suivant[slot]; return suivant; });
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer l'image");
+    } finally {
+      setSlotsEnEnvoi((prev) => { const suivant = new Set(prev); suivant.delete(slot); return suivant; });
     }
   }
 
@@ -142,6 +158,11 @@ export default function ReglagesScreen() {
     if (!pickerSlot) return;
     try {
       await activerImageDuPool(pickerSlot, mediaId);
+      // Comme choisirDepuisAppareil/onRetirer : sans ça, l'<Image> du slot ne
+      // se rafraîchissait pas tant que l'écran n'était pas rouvert (l'URI de
+      // urlImageActive() ne change pas, RN garde l'ancienne image en cache).
+      setApercusLocaux((prev) => { const suivant = { ...prev }; delete suivant[pickerSlot]; return suivant; });
+      setEntetesAuth({ ...entetesAuth });
       setPickerSlot(null);
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'activer cette image");
@@ -166,18 +187,35 @@ export default function ReglagesScreen() {
     }
   }
 
+  // Comme le web (app.js::btn-reset-bibliotheque, qui télécharge
+  // depliantapp_dataset_export.json avant l'appel DELETE) : une sauvegarde
+  // JSON est générée et proposée via la feuille de partage native AVANT la
+  // suppression définitive -- les erreurs de manipulation sur écran tactile
+  // sont fréquentes, cette sauvegarde est le seul filet de sécurité.
   async function viderLaBibliotheque() {
     if (confirmationSuppression !== "SUPPRIMER") return;
-    Alert.alert("Confirmer", "Toute la bibliothèque de chants va être supprimée. Continuer ?", [
+    Alert.alert("Confirmer", "Toute la bibliothèque de chants va être supprimée. Une sauvegarde JSON va d'abord t'être proposée. Continuer ?", [
       { text: "Annuler", style: "cancel" },
       {
         text: "Supprimer tout", style: "destructive", onPress: async () => {
+          setSuppressionEnCours(true);
           try {
+            const backupChants = await rechercherChants({ limit: 100000 });
+            const dest = `${FileSystem.cacheDirectory}depliantapp_dataset_export_${Date.now()}.json`;
+            await FileSystem.writeAsStringAsync(dest, JSON.stringify(backupChants, null, 2));
+            const partageDisponible = await Sharing.isAvailableAsync();
+            if (!partageDisponible) {
+              Alert.alert("Sauvegarde impossible", "Le partage de fichier n'est pas disponible sur cet appareil -- suppression annulée par sécurité.");
+              return;
+            }
+            await Sharing.shareAsync(dest, { mimeType: "application/json", dialogTitle: "Sauvegarder la bibliothèque avant suppression" });
             await supprimerTouteLaBibliotheque();
             setConfirmationSuppression("");
-            Alert.alert("Terminé", "La bibliothèque a été vidée.");
+            Alert.alert("Terminé", "La bibliothèque a été vidée (sauvegarde JSON proposée juste avant).");
           } catch (erreur: any) {
             Alert.alert("Erreur", erreur?.message ?? "Échec de la suppression");
+          } finally {
+            setSuppressionEnCours(false);
           }
         },
       },
@@ -252,12 +290,20 @@ export default function ReglagesScreen() {
       {SLOTS.map(({ cle, label }) => (
         <View key={cle} style={styles.carteImage}>
           <Text style={styles.labelImage}>{label}</Text>
-          <Image
-            source={{ uri: urlImageActive(cle), headers: entetesAuth }}
-            style={styles.imagePreview}
-            resizeMode="contain"
-            onError={() => {}}
-          />
+          <View>
+            <Image
+              source={apercusLocaux[cle] ? { uri: apercusLocaux[cle] } : { uri: urlImageActive(cle), headers: entetesAuth }}
+              style={styles.imagePreview}
+              resizeMode="contain"
+              onError={() => {}}
+            />
+            {slotsEnEnvoi.has(cle) && (
+              <View style={styles.voileEnvoi}>
+                <ActivityIndicator color="#fff" />
+                <Text style={styles.texteVoileEnvoi}>Envoi...</Text>
+              </View>
+            )}
+          </View>
           <View style={styles.actionsImage}>
             <Pressable style={styles.actionImage} onPress={() => choisirDepuisAppareil(cle)}>
               <Text style={styles.texteActionImage}>Téléverser</Text>
@@ -341,7 +387,10 @@ export default function ReglagesScreen() {
         onChangeText={setConfirmationSuppression}
         autoCapitalize="characters"
       />
-      <Bouton titre="Vider la bibliothèque" variante="contour" onPress={viderLaBibliotheque} desactive={confirmationSuppression !== "SUPPRIMER"} />
+      <Bouton
+        titre="Vider la bibliothèque" variante="contour" onPress={viderLaBibliotheque}
+        enCours={suppressionEnCours} desactive={confirmationSuppression !== "SUPPRIMER"}
+      />
 
       <Modal visible={!!pickerSlot} animationType="slide" onRequestClose={() => setPickerSlot(null)}>
         <View style={styles.conteneurPicker}>
@@ -358,7 +407,7 @@ export default function ReglagesScreen() {
             )}
             ListEmptyComponent={<Text style={styles.vide}>Aucune image disponible</Text>}
           />
-          <Pressable style={styles.fermerPicker} onPress={() => setPickerSlot(null)}>
+          <Pressable style={[styles.fermerPicker, { paddingBottom: 16 + insets.bottom }]} onPress={() => setPickerSlot(null)}>
             <Text style={styles.texteFermerPicker}>Fermer</Text>
           </Pressable>
         </View>
@@ -383,6 +432,11 @@ const styles = StyleSheet.create({
   carteImage: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 10 },
   labelImage: { fontSize: 13, fontWeight: "600", color: "#334155", marginBottom: 8 },
   imagePreview: { width: "100%", height: 80, backgroundColor: "#f1f5f9", borderRadius: 8 },
+  voileEnvoi: {
+    ...StyleSheet.absoluteFillObject, borderRadius: 8, backgroundColor: "rgba(15,23,42,0.55)",
+    alignItems: "center", justifyContent: "center", gap: 4,
+  },
+  texteVoileEnvoi: { color: "#fff", fontSize: 11, fontWeight: "600" },
   actionsImage: { flexDirection: "row", flexWrap: "wrap", gap: 14, marginTop: 10 },
   actionImage: {},
   texteActionImage: { color: "#2563eb", fontSize: 12, fontWeight: "600" },

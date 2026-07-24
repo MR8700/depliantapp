@@ -1,9 +1,11 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
-  ActivityIndicator, Alert, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { uploaderCarnet, finaliserImport, ChantExtrait } from "../api/import";
+import { getMeta } from "../api/meta";
 import { niveauConfiance, LABEL_CONFIANCE, COULEUR_CONFIANCE } from "../utils/confiance";
 import SelectModal from "../components/SelectModal";
 import Bouton from "../components/Bouton";
@@ -28,6 +30,7 @@ const CARTES_EXPLICATION = [
 ];
 
 export default function ImportScreen() {
+  const insets = useSafeAreaInsets();
   const [fichier, setFichier] = useState<{ uri: string; nom: string; mimeType: string; taille?: number } | null>(null);
   const [categorieDefaut, setCategorieDefaut] = useState("Autre");
   const [occasions, setOccasions] = useState("");
@@ -35,6 +38,13 @@ export default function ImportScreen() {
   const [langue, setLangue] = useState("fr");
   const [enCours, setEnCours] = useState(false);
   const [lignes, setLignes] = useState<LigneImport[] | null>(null);
+  const [categories, setCategories] = useState<string[]>([]);
+  const [indexEnEdition, setIndexEnEdition] = useState<number | null>(null);
+  const [brouillonEdition, setBrouillonEdition] = useState<{ titre: string; categorie: string; langue: string; refrain: string; couplets: string } | null>(null);
+
+  useEffect(() => {
+    getMeta().then((m) => setCategories(m.categories)).catch(() => {});
+  }, []);
 
   async function choisirFichier() {
     const resultat = await DocumentPicker.getDocumentAsync({
@@ -49,7 +59,7 @@ export default function ImportScreen() {
     if (!fichier) return;
     setEnCours(true);
     try {
-      const reponse = await uploaderCarnet({ ...fichier, categorieDefaut, occasions, langue });
+      const reponse = await uploaderCarnet({ ...fichier, categorieDefaut, occasions, langue, auteur });
       setLignes(reponse.chants.map((c) => ({ ...c, inclus: true })));
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Échec de l'analyse du fichier");
@@ -62,6 +72,36 @@ export default function ImportScreen() {
     setLignes((prev) => prev ? prev.map((l, i) => (i === index ? { ...l, ...patch } : l)) : prev);
   }
 
+  function toutSelectionner(inclus: boolean) {
+    setLignes((prev) => prev ? prev.map((l) => ({ ...l, inclus })) : prev);
+  }
+
+  function retirerLigne(index: number) {
+    Alert.alert("Retirer ce chant ?", "Il ne sera pas importé.", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Retirer", style: "destructive", onPress: () => setLignes((prev) => prev ? prev.filter((_, i) => i !== index) : prev) },
+    ]);
+  }
+
+  function ouvrirEdition(index: number) {
+    const l = lignes![index];
+    setIndexEnEdition(index);
+    setBrouillonEdition({ titre: l.titre, categorie: l.categorie, langue: l.langue, refrain: l.refrain, couplets: l.couplets.join("\n\n") });
+  }
+
+  function enregistrerEdition() {
+    if (indexEnEdition === null || !brouillonEdition) return;
+    majLigne(indexEnEdition, {
+      titre: brouillonEdition.titre,
+      categorie: brouillonEdition.categorie,
+      langue: brouillonEdition.langue,
+      refrain: brouillonEdition.refrain,
+      couplets: brouillonEdition.couplets.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean),
+    });
+    setIndexEnEdition(null);
+    setBrouillonEdition(null);
+  }
+
   async function validerImport() {
     if (!lignes) return;
     setEnCours(true);
@@ -71,6 +111,7 @@ export default function ImportScreen() {
         replace_id: l.doublons[0]?.id,
         titre: l.titre, refrain: l.refrain, couplets: l.couplets, code_reference: l.code_reference ?? undefined,
         categorie: l.categorie, occasions: l.occasions, confiance: l.confiance, langue: l.langue,
+        auteur: l.auteur ?? undefined, compositeur: l.compositeur ?? undefined,
       }));
       const resultat = await finaliserImport(payload);
       Alert.alert("Import terminé", `${resultat.saved} ajoutés, ${resultat.replaced} remplacés, ${resultat.ignored} ignorés.`);
@@ -84,13 +125,34 @@ export default function ImportScreen() {
   }
 
   if (lignes) {
+    const stats = {
+      importe: lignes.filter((l) => niveauConfiance(l.confiance) === "importe").length,
+      a_verifier: lignes.filter((l) => niveauConfiance(l.confiance) === "a_verifier").length,
+      echec: lignes.filter((l) => niveauConfiance(l.confiance) === "echec").length,
+    };
+    const tousCoches = lignes.length > 0 && lignes.every((l) => l.inclus);
+
     return (
       <View style={styles.conteneur}>
         <FlatList
           data={lignes}
           keyExtractor={(_, i) => String(i)}
           contentContainerStyle={{ padding: 16, paddingBottom: 90 }}
-          ListHeaderComponent={<Text style={styles.titreListe}>{lignes.length} chant(s) détecté(s)</Text>}
+          ListHeaderComponent={
+            <>
+              <Text style={styles.titreListe}>{lignes.length} chant(s) détecté(s)</Text>
+              <View style={styles.cartesStats}>
+                <View style={styles.carteStatImport}><Text style={styles.nombreStatImport}>{lignes.length}</Text><Text style={styles.labelStatImport}>Total</Text></View>
+                <View style={styles.carteStatImport}><Text style={[styles.nombreStatImport, { color: COULEUR_CONFIANCE.importe }]}>{stats.importe}</Text><Text style={styles.labelStatImport}>Importés</Text></View>
+                <View style={styles.carteStatImport}><Text style={[styles.nombreStatImport, { color: COULEUR_CONFIANCE.a_verifier }]}>{stats.a_verifier}</Text><Text style={styles.labelStatImport}>À vérifier</Text></View>
+                <View style={styles.carteStatImport}><Text style={[styles.nombreStatImport, { color: COULEUR_CONFIANCE.echec }]}>{stats.echec}</Text><Text style={styles.labelStatImport}>Échecs</Text></View>
+              </View>
+              <Pressable style={styles.ligneToutSelectionner} onPress={() => toutSelectionner(!tousCoches)}>
+                <Text>{tousCoches ? "☑" : "☐"}</Text>
+                <Text style={styles.texteToutSelectionner}>{tousCoches ? "Tout désélectionner" : "Tout sélectionner"}</Text>
+              </Pressable>
+            </>
+          }
           renderItem={({ item, index }) => {
             const niveau = niveauConfiance(item.confiance);
             return (
@@ -104,7 +166,10 @@ export default function ImportScreen() {
                     value={item.titre}
                     onChangeText={(v) => majLigne(index, { titre: v })}
                   />
+                  <Pressable onPress={() => ouvrirEdition(index)} hitSlop={8}><Text style={styles.iconeActionLigne}>✏️</Text></Pressable>
+                  <Pressable onPress={() => retirerLigne(index)} hitSlop={8}><Text style={styles.iconeActionLigne}>🗑️</Text></Pressable>
                 </View>
+                <Text style={styles.sousInfoLigne}>{item.categorie} · {item.langue.toUpperCase()}</Text>
                 <View style={styles.barreConfiance}>
                   <View style={[styles.barreRemplie, { width: `${Math.round(item.confiance * 100)}%`, backgroundColor: COULEUR_CONFIANCE[niveau] }]} />
                 </View>
@@ -122,6 +187,40 @@ export default function ImportScreen() {
           <View style={{ flex: 1 }}><Bouton titre="Annuler" variante="contour" onPress={() => setLignes(null)} /></View>
           <View style={{ flex: 1 }}><Bouton titre="Valider l'import" onPress={validerImport} enCours={enCours} /></View>
         </View>
+
+        <Modal visible={indexEnEdition !== null} animationType="slide" onRequestClose={() => setIndexEnEdition(null)}>
+          <View style={styles.conteneurEdition}>
+            <Text style={styles.titreEdition}>Modifier le chant détecté</Text>
+            {brouillonEdition && (
+              <ScrollView contentContainerStyle={{ paddingBottom: 24 }}>
+                <Text style={styles.label}>Titre</Text>
+                <TextInput style={styles.champ} value={brouillonEdition.titre} onChangeText={(v) => setBrouillonEdition({ ...brouillonEdition, titre: v })} />
+                <Text style={styles.label}>Catégorie</Text>
+                <SelectModal
+                  label="Catégorie" value={brouillonEdition.categorie}
+                  options={categories.map((c) => ({ value: c, label: c }))}
+                  onChange={(v) => setBrouillonEdition({ ...brouillonEdition, categorie: v })}
+                />
+                <Text style={styles.label}>Langue</Text>
+                <SelectModal label="Langue" value={brouillonEdition.langue} options={LANGUES_IMPORT} onChange={(v) => setBrouillonEdition({ ...brouillonEdition, langue: v })} />
+                <Text style={styles.label}>Refrain</Text>
+                <TextInput
+                  style={[styles.champ, styles.champMulti]} value={brouillonEdition.refrain} multiline
+                  onChangeText={(v) => setBrouillonEdition({ ...brouillonEdition, refrain: v })}
+                />
+                <Text style={styles.label}>Couplets (séparés par une ligne vide)</Text>
+                <TextInput
+                  style={[styles.champ, styles.champMulti]} value={brouillonEdition.couplets} multiline
+                  onChangeText={(v) => setBrouillonEdition({ ...brouillonEdition, couplets: v })}
+                />
+              </ScrollView>
+            )}
+            <View style={[styles.rangeeBoutonsEdition, { paddingBottom: 16 + insets.bottom }]}>
+              <View style={{ flex: 1 }}><Bouton titre="Annuler" variante="contour" onPress={() => setIndexEnEdition(null)} /></View>
+              <View style={{ flex: 1 }}><Bouton titre="Enregistrer" onPress={enregistrerEdition} /></View>
+            </View>
+          </View>
+        </Modal>
       </View>
     );
   }
@@ -219,12 +318,24 @@ const styles = StyleSheet.create({
   titreExplication: { fontSize: 12, fontWeight: "700", color: "#1F4A7C", marginBottom: 2 },
   texteExplication: { fontSize: 11, color: "#64748b", lineHeight: 16 },
   titreListe: { fontSize: 14, color: "#64748b", marginBottom: 8 },
+  cartesStats: { flexDirection: "row", gap: 8, marginBottom: 12 },
+  carteStatImport: { flex: 1, backgroundColor: "#fff", borderRadius: 10, padding: 8, alignItems: "center" },
+  nombreStatImport: { fontSize: 16, fontWeight: "800", color: "#1e293b" },
+  labelStatImport: { fontSize: 9, color: "#64748b", marginTop: 2, textAlign: "center" },
+  ligneToutSelectionner: { flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 },
+  texteToutSelectionner: { fontSize: 12, fontWeight: "600", color: "#334155" },
   carteLigne: { backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 8 },
   enteteLigne: { flexDirection: "row", alignItems: "center", gap: 10 },
   champTitre: { flex: 1, fontSize: 14, fontWeight: "600", color: "#1e293b", padding: 4 },
+  iconeActionLigne: { fontSize: 16 },
+  sousInfoLigne: { fontSize: 11, color: "#94a3b8", marginTop: 4, marginLeft: 26 },
   barreConfiance: { height: 6, backgroundColor: "#e2e8f0", borderRadius: 3, marginTop: 8, overflow: "hidden" },
   barreRemplie: { height: "100%" },
   labelConfiance: { fontSize: 11, marginTop: 4, fontWeight: "600" },
   doublon: { fontSize: 11, color: "#d97706", marginTop: 4 },
   barreBas: { flexDirection: "row", gap: 10, padding: 16, position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#eef2f9" },
+  conteneurEdition: { flex: 1, backgroundColor: "#eef2f9", padding: 16, paddingTop: 50 },
+  titreEdition: { fontSize: 17, fontWeight: "800", color: "#1F4A7C", marginBottom: 14 },
+  rangeeBoutonsEdition: { flexDirection: "row", gap: 10, paddingTop: 10 },
+  champMulti: { minHeight: 80, textAlignVertical: "top" },
 });

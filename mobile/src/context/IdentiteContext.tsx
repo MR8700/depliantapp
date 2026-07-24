@@ -4,11 +4,18 @@ import { getIdentite } from "../api/meta";
 import { Identite } from "../types";
 
 const CLE_CACHE_IDENTITE = "depliantapp.identite_cache";
+// Même principe que le web (localStorage `profil_avatar_${username}`, voir
+// app.js) : l'avatar est une préférence locale à l'appareil, jamais envoyée
+// au serveur (pas de colonne dédiée côté backend). Clé par username pour
+// survivre à un changement de compte connecté sur le même appareil.
+const CLE_AVATAR_PREFIX = "depliantapp.profil_avatar_";
 
 interface IdentiteContextValeur {
   identite: Identite | null;
   rafraichirIdentite: () => Promise<void>;
   estSuperAdmin: boolean;
+  avatarUri: string | null;
+  definirAvatar: (uri: string | null) => Promise<void>;
 }
 
 const IdentiteContext = createContext<IdentiteContextValeur | null>(null);
@@ -20,6 +27,7 @@ const IdentiteContext = createContext<IdentiteContextValeur | null>(null);
 // jamais de contrôle d'accès réel.
 export function IdentiteProvider({ children }: { children: React.ReactNode }) {
   const [identite, setIdentite] = useState<Identite | null>(null);
+  const [avatarUri, setAvatarUriState] = useState<string | null>(null);
 
   const rafraichirIdentite = useCallback(async () => {
     try {
@@ -38,8 +46,20 @@ export function IdentiteProvider({ children }: { children: React.ReactNode }) {
     rafraichirIdentite();
   }, [rafraichirIdentite]);
 
+  useEffect(() => {
+    if (!identite?.username) { setAvatarUriState(null); return; }
+    AsyncStorage.getItem(`${CLE_AVATAR_PREFIX}${identite.username}`).then(setAvatarUriState);
+  }, [identite?.username]);
+
+  const definirAvatar = useCallback(async (uri: string | null) => {
+    if (!identite?.username) return;
+    setAvatarUriState(uri);
+    if (uri) await AsyncStorage.setItem(`${CLE_AVATAR_PREFIX}${identite.username}`, uri);
+    else await AsyncStorage.removeItem(`${CLE_AVATAR_PREFIX}${identite.username}`);
+  }, [identite?.username]);
+
   return (
-    <IdentiteContext.Provider value={{ identite, rafraichirIdentite, estSuperAdmin: identite?.type === "super" }}>
+    <IdentiteContext.Provider value={{ identite, rafraichirIdentite, estSuperAdmin: identite?.type === "super", avatarUri, definirAvatar }}>
       {children}
     </IdentiteContext.Provider>
   );

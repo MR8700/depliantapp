@@ -138,6 +138,8 @@ CREATE TABLE IF NOT EXISTS chants (
     -- SQLite) exige que la table référencée existe déjà au moment du CREATE
     -- TABLE -- ça casserait une toute première installation sur base vide.
     propose_par_chorale_id INTEGER,
+    auteur TEXT,
+    compositeur TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
@@ -255,6 +257,22 @@ CREATE TABLE IF NOT EXISTS chant_partitions (
 );
 CREATE INDEX IF NOT EXISTS idx_chant_partitions_chant ON chant_partitions(chant_id);
 CREATE INDEX IF NOT EXISTS idx_chant_partitions_statut ON chant_partitions(statut);
+
+-- Audio/vidéo facultatifs attachés à un chant -- affichés/écoutables dans
+-- les détails du chant, jamais utilisés sur les feuillets PDF (contrairement
+-- aux partitions ci-dessus). Pas de workflow de modération (à_verifier/
+-- validee) : contrairement à une partition détectée automatiquement, il n'y
+-- a rien à vérifier ici, l'ajout est un geste délibéré. Plusieurs médias
+-- peuvent coexister pour un même chant (plusieurs versions/interprétations).
+CREATE TABLE IF NOT EXISTS chant_medias (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chant_id INTEGER NOT NULL REFERENCES chants(id),
+    type TEXT NOT NULL,
+    media_id INTEGER NOT NULL REFERENCES medias(id),
+    chorale_id INTEGER REFERENCES chorales(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
 
 -- Réglages actifs PAR CHORALE (nom affiché, paroisse, contact, quelles
 -- images du pool `medias` ci-dessus sont utilisées pour chaque
@@ -393,6 +411,8 @@ CREATE TABLE IF NOT EXISTS chants (
     -- référencée existe déjà à ce stade (voir commentaire équivalent dans
     -- SCHEMA_SQLITE).
     propose_par_chorale_id INTEGER,
+    auteur TEXT,
+    compositeur TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
@@ -509,6 +529,17 @@ CREATE TABLE IF NOT EXISTS chant_partitions (
 CREATE INDEX IF NOT EXISTS idx_chant_partitions_chant ON chant_partitions(chant_id);
 CREATE INDEX IF NOT EXISTS idx_chant_partitions_statut ON chant_partitions(statut);
 
+-- Audio/vidéo -- voir le commentaire équivalent dans SCHEMA_SQLITE.
+CREATE TABLE IF NOT EXISTS chant_medias (
+    id SERIAL PRIMARY KEY,
+    chant_id INTEGER NOT NULL REFERENCES chants(id),
+    type TEXT NOT NULL,
+    media_id INTEGER NOT NULL REFERENCES medias(id),
+    chorale_id INTEGER REFERENCES chorales(id),
+    created_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
+
 -- Réglages actifs PAR CHORALE — voir le commentaire équivalent dans
 -- SCHEMA_SQLITE. Remplace l'ancienne ligne singleton id=1 partagée par tout
 -- le site.
@@ -573,6 +604,8 @@ ALTER TABLE chants ADD COLUMN IF NOT EXISTS tonalite TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS remarques TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS valide_manuellement INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS propose_par_chorale_id INTEGER;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS auteur TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS compositeur TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES messages(id);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS modifie INTEGER NOT NULL DEFAULT 0;
@@ -621,6 +654,10 @@ def _init_sqlite() -> None:
                 conn.execute("ALTER TABLE chants ADD COLUMN valide_manuellement INTEGER NOT NULL DEFAULT 0")
             if "propose_par_chorale_id" not in colonnes:
                 conn.execute("ALTER TABLE chants ADD COLUMN propose_par_chorale_id INTEGER")
+            if "auteur" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN auteur TEXT")
+            if "compositeur" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN compositeur TEXT")
 
         conn.executescript(SCHEMA_SQLITE)
 

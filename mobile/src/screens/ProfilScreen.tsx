@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import * as ImagePicker from "expo-image-picker";
 import { useIdentite } from "../context/IdentiteContext";
 import { getParametres, sauvegarderParametres } from "../api/parametres";
 import { apiFetch } from "../api/client";
@@ -19,8 +20,10 @@ const CLE_PROFIL_LOCAL = "depliantapp.profil_local";
 // /paroisse/contact vont au backend, le reste est local à l'appareil comme
 // sur le web, voir memory) / Sécurité (changement de mot de passe) / Infos
 // du compte (lecture seule).
+const TAILLE_MAX_AVATAR_OCTETS = 5 * 1024 * 1024;
+
 export default function ProfilScreen({ onDeconnecte }: Props) {
-  const { identite, rafraichirIdentite } = useIdentite();
+  const { identite, rafraichirIdentite, avatarUri, definirAvatar } = useIdentite();
   const [onglet, setOnglet] = useState<Onglet>("informations");
 
   const [choraleNom, setChoraleNom] = useState("");
@@ -61,6 +64,30 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
   const scoreForce = Object.values(exigences).filter(Boolean).length;
   const labelForce = scoreForce <= 2 ? "Faible" : scoreForce <= 4 ? "Moyenne" : "Forte";
   const couleurForce = scoreForce <= 2 ? "#ef4444" : scoreForce <= 4 ? "#d97706" : "#16a34a";
+
+  async function changerAvatar() {
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) { Alert.alert("Permission refusée", "Accès à la galerie nécessaire."); return; }
+    const resultat = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images, quality: 0.7, base64: true, allowsEditing: true, aspect: [1, 1],
+    });
+    if (resultat.canceled || !resultat.assets?.[0]) return;
+    const asset = resultat.assets[0];
+    if (asset.fileSize && asset.fileSize > TAILLE_MAX_AVATAR_OCTETS) {
+      Alert.alert("Fichier trop grand", "5 Mo maximum.");
+      return;
+    }
+    if (!asset.base64) { Alert.alert("Erreur", "Impossible de lire cette image."); return; }
+    const mime = asset.mimeType ?? "image/jpeg";
+    await definirAvatar(`data:${mime};base64,${asset.base64}`);
+  }
+
+  function supprimerAvatar() {
+    Alert.alert("Supprimer la photo de profil ?", undefined, [
+      { text: "Annuler", style: "cancel" },
+      { text: "Supprimer", style: "destructive", onPress: () => definirAvatar(null) },
+    ]);
+  }
 
   async function enregistrerModifications() {
     try {
@@ -117,6 +144,27 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
 
       {onglet === "informations" && (
         <View>
+          <View style={styles.blocAvatar}>
+            {avatarUri ? (
+              <Image source={{ uri: avatarUri }} style={styles.avatarImage} />
+            ) : (
+              <View style={styles.avatarPlaceholder}>
+                <Text style={styles.avatarPlaceholderTexte}>
+                  {(identite?.nom || identite?.username || "?").trim().charAt(0).toUpperCase()}
+                </Text>
+              </View>
+            )}
+            <View style={styles.actionsAvatar}>
+              <Pressable style={styles.boutonAvatar} onPress={changerAvatar}>
+                <Text style={styles.texteBoutonAvatar}>Changer</Text>
+              </Pressable>
+              {avatarUri && (
+                <Pressable style={[styles.boutonAvatar, styles.boutonAvatarSuppr]} onPress={supprimerAvatar}>
+                  <Text style={[styles.texteBoutonAvatar, styles.texteBoutonAvatarSuppr]}>Supprimer</Text>
+                </Pressable>
+              )}
+            </View>
+          </View>
           <Text style={styles.label}>Nom complet</Text>
           <TextInput style={styles.champ} placeholder="Entrez votre nom..." value={nomComplet} onChangeText={setNomComplet} />
           <Text style={styles.label}>Nom de la chorale</Text>
@@ -197,6 +245,15 @@ const styles = StyleSheet.create({
   tabActif: { backgroundColor: "#2563eb" },
   texteTab: { fontSize: 11, color: "#334155", fontWeight: "600" },
   texteTabActif: { color: "#fff" },
+  blocAvatar: { flexDirection: "row", alignItems: "center", gap: 16, marginBottom: 18 },
+  avatarImage: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#e2e8f0" },
+  avatarPlaceholder: { width: 72, height: 72, borderRadius: 36, backgroundColor: "#2f6bb2", alignItems: "center", justifyContent: "center" },
+  avatarPlaceholderTexte: { color: "#fff", fontSize: 26, fontWeight: "800" },
+  actionsAvatar: { flexDirection: "row", gap: 8 },
+  boutonAvatar: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 8, paddingHorizontal: 12, paddingVertical: 8, backgroundColor: "#fff" },
+  boutonAvatarSuppr: { borderColor: "#fecaca" },
+  texteBoutonAvatar: { fontSize: 12, fontWeight: "600", color: "#334155" },
+  texteBoutonAvatarSuppr: { color: "#ef4444" },
   label: { fontSize: 12, color: "#64748b", marginBottom: 4, marginTop: 6 },
   champ: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, backgroundColor: "#fff", marginBottom: 4 },
   rangeeForce: { flexDirection: "row", justifyContent: "space-between", marginTop: 14 },

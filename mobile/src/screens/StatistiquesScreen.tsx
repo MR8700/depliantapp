@@ -5,6 +5,13 @@ import * as Sharing from "expo-sharing";
 import { getStatistiques, Statistiques } from "../api/statistiques";
 import Bouton from "../components/Bouton";
 
+function formaterDateCourte(valeur: string): string {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(valeur || "");
+  if (!m) return valeur || "";
+  const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+  return d.toLocaleDateString("fr-FR", { day: "numeric", month: "long", year: "numeric" });
+}
+
 export default function StatistiquesScreen() {
   const [stats, setStats] = useState<Statistiques | null>(null);
   const [rafraichissement, setRafraichissement] = useState(false);
@@ -73,9 +80,10 @@ export default function StatistiquesScreen() {
 
       <Text style={styles.section}>Feuillets par chorale</Text>
       {stats.feuillets_par_chorale.map((f) => (
-        <View key={f.chorale_nom} style={styles.ligneTableau}>
-          <Text style={styles.texteTableau}>{f.chorale_nom}</Text>
+        <View key={f.chorale_nom} style={styles.ligneTableauChorale}>
+          <Text style={styles.texteTableau} numberOfLines={1}>{f.chorale_nom}</Text>
           <Text style={styles.texteTableauNombre}>{f.nombre}</Text>
+          <Text style={styles.texteTableauDate}>{f.dernier ? formaterDateCourte(f.dernier) : "—"}</Text>
         </View>
       ))}
 
@@ -116,6 +124,8 @@ const styles = StyleSheet.create({
   labelStat: { fontSize: 10, color: "#64748b", textAlign: "center", marginTop: 2 },
   section: { fontSize: 14, fontWeight: "700", color: "#1e293b", marginTop: 18, marginBottom: 6 },
   ligneTableau: { flexDirection: "row", justifyContent: "space-between", backgroundColor: "#fff", borderRadius: 8, padding: 10, marginBottom: 4 },
-  texteTableau: { fontSize: 13, color: "#334155" },
+  ligneTableauChorale: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", borderRadius: 8, padding: 10, marginBottom: 4 },
+  texteTableau: { fontSize: 13, color: "#334155", flex: 1 },
   texteTableauNombre: { fontSize: 13, fontWeight: "700", color: "#1e293b" },
+  texteTableauDate: { fontSize: 11, color: "#64748b" },
 });

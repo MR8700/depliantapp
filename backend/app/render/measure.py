@@ -8,7 +8,7 @@ from xml.sax.saxutils import escape
 from reportlab.platypus import Paragraph
 
 from .model import Section
-from .typography import mettre_en_gras_numero, mettre_en_gras_refrain
+from .typography import POLICE_ITALIQUE, mettre_en_gras_numero, mettre_en_gras_refrain
 
 HAUTEUR_INFINIE = 10_000 * 72
 
@@ -43,7 +43,15 @@ def construire_unites_section(section: Section, styles: dict, largeur: float) ->
 
     song = section.song
     if song.titre:
-        ajouter(Paragraph(escape(song.titre), styles["titre_chant"]), "titre")
+        titre_html = escape(song.titre)
+        if song.auteur_compositeur:
+            # Sous-ligne auteur/compositeur intégrée au MÊME Paragraph (pas
+            # une unité séparée) : une unité est indivisible (voir docstring
+            # de fichier) -- il ne faut jamais que le titre et son auteur se
+            # retrouvent séparés par un saut de zone/colonne.
+            taille_auteur = max(styles["titre_chant"].fontSize - 1.5, 6)
+            titre_html += f'<br/><font face="{POLICE_ITALIQUE}" size="{taille_auteur}">{escape(song.auteur_compositeur)}</font>'
+        ajouter(Paragraph(titre_html, styles["titre_chant"]), "titre")
 
     if song.refrain:
         texte = mettre_en_gras_refrain(escape(song.refrain))

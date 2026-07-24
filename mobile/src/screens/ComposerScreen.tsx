@@ -3,6 +3,7 @@ import {
   Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from "react-native";
 import * as Crypto from "expo-crypto";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getMeta } from "../api/meta";
 import { creerFeuillet, mettreAJourFeuillet, telechargerFeuilletPdf, getFeuillet, DepassementPdf } from "../api/feuillets";
@@ -11,10 +12,28 @@ import { ApiError } from "../api/client";
 import { Chant, FeuilletCreate, MomentContenu } from "../types";
 import SelecteurChant from "../components/SelecteurChant";
 import PdfViewer from "../components/PdfViewer";
-import Bouton from "../components/Bouton";
+import FabToolbox from "../components/FabToolbox";
 import { categorieLabel } from "../utils/labels";
 
 const CLE_CELEBRATION_INFO = "depliantapp.composer_celebration_info";
+
+function dateIsoVersDate(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function dateVersIso(d: Date): string {
+  const annee = d.getFullYear();
+  const mois = String(d.getMonth() + 1).padStart(2, "0");
+  const jour = String(d.getDate()).padStart(2, "0");
+  return `${annee}-${mois}-${jour}`;
+}
+
+function formaterDateLisible(iso: string): string {
+  if (!iso) return "Sélectionner une date *";
+  return dateIsoVersDate(iso).toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+}
 
 interface LigneMoment {
   cle: string;
@@ -54,6 +73,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
   const [moments, setMoments] = useState<string[]>([]);
   const [lignes, setLignes] = useState<LigneMoment[]>([]);
   const [date, setDate] = useState("");
+  const [pickerDateVisible, setPickerDateVisible] = useState(false);
   const [lieu, setLieu] = useState("");
   // Champs "Informations de la célébration" -- purement cosmétiques, jamais
   // envoyés au backend (FeuilletBase n'a pas ces colonnes) : reproduit à
@@ -294,6 +314,19 @@ export default function ComposerScreen({ route, navigation }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [date, lieu, premiereLecture, psaume, deuxiemeLecture, evangile, lignes, priereActive, priereTexte, onePageMode, banniereActive, feuilletId]);
 
+  // "💾 Brouillon" sauvegarde seule -- le web confirme par un toast
+  // ("Brouillon enregistré avec succès !"), sinon un tap sans effet visible
+  // se lit comme un bouton figé alors que la sauvegarde a bien eu lieu.
+  async function enregistrerBrouillon() {
+    const id = await enregistrer();
+    if (id) Alert.alert("Brouillon enregistré", "Le feuillet a été sauvegardé.");
+  }
+
+  // "✨ Créer" et "📄 PDF" : même comportement que le web (btn-submit-composer
+  // et btn-generate-pdf-direct pointent tous deux vers la génération +
+  // aperçu du PDF, voir afficherResultatFeuillet/regenererApercuSiPossible
+  // dans app.js) -- "Créer" ne doit pas se contenter d'enregistrer en
+  // silence, l'utilisateur doit voir le résultat.
   async function genererApercu() {
     const id = await enregistrer();
     if (!id) return;
@@ -449,7 +482,25 @@ export default function ComposerScreen({ route, navigation }: Props) {
         )}
 
         <Text style={styles.section}>ℹ️ Informations de la célébration</Text>
-        <TextInput style={styles.champ} placeholder="Date * (AAAA-MM-JJ)" value={date} onChangeText={setDate} />
+        <Pressable style={styles.champ} onPress={() => setPickerDateVisible(true)}>
+          <Text style={date ? styles.texteChampDate : styles.texteChampDatePlaceholder}>{formaterDateLisible(date)}</Text>
+        </Pressable>
+        {pickerDateVisible && (
+          <DateTimePicker
+            value={date ? dateIsoVersDate(date) : new Date()}
+            mode="date"
+            display={Platform.OS === "ios" ? "inline" : "default"}
+            onChange={(event, selectionne) => {
+              if (Platform.OS !== "ios") setPickerDateVisible(false);
+              if (event.type === "set" && selectionne) setDate(dateVersIso(selectionne));
+            }}
+          />
+        )}
+        {Platform.OS === "ios" && pickerDateVisible && (
+          <Pressable style={styles.boutonValiderDate} onPress={() => setPickerDateVisible(false)}>
+            <Text style={styles.texteBoutonValiderDate}>OK</Text>
+          </Pressable>
+        )}
         <TextInput style={styles.champ} placeholder="Lieu (Paroisse Saint Pierre…)" value={lieu} onChangeText={setLieu} />
         <TextInput style={styles.champ} placeholder="Célébration (Temps ordinaire…)" value={typeCelebration} onChangeText={setTypeCelebration} />
         <TextInput style={styles.champ} placeholder="Président (Père…)" value={president} onChangeText={setPresident} />
@@ -527,24 +578,22 @@ export default function ComposerScreen({ route, navigation }: Props) {
         />
       </ScrollView>
 
-      {/* Barre du bas -- identique au web (composer-bottom-bar) */}
+      {/* Barre d'infos du bas -- les actions sont reprises par la boule
+          déplaçable (FabToolbox) ci-dessous, qui remplace la barre plate. */}
       <View style={styles.barreBas}>
         <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.infosBarre}>
           <Text style={styles.infoItem}>{chantsCount} chant{chantsCount !== 1 ? "s" : ""} sélectionné{chantsCount !== 1 ? "s" : ""}</Text>
           <Text style={styles.infoItem}>{momentsRemplis === totalMoments && totalMoments > 0 ? "🟢 Tous les moments remplis" : `🟡 Moments remplis : ${momentsRemplis}/${totalMoments}`}</Text>
         </ScrollView>
-        <View style={styles.rangeeBoutonsFinal}>
-          <Pressable style={styles.boutonBarre} onPress={() => enregistrer()} disabled={enregistrementEnCours}>
-            <Text style={styles.texteBoutonBarre}>💾 Brouillon</Text>
-          </Pressable>
-          <Pressable style={styles.boutonBarre} onPress={genererApercu} disabled={enregistrementEnCours}>
-            <Text style={styles.texteBoutonBarre}>📄 PDF</Text>
-          </Pressable>
-          <Pressable style={[styles.boutonBarre, styles.boutonBarrePrimaire]} onPress={() => enregistrer()} disabled={enregistrementEnCours}>
-            <Text style={styles.texteBoutonBarrePrimaire}>✨ Créer</Text>
-          </Pressable>
-        </View>
       </View>
+
+      <FabToolbox
+        actions={[
+          { key: "brouillon", icone: "💾", libelle: "Brouillon", onPress: enregistrerBrouillon, enCours: enregistrementEnCours, desactive: enregistrementEnCours },
+          { key: "pdf", icone: "📄", libelle: "Aperçu PDF", onPress: genererApercu, enCours: enregistrementEnCours, desactive: enregistrementEnCours },
+          { key: "creer", icone: "✨", libelle: "Créer", onPress: genererApercu, enCours: enregistrementEnCours, desactive: enregistrementEnCours, primaire: true },
+        ]}
+      />
 
       <SelecteurChant
         visible={!!ligneCiblee || !!lectureCiblee}
@@ -574,6 +623,10 @@ const styles = StyleSheet.create({
   rangeeActionsTexte: { flexDirection: "row", gap: 16, marginBottom: 8 },
   actionTexte: { fontSize: 12, color: "#2563eb", fontWeight: "600" },
   champ: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, fontSize: 14, backgroundColor: "#fff", marginBottom: 8 },
+  texteChampDate: { fontSize: 14, color: "#1e293b", textTransform: "capitalize" },
+  texteChampDatePlaceholder: { fontSize: 14, color: "#94a3b8" },
+  boutonValiderDate: { alignSelf: "flex-end", paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#2563eb", borderRadius: 8, marginBottom: 8 },
+  texteBoutonValiderDate: { color: "#fff", fontWeight: "700", fontSize: 13 },
   champMulti: { minHeight: 70, textAlignVertical: "top" },
   rangeeLecture: { flexDirection: "row", alignItems: "center", gap: 8 },
   champLecture: { flex: 1 },
@@ -620,9 +673,4 @@ const styles = StyleSheet.create({
   barreBas: { backgroundColor: "#fff", borderTopWidth: 1, borderTopColor: "#e2e8f0", padding: 10 },
   infosBarre: { gap: 14, paddingBottom: 8 },
   infoItem: { fontSize: 11, color: "#64748b" },
-  rangeeBoutonsFinal: { flexDirection: "row", gap: 8 },
-  boutonBarre: { flex: 1, alignItems: "center", paddingVertical: 10, backgroundColor: "#eef2f9", borderRadius: 10 },
-  boutonBarrePrimaire: { backgroundColor: "#2563eb" },
-  texteBoutonBarre: { fontSize: 12, color: "#334155", fontWeight: "600" },
-  texteBoutonBarrePrimaire: { fontSize: 12, color: "#fff", fontWeight: "700" },
 });

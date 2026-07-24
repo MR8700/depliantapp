@@ -15,6 +15,8 @@ export interface Chant {
   duree_estimee: string | null;
   tonalite: string | null;
   remarques: string | null;
+  auteur: string | null;
+  compositeur: string | null;
   source_file: string | null;
   confiance: number;
   // Validation manuelle du badge "à vérifier" -- distincte de `confiance`
@@ -27,6 +29,20 @@ export interface Chant {
 export type ChantCreate = Omit<Chant, "id" | "source_file" | "confiance" | "valide_manuellement" | "propose_par_chorale_id" | "propose_par_chorale_nom">;
 
 export type ChantUpdate = Partial<ChantCreate>;
+
+// Audio/vidéo facultatifs attachés à un chant -- voir db.py::chant_medias.
+// Jamais utilisés sur les feuillets PDF, juste affichés/écoutables dans le
+// détail du chant.
+export interface ChantMedia {
+  id: number;
+  chant_id: number;
+  type: "audio" | "video";
+  filename: string;
+  content_type: string | null;
+  chorale_id: number | null;
+  chorale_nom: string | null;
+  created_at: string;
+}
 
 export interface Identite {
   authenticated: boolean;

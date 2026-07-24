@@ -42,7 +42,18 @@ export interface PdfLocal {
 export async function telechargerFeuilletPdf(id: number): Promise<PdfLocal> {
   const dest = `${FileSystem.cacheDirectory}feuillet_${id}_${Date.now()}.pdf`;
   const headers = await jetonAuthorizationHeader();
-  const resultat = await FileSystem.downloadAsync(`${API_BASE_URL}/feuillets/${id}/pdf`, dest, { headers });
+  const url = `${API_BASE_URL}/feuillets/${id}/pdf`;
+  // Même retry qu'apiFetch (client.ts) : la génération PDF est justement
+  // l'endpoint le plus lourd, donc celui qui a le plus de chances de tomber
+  // sur un service Render encore endormi -- un seul nouvel essai après une
+  // courte pause suffit à couvrir la connexion coupée du tout premier réveil.
+  let resultat: FileSystem.FileSystemDownloadResult;
+  try {
+    resultat = await FileSystem.downloadAsync(url, dest, { headers });
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    resultat = await FileSystem.downloadAsync(url, dest, { headers });
+  }
   if (resultat.status === 409) {
     const texte = await FileSystem.readAsStringAsync(dest);
     await FileSystem.deleteAsync(dest, { idempotent: true });

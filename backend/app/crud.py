@@ -55,6 +55,8 @@ def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
         valide_manuellement=bool(row["valide_manuellement"]) if "valide_manuellement" in list(row.keys()) and row["valide_manuellement"] is not None else False,
         propose_par_chorale_id=row["propose_par_chorale_id"] if "propose_par_chorale_id" in list(row.keys()) else None,
         propose_par_chorale_nom=row["propose_par_chorale_nom"] if "propose_par_chorale_nom" in list(row.keys()) else None,
+        auteur=row["auteur"] if "auteur" in list(row.keys()) else None,
+        compositeur=row["compositeur"] if "compositeur" in list(row.keys()) else None,
     )
 
 
@@ -65,8 +67,8 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
         new_id = insert_returning_id(
             conn,
             """
-            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chant.titre,
@@ -86,6 +88,8 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
                 chant.duree_estimee,
                 chant.tonalite,
                 chant.remarques,
+                chant.auteur,
+                chant.compositeur,
             ),
         )
         row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
@@ -280,6 +284,80 @@ def get_chant_by_slug(slug: str) -> Optional[schemas.Chant]:
         return _row_to_chant(row) if row else None
 
 
+# --- Audio/vidéo facultatifs (voir db.py::chant_medias) --------------------
+# Contrairement aux partitions : pas de workflow de modération, pas de
+# déduplication par hash, plusieurs médias peuvent coexister pour un même
+# chant. Jamais utilisés dans le rendu PDF des feuillets.
+
+_CHANT_MEDIA_SELECT = (
+    "SELECT cm.*, m.filename, m.content_type, ch.nom AS chorale_nom "
+    "FROM chant_medias cm "
+    "JOIN medias m ON m.id = cm.media_id "
+    "LEFT JOIN chorales ch ON ch.id = cm.chorale_id"
+)
+
+
+def _row_to_chant_media(row) -> schemas.ChantMedia:
+    return schemas.ChantMedia(
+        id=row["id"], chant_id=row["chant_id"], type=row["type"],
+        filename=row["filename"], content_type=row["content_type"],
+        chorale_id=row["chorale_id"], chorale_nom=row["chorale_nom"],
+        created_at=str(row["created_at"]),
+    )
+
+
+def lister_medias_chant(chant_id: int) -> list[schemas.ChantMedia]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            _CHANT_MEDIA_SELECT + " WHERE cm.chant_id = ? ORDER BY cm.created_at ASC", (chant_id,),
+        ).fetchall()
+        return [_row_to_chant_media(r) for r in rows]
+
+
+def ajouter_media_chant(
+    chant_id: int, type_: str, chorale_id: int, contenu: bytes, filename: str, content_type: Optional[str],
+) -> schemas.ChantMedia:
+    chant = get_chant(chant_id)
+    media = config.upload_media(chorale_id, type_, filename, contenu, content_type, nom=chant.titre if chant else None)
+    with get_connection() as conn:
+        nouvelle_id = insert_returning_id(
+            conn,
+            "INSERT INTO chant_medias (chant_id, type, media_id, chorale_id) VALUES (?, ?, ?, ?)",
+            (chant_id, type_, media["id"], chorale_id),
+        )
+        row = conn.execute(_CHANT_MEDIA_SELECT + " WHERE cm.id = ?", (nouvelle_id,)).fetchone()
+        return _row_to_chant_media(row)
+
+
+def get_media_chant_bytes(media_chant_id: int) -> Optional[tuple[bytes, str, Optional[int]]]:
+    """(contenu, content_type, chorale_id) -- chorale_id sert au contrôle
+    d'accès lors de la suppression (voir supprimer_media_chant)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT m.donnees, m.content_type, cm.chorale_id FROM chant_medias cm "
+            "JOIN medias m ON m.id = cm.media_id WHERE cm.id = ?",
+            (media_chant_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return bytes(row["donnees"]), row["content_type"] or "application/octet-stream", row["chorale_id"]
+
+
+def supprimer_media_chant(media_chant_id: int, chorale_id: Optional[int], est_superadmin: bool) -> bool:
+    """Une chorale ne peut retirer que SON PROPRE ajout ; le super-admin peut
+    retirer n'importe lequel -- même logique de portée que partout ailleurs
+    dans la bibliothèque partagée (jamais de suppression directe du contenu
+    d'une autre chorale)."""
+    with get_connection() as conn:
+        row = conn.execute("SELECT chorale_id FROM chant_medias WHERE id = ?", (media_chant_id,)).fetchone()
+        if not row:
+            return False
+        if not est_superadmin and row["chorale_id"] != chorale_id:
+            return False
+        conn.execute("DELETE FROM chant_medias WHERE id = ?", (media_chant_id,))
+        return True
+
+
 def list_chants(
     q: Optional[str] = None,
     categorie: Optional[str] = None,
@@ -391,7 +469,7 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 slug = unique_slug(data["titre"], _existing_slugs(conn, exclude_id=chant_id))
         conn.execute(
             """
-            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?
+            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?
             WHERE id=?
             """,
             (
@@ -411,6 +489,8 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 data["duree_estimee"],
                 data["tonalite"],
                 data["remarques"],
+                data["auteur"],
+                data["compositeur"],
                 chant_id,
             ),
         )
@@ -476,8 +556,8 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                 
                 conn.execute(
                     """
-                    INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         chant.titre,
@@ -497,6 +577,8 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                         chant.duree_estimee,
                         chant.tonalite,
                         chant.remarques,
+                        chant.auteur,
+                        chant.compositeur,
                     ),
                 )
                 saved += 1
@@ -536,7 +618,9 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                 duree_estimee = champs_envoyes.get("duree_estimee", row["duree_estimee"])
                 tonalite = champs_envoyes.get("tonalite", row["tonalite"])
                 remarques = champs_envoyes.get("remarques", row["remarques"])
-                
+                auteur = champs_envoyes.get("auteur", row["auteur"] if "auteur" in row.keys() else None)
+                compositeur = champs_envoyes.get("compositeur", row["compositeur"] if "compositeur" in row.keys() else None)
+
                 slug_demande = (champs_envoyes.get("slug") or "").strip()
                 if slug_demande:
                     slug = unique_slug(slug_demande, _existing_slugs(conn, exclude_id=chant_id))
@@ -547,7 +631,7 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                 
                 conn.execute(
                     """
-                    UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?
+                    UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?
                     WHERE id=?
                     """,
                     (
@@ -567,6 +651,8 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                         duree_estimee,
                         tonalite,
                         remarques,
+                        auteur,
+                        compositeur,
                         chant_id,
                     )
                 )

@@ -23,6 +23,8 @@ class ImportedChantFinalize(BaseModel):
     occasions: List[str]
     confiance: float
     langue: Optional[str] = "fr"
+    auteur: Optional[str] = None
+    compositeur: Optional[str] = None
 
 
 class FinalizeImportPayload(BaseModel):
@@ -35,6 +37,7 @@ async def upload_carnet(
     categorie_defaut: str = Form("Autre"),
     occasions: str = Form(""),
     langue: str = Form("fr"),
+    auteur: str = Form(""),
 ):
     suffix = Path(fichier.filename).suffix.lower()
     if suffix != ".json" and suffix not in SUPPORTED_EXTENSIONS:
@@ -99,6 +102,11 @@ async def upload_carnet(
             "categorie": categorie,
             "occasions": occasions_list,
             "langue": langue,
+            # Pas de détection d'auteur/compositeur par chant dans le moteur
+            # de segmentation (voir ingestion/generic.py) -- ce champ
+            # "par défaut" s'applique donc tel quel à tous les chants de ce
+            # carnet, comme categorie_defaut/occasions/langue ci-dessus.
+            "auteur": auteur or None,
             "doublons": doublons,
             "avertissements": raw.avertissements,
         })
@@ -136,6 +144,8 @@ async def finalize_import(payload: FinalizeImportPayload):
                     code_reference=item.code_reference,
                     occasions=item.occasions,
                     langue=item.langue or "fr",
+                    auteur=item.auteur,
+                    compositeur=item.compositeur,
                 )
                 prepared_ops[i] = {"type": "save", "chant": chant, "confiance": item.confiance}
             elif item.action == "replace" and item.replace_id is not None:
@@ -147,6 +157,8 @@ async def finalize_import(payload: FinalizeImportPayload):
                     code_reference=item.code_reference,
                     occasions=item.occasions,
                     langue=item.langue,
+                    auteur=item.auteur,
+                    compositeur=item.compositeur,
                 )
                 prepared_ops[i] = {"type": "replace", "id": item.replace_id, "patch": patch}
             else:

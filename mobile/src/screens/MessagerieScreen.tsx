@@ -2,7 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert, FlatList, Image, KeyboardAvoidingView, Modal, Platform, Pressable, StyleSheet, Text, TextInput, View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useIsFocused } from "@react-navigation/native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -18,6 +20,10 @@ const EMOJIS = ["❤️", "👍", "👏", "🙏", "😂", "🎵"];
 // Mêmes 10 emojis que le picker rapide du web (app.js::initMessagerieEventListeners).
 const EMOJIS_PICKER = ["😀", "😂", "❤️", "👍", "👏", "🙏", "🎵", "🎉", "🔥", "✨"];
 const INTERVALLE_POLLING_MS = 3000;
+// Même stockage client que le web (localStorage "messagerie_archived_threads")
+// -- l'archivage est une préférence d'affichage locale, jamais persistée
+// côté serveur (voir app.js::getArchivedThreads/basculerArchiveConversation).
+const CLE_ARCHIVES = "depliantapp.messagerie_archived_threads";
 
 function formaterOctets(octets: number | null): string {
   if (!octets) return "0 octet";
@@ -37,6 +43,7 @@ function iconePieceJointe(nomFichier: string | null): string {
 }
 
 export default function MessagerieScreen() {
+  const insets = useSafeAreaInsets();
   const { estSuperAdmin, identite } = useIdentite();
   const estFocalise = useIsFocused();
   const [threads, setThreads] = useState<FilThread[]>([]);
@@ -49,7 +56,7 @@ export default function MessagerieScreen() {
   const [messageEnEdition, setMessageEnEdition] = useState<Message | null>(null);
   const [rechercheThreads, setRechercheThreads] = useState("");
   const [filtreThreads, setFiltreThreads] = useState<"all" | "unread" | "archived">("all");
-  const [archives] = useState<number[]>([]);
+  const [archives, setArchives] = useState<number[]>([]);
   const [pieceJointe, setPieceJointe] = useState<PieceJointeAEnvoyer | null>(null);
   const [menuAttachOuvert, setMenuAttachOuvert] = useState(false);
   const [menuEmojiOuvert, setMenuEmojiOuvert] = useState(false);
@@ -58,6 +65,20 @@ export default function MessagerieScreen() {
   const [authHeaders, setAuthHeaders] = useState<Record<string, string>>({});
 
   useEffect(() => { jetonAuthorizationHeader().then(setAuthHeaders); }, []);
+
+  useEffect(() => {
+    AsyncStorage.getItem(CLE_ARCHIVES).then((brut) => {
+      if (!brut) return;
+      try { setArchives(JSON.parse(brut)); } catch {}
+    });
+  }, []);
+
+  async function basculerArchiveConversation(choraleId: number) {
+    const estArchivee = archives.includes(choraleId);
+    const suivant = estArchivee ? archives.filter((id) => id !== choraleId) : [...archives, choraleId];
+    setArchives(suivant);
+    await AsyncStorage.setItem(CLE_ARCHIVES, JSON.stringify(suivant));
+  }
 
   const chargerMessages = useCallback(async () => {
     if (!choraleActive) return;
@@ -184,8 +205,11 @@ export default function MessagerieScreen() {
   if (estSuperAdmin && !choraleActive) {
     const threadsFiltres = threads.filter((t) => {
       if (rechercheThreads.trim() && !t.chorale_nom.toLowerCase().includes(rechercheThreads.trim().toLowerCase())) return false;
-      if (filtreThreads === "unread") return t.non_lus > 0;
+      // Comme le web : une conversation archivée disparaît des onglets
+      // "Tous"/"Non lus", elle ne réapparaît que sous "Archivés".
       if (filtreThreads === "archived") return archives.includes(t.chorale_id);
+      if (archives.includes(t.chorale_id)) return false;
+      if (filtreThreads === "unread") return t.non_lus > 0;
       return true;
     });
     return (
@@ -228,9 +252,19 @@ export default function MessagerieScreen() {
   return (
     <KeyboardAvoidingView style={styles.fond} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       {estSuperAdmin && (
-        <Pressable style={styles.retour} onPress={() => setChoraleActive(null)}>
-          <Text style={styles.texteRetour}>‹ {choraleActive?.nom}</Text>
-        </Pressable>
+        <View style={styles.enteteConversation}>
+          <Pressable style={styles.retour} onPress={() => setChoraleActive(null)}>
+            <Text style={styles.texteRetour}>‹ {choraleActive?.nom}</Text>
+          </Pressable>
+          <Pressable
+            style={styles.boutonArchiverConversation}
+            onPress={() => choraleActive && basculerArchiveConversation(choraleActive.id)}
+          >
+            <Text style={styles.texteArchiverConversation}>
+              {choraleActive && archives.includes(choraleActive.id) ? "📦 Désarchiver" : "📦 Archiver"}
+            </Text>
+          </Pressable>
+        </View>
       )}
       <FlatList
         data={messages.filter((m) => !m.supprime)}
@@ -265,7 +299,12 @@ export default function MessagerieScreen() {
                   )
                 )}
                 {!!item.texte && <Text style={[styles.texteBulle, moi && styles.texteBulleMoi]}>{item.texte}</Text>}
-                {item.modifie && <Text style={styles.modifieTag}>modifié</Text>}
+                <View style={styles.piedBulle}>
+                  {item.modifie && <Text style={styles.modifieTag}>modifié</Text>}
+                  {moi && (
+                    <Text style={[styles.statutLecture, item.lu && styles.statutLectureLu]}>{item.lu ? "✓✓" : "✓"}</Text>
+                  )}
+                </View>
               </View>
               <View style={styles.actionsMessage}>
                 {EMOJIS.slice(0, 3).map((e) => (
@@ -336,7 +375,7 @@ export default function MessagerieScreen() {
 
       <Modal visible={menuAttachOuvert} animationType="fade" transparent onRequestClose={() => setMenuAttachOuvert(false)}>
         <Pressable style={styles.fondPopover} onPress={() => setMenuAttachOuvert(false)}>
-          <View style={styles.popoverAttach}>
+          <View style={[styles.popoverAttach, { paddingBottom: insets.bottom }]}>
             <Pressable style={styles.itemAttach} onPress={() => choisirImageOuVideo("image")}>
               <Text style={styles.texteItemAttach}>🖼️ Image</Text>
             </Pressable>
@@ -355,7 +394,7 @@ export default function MessagerieScreen() {
 
       <Modal visible={menuEmojiOuvert} animationType="fade" transparent onRequestClose={() => setMenuEmojiOuvert(false)}>
         <Pressable style={styles.fondPopover} onPress={() => setMenuEmojiOuvert(false)}>
-          <View style={styles.popoverEmoji}>
+          <View style={[styles.popoverEmoji, { paddingBottom: 20 + insets.bottom }]}>
             {EMOJIS_PICKER.map((e) => (
               <Pressable key={e} onPress={() => { setTexte((t) => t + e); setMenuEmojiOuvert(false); }}>
                 <Text style={styles.emojiPopoverItem}>{e}</Text>
@@ -384,8 +423,11 @@ const styles = StyleSheet.create({
   apercuThread: { fontSize: 13, color: "#64748b", marginTop: 2 },
   badge: { backgroundColor: "#dc2626", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2 },
   badgeTexte: { color: "#fff", fontSize: 12, fontWeight: "700" },
-  retour: { padding: 12, backgroundColor: "#fff" },
+  enteteConversation: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", backgroundColor: "#fff" },
+  retour: { padding: 12 },
   texteRetour: { color: "#2563eb", fontWeight: "600" },
+  boutonArchiverConversation: { paddingHorizontal: 12, paddingVertical: 6 },
+  texteArchiverConversation: { color: "#64748b", fontWeight: "600", fontSize: 12 },
   bulleConteneur: { marginBottom: 14, maxWidth: "85%" },
   bulleConteneurMoi: { alignSelf: "flex-end", alignItems: "flex-end" },
   bulleConteneurAutre: { alignSelf: "flex-start", alignItems: "flex-start" },
@@ -395,7 +437,10 @@ const styles = StyleSheet.create({
   citation: { fontSize: 11, color: "#94a3b8", marginBottom: 2 },
   texteBulle: { fontSize: 14, color: "#1e293b" },
   texteBulleMoi: { color: "#fff" },
-  modifieTag: { fontSize: 10, color: "#cbd5e1", marginTop: 2 },
+  modifieTag: { fontSize: 10, color: "#cbd5e1" },
+  piedBulle: { flexDirection: "row", justifyContent: "flex-end", alignItems: "center", gap: 6, marginTop: 2 },
+  statutLecture: { fontSize: 11, color: "rgba(255,255,255,0.6)" },
+  statutLectureLu: { color: "#bfdbfe", fontWeight: "700" },
   actionsMessage: { flexDirection: "row", gap: 10, marginTop: 4 },
   emojiAction: { fontSize: 14 },
   lienAction: { fontSize: 11, color: "#64748b" },

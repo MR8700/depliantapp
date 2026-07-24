@@ -3003,6 +3003,7 @@ function ouvrirDetailChant(chant) {
 
   ouvrirModale("chant-detail-modal");
   chargerPartitionChant(chant);
+  chargerMediasChant(chant);
 }
 
 // --- Partitions (copies notées) : section dans le détail d'un chant -------
@@ -3067,6 +3068,98 @@ async function chargerPartitionChant(chant) {
       alert(`Erreur : ${err.message}`);
     }
   };
+}
+
+// --- Audio/vidéo facultatifs : section dans le détail d'un chant ----------
+// Contrairement aux partitions ci-dessus : pas de workflow de modération
+// (l'ajout est délibéré, rien à vérifier), plusieurs médias peuvent coexister
+// pour un même chant. Jamais utilisés sur les feuillets PDF -- juste
+// affichés/écoutables ici.
+function _cdMediaPeutSupprimer(media) {
+  if (IDENTITE.type === "super") return true;
+  return IDENTITE.type === "chorale" && media.chorale_id === IDENTITE.compte_id;
+}
+
+async function chargerMediasChant(chant) {
+  const zone = document.getElementById("cd-medias-zone");
+  const inputAudio = document.getElementById("cd-media-fichier-audio");
+  const inputVideo = document.getElementById("cd-media-fichier-video");
+  if (!zone || !chant.id) return;
+  zone.innerHTML = `<span class="cd-partition-chargement">Chargement...</span>`;
+
+  let medias = [];
+  try { medias = await api(`/chants/${chant.id}/medias`); } catch (e) { medias = []; }
+
+  const cartesHtml = medias.length === 0
+    ? `<p class="cd-partition-hint">Aucun audio/vidéo pour ce chant.</p>`
+    : medias.map((m) => {
+        const url = `/chants/${chant.id}/medias/${m.id}/fichier`;
+        const lecteur = m.type === "audio"
+          ? `<audio controls src="${url}" style="width:100%;"></audio>`
+          : `<video controls src="${url}" style="width:100%;border-radius:6px;"></video>`;
+        const btnSupprimer = _cdMediaPeutSupprimer(m)
+          ? `<button type="button" class="cd-media-supprimer" data-id="${m.id}" title="Supprimer" style="background:none;border:none;color:#ef4444;cursor:pointer;font-size:0.9rem;">🗑️</button>`
+          : "";
+        return `
+          <div class="cd-partition-carte" style="gap:6px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;">
+              <span style="font-size:0.75rem;color:#64748b;">${escapeHtml(m.filename)}${m.chorale_nom ? ` · ${escapeHtml(m.chorale_nom)}` : ""}</span>
+              ${btnSupprimer}
+            </div>
+            ${lecteur}
+          </div>`;
+      }).join("");
+
+  zone.innerHTML = `
+    ${cartesHtml}
+    <div style="display:flex;gap:8px;margin-top:8px;">
+      <button type="button" id="cd-media-upload-audio-btn" class="cd-partition-btn-upload" style="flex:1;">🎵 Audio</button>
+      <button type="button" id="cd-media-upload-video-btn" class="cd-partition-btn-upload" style="flex:1;">🎥 Vidéo</button>
+    </div>
+  `;
+
+  zone.querySelectorAll(".cd-media-supprimer").forEach((btn) => {
+    btn.addEventListener("click", async () => {
+      if (!confirm("Supprimer ce média ?")) return;
+      try {
+        await api(`/chants/${chant.id}/medias/${btn.dataset.id}`, { method: "DELETE" });
+        await chargerMediasChant(chant);
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+      }
+    });
+  });
+
+  const btnAudio = document.getElementById("cd-media-upload-audio-btn");
+  const btnVideo = document.getElementById("cd-media-upload-video-btn");
+  btnAudio.addEventListener("click", () => inputAudio.click());
+  btnVideo.addEventListener("click", () => inputVideo.click());
+
+  const gererUpload = (input, bouton, type) => {
+    input.onchange = async () => {
+      const fichier = input.files[0];
+      input.value = "";
+      if (!fichier) return;
+      const formData = new FormData();
+      formData.append("fichier", fichier);
+      try {
+        await avecChargement(bouton, async () => {
+          const res = await fetch(`/chants/${chant.id}/medias?media_type=${type}`, { method: "POST", body: formData });
+          if (!res.ok) {
+            const texte = await res.text();
+            let detail = texte;
+            try { detail = JSON.parse(texte).detail; } catch (e) { /* non-JSON */ }
+            throw new Error(typeof detail === "string" ? detail : "Erreur lors de l'envoi");
+          }
+        });
+        await chargerMediasChant(chant);
+      } catch (err) {
+        alert(`Erreur : ${err.message}`);
+      }
+    };
+  };
+  gererUpload(inputAudio, btnAudio, "audio");
+  gererUpload(inputVideo, btnVideo, "video");
 }
 
 function construireFeuilletPayload() {
@@ -5400,7 +5493,9 @@ async function confirmerImportWorkspace() {
       categorie: item.categorie,
       occasions: item.occasions || [],
       confiance: item.confiance || 1.0,
-      langue: item.langue || "fr"
+      langue: item.langue || "fr",
+      auteur: item.auteur || null,
+      compositeur: item.compositeur || null,
     };
   });
 

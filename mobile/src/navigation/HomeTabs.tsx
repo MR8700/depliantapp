@@ -6,6 +6,7 @@ import ComposerScreen from "../screens/ComposerScreen";
 import DepliantsScreen from "../screens/DepliantsScreen";
 import MessagerieScreen from "../screens/MessagerieScreen";
 import PlusStack from "./PlusStack";
+import ProfilHeaderButton from "../components/ProfilHeaderButton";
 
 const Tab = createBottomTabNavigator();
 
@@ -48,7 +49,7 @@ export default function HomeTabs({ onDeconnecte }: Props) {
   const rendrePlusStack = useCallback(() => <PlusStack onDeconnecte={onDeconnecte} />, [onDeconnecte]);
 
   return (
-    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: "#2563eb" }}>
+    <Tab.Navigator screenOptions={{ tabBarActiveTintColor: "#2563eb", headerLeft: () => <ProfilHeaderButton /> }}>
       <Tab.Screen
         name="Bibliotheque" component={BibliothequeScreen}
         options={{ title: "Bibliothèque", tabBarIcon: icone("Bibliotheque") }}

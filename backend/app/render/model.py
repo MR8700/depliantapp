@@ -15,6 +15,10 @@ class Song:
     titre: Optional[str]
     refrain: Optional[str]
     couplets: list[str] = field(default_factory=list)
+    # Affiché en plus petit sous le titre (voir render/measure.py) -- jamais
+    # utilisé ailleurs dans le rendu. Même repli auteur/compositeur que le
+    # modal de détail du chant côté web (chant.auteur || chant.compositeur).
+    auteur_compositeur: Optional[str] = None
 
 
 @dataclass
@@ -36,7 +40,10 @@ def _resolve_song(moment: schemas.MomentContenu) -> Song:
         couplets = chant.couplets
         if moment.couplet_limit is not None:
             couplets = couplets[: moment.couplet_limit]
-        return Song(titre=chant.titre, refrain=chant.refrain, couplets=couplets)
+        return Song(
+            titre=chant.titre, refrain=chant.refrain, couplets=couplets,
+            auteur_compositeur=chant.auteur or chant.compositeur,
+        )
 
     return Song(
         titre=moment.titre_libre,

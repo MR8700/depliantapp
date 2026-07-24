@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
-import { rechercherChants, bulkCategoriser, bulkSupprimer } from "../api/chants";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { rechercherChants, bulkCategoriser, bulkSupprimer, modifierChant } from "../api/chants";
 import { demanderSuppression } from "../api/moderation";
 import { getMeta } from "../api/meta";
 import { useIdentite } from "../context/IdentiteContext";
@@ -17,6 +18,7 @@ type Tri = "recent" | "creation" | "titre" | "confiance";
 
 export default function EditeurScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { estSuperAdmin } = useIdentite();
   const [chants, setChants] = useState<Chant[]>([]);
   const [categories, setCategories] = useState<string[]>([]);
@@ -24,6 +26,7 @@ export default function EditeurScreen() {
   const [filtreStat, setFiltreStat] = useState<FiltreStat>("tous");
   const [filtreCategorie, setFiltreCategorie] = useState("");
   const [filtreLangue, setFiltreLangue] = useState("");
+  const [filtreOrigine, setFiltreOrigine] = useState<"" | "manuel" | "importe">("");
   const [tri, setTri] = useState<Tri>("recent");
   const [drawerOuvert, setDrawerOuvert] = useState(false);
   const [selection, setSelection] = useState<Set<number>>(new Set());
@@ -49,6 +52,14 @@ export default function EditeurScreen() {
       if (filtreStat === "echecs" && niveauConfiance(c.confiance) !== "echec") return false;
       if (filtreCategorie && c.categorie !== filtreCategorie) return false;
       if (filtreLangue && c.langue !== filtreLangue) return false;
+      // Origine "Manuel" = créé via "+ Ajouter un chant" (source_file=null),
+      // par opposition à un chant issu de l'import (source_file="import_workspace").
+      // Le web filtre sur `confiance === null`, un état qui n'existe plus dans
+      // le schéma actuel (colonne NOT NULL DEFAULT 1.0, voir db.py) -- ce
+      // filtre serait donc toujours vide côté web ; source_file est le champ
+      // qui porte réellement cette distinction.
+      if (filtreOrigine === "manuel" && c.source_file) return false;
+      if (filtreOrigine === "importe" && !c.source_file) return false;
       if (q && !c.titre.toLowerCase().includes(q)) return false;
       return true;
     });
@@ -58,7 +69,7 @@ export default function EditeurScreen() {
       return 0; // recent/creation : created_at non exposé par l'API, comparaison neutre
     });
     return liste;
-  }, [chants, recherche, filtreStat, filtreCategorie, filtreLangue, tri]);
+  }, [chants, recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, tri]);
 
   function toggleSelection(id: number) {
     setSelection((prev) => {
@@ -76,6 +87,21 @@ export default function EditeurScreen() {
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Échec de l'opération groupée");
     }
+  }
+
+  // Comme le web (bulk-rendre-public/bulk-rendre-prive, app.js) mais via
+  // PATCH plutôt qu'un GET+PUT complet par chant -- même résultat (actif
+  // basculé sur toute la sélection), moins d'aller-retours réseau.
+  async function basculerVisibiliteSelection(actif: boolean) {
+    const ids = Array.from(selection);
+    const resultats = await Promise.allSettled(ids.map((id) => modifierChant(id, { actif })));
+    setChants((prev) => prev.map((c) => {
+      const index = ids.indexOf(c.id);
+      return index !== -1 && resultats[index].status === "fulfilled" ? { ...c, actif } : c;
+    }));
+    const echecs = resultats.filter((r) => r.status === "rejected").length;
+    setSelection(new Set());
+    if (echecs > 0) Alert.alert("Erreur", `${echecs} chant(s) n'ont pas pu être mis à jour.`);
   }
 
   function supprimerSelection() {
@@ -169,25 +195,43 @@ export default function EditeurScreen() {
       />
 
       {selection.size > 0 && (
-        <View style={styles.barreActions}>
+        <View style={[styles.barreActions, { paddingBottom: 14 + insets.bottom }]}>
           <Text style={styles.texteSelection}>{selection.size} sélectionné(s)</Text>
-          <Pressable onPress={() => categoriserSelection(categories[0] ?? "Autre")}>
-            <Text style={styles.lienBarre}>Déplacer</Text>
-          </Pressable>
-          <Pressable onPress={supprimerSelection}>
-            <Text style={[styles.lienBarre, { color: "#fecaca" }]}>Supprimer</Text>
-          </Pressable>
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.rangeeLiensBarre}>
+            <Pressable onPress={() => categoriserSelection(categories[0] ?? "Autre")}>
+              <Text style={styles.lienBarre}>Déplacer</Text>
+            </Pressable>
+            <Pressable onPress={() => basculerVisibiliteSelection(true)}>
+              <Text style={styles.lienBarre}>Rendre public</Text>
+            </Pressable>
+            <Pressable onPress={() => basculerVisibiliteSelection(false)}>
+              <Text style={styles.lienBarre}>Rendre privé</Text>
+            </Pressable>
+            <Pressable onPress={supprimerSelection}>
+              <Text style={[styles.lienBarre, { color: "#fecaca" }]}>Supprimer</Text>
+            </Pressable>
+          </ScrollView>
         </View>
       )}
 
       <Modal visible={drawerOuvert} animationType="slide" transparent onRequestClose={() => setDrawerOuvert(false)}>
         <Pressable style={styles.fondDrawer} onPress={() => setDrawerOuvert(false)}>
-          <Pressable style={styles.drawer} onPress={(e) => e.stopPropagation()}>
+          <Pressable style={[styles.drawer, { paddingBottom: 20 + insets.bottom }]} onPress={(e) => e.stopPropagation()}>
             <Text style={styles.titreDrawer}>⚙️ Filtres avancés</Text>
             <Text style={styles.labelFiltre}>Catégorie liturgique</Text>
             <SelectModal label="Catégorie" value={filtreCategorie} options={[{ value: "", label: "Toutes" }, ...categories.map((c) => ({ value: c, label: c }))]} onChange={setFiltreCategorie} />
             <Text style={styles.labelFiltre}>Langue</Text>
             <SelectModal label="Langue" value={filtreLangue} options={LANGUES_OPTIONS} onChange={setFiltreLangue} />
+            <Text style={styles.labelFiltre}>Origine</Text>
+            <SelectModal
+              label="Origine" value={filtreOrigine}
+              options={[
+                { value: "", label: "Toutes origines" },
+                { value: "manuel", label: "Manuel" },
+                { value: "importe", label: "Importé" },
+              ]}
+              onChange={(v) => setFiltreOrigine(v as "" | "manuel" | "importe")}
+            />
             <Text style={styles.labelFiltre}>Trier par</Text>
             <SelectModal
               label="Trier par" value={tri}
@@ -241,8 +285,9 @@ const styles = StyleSheet.create({
   titreLigne: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
   sousLigne: { fontSize: 12, color: "#94a3b8" },
   vide: { textAlign: "center", color: "#94a3b8", marginTop: 40 },
-  barreActions: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#1e293b", flexDirection: "row", alignItems: "center", padding: 14, gap: 16 },
-  texteSelection: { color: "#fff", flex: 1, fontSize: 12 },
+  barreActions: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#1e293b", flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
+  texteSelection: { color: "#fff", fontSize: 12 },
+  rangeeLiensBarre: { flexDirection: "row", alignItems: "center", gap: 16 },
   lienBarre: { color: "#93c5fd", fontWeight: "600" },
   fondDrawer: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-end" },
   drawer: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: "80%" },

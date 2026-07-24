@@ -29,13 +29,31 @@ function messageErreur(donnees: any, status: number): string {
   return `Erreur ${status}`;
 }
 
+// Un hébergement gratuit (Render) met le service en veille après inactivité :
+// la toute première requête qui le réveille peut échouer au niveau réseau
+// (connexion coupée pendant le réveil, pas une erreur HTTP) avant qu'un
+// simple nouvel essai ne fonctionne -- même logique que fetchAvecRetry côté
+// web (app.js). Sans ça, un tap sur "Créer"/"PDF" pouvait rejeter tout de
+// suite sur ce premier essai raté et laisser le bouton sans retour clair.
+async function fetchAvecRetry(url: string, init: RequestInit, tentatives = 2, delaiMs = 1500): Promise<Response> {
+  for (let i = 0; i < tentatives; i++) {
+    try {
+      return await fetch(url, init);
+    } catch (erreur) {
+      if (i === tentatives - 1) throw erreur;
+      await new Promise((resolve) => setTimeout(resolve, delaiMs));
+    }
+  }
+  throw new Error("fetchAvecRetry: aucune tentative effectuée");
+}
+
 // Attache le jeton de session en `Authorization: Bearer` -- l'app ne
 // persistant pas les cookies entre deux lancements, c'est le seul mécanisme
 // de session côté mobile (voir routers/auth.py::login côté backend).
 export async function apiFetch<T>(path: string, options: Options = {}): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json", ...(await jeton(options.authentifie)) };
 
-  const reponse = await fetch(`${API_BASE_URL}${path}`, {
+  const reponse = await fetchAvecRetry(`${API_BASE_URL}${path}`, {
     method: options.method ?? "GET",
     headers,
     body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
@@ -59,7 +77,7 @@ export async function apiFetchForm<T>(
   options: { method?: "POST" | "PUT"; authentifie?: boolean } = {},
 ): Promise<T> {
   const headers: Record<string, string> = await jeton(options.authentifie);
-  const reponse = await fetch(`${API_BASE_URL}${path}`, { method: options.method ?? "POST", headers, body: form as any });
+  const reponse = await fetchAvecRetry(`${API_BASE_URL}${path}`, { method: options.method ?? "POST", headers, body: form as any });
   const texte = await reponse.text();
   const donnees = texte ? JSON.parse(texte) : null;
   if (!reponse.ok) {

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, FlatList, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sharing from "expo-sharing";
 import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, telechargerFeuilletPdf, DepassementPdf } from "../api/feuillets";
@@ -43,8 +45,22 @@ function formaterDateAffichage(valeur: string): string {
   return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
 }
 
+function dateIsoVersDate(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function dateVersIso(d: Date): string {
+  const annee = d.getFullYear();
+  const mois = String(d.getMonth() + 1).padStart(2, "0");
+  const jour = String(d.getDate()).padStart(2, "0");
+  return `${annee}-${mois}-${jour}`;
+}
+
 export default function DepliantsScreen() {
   const navigation = useNavigation<any>();
+  const insets = useSafeAreaInsets();
   const { estSuperAdmin, identite } = useIdentite();
   const [onglet, setOnglet] = useState<Onglet>("mine");
   const [tri, setTri] = useState<Tri>("recent");
@@ -63,6 +79,7 @@ export default function DepliantsScreen() {
   const [menuOuvert, setMenuOuvert] = useState<Feuillet | null>(null);
   const [renommerCible, setRenommerCible] = useState<Feuillet | null>(null);
   const [nouvelleDate, setNouvelleDate] = useState("");
+  const [pickerRenommerVisible, setPickerRenommerVisible] = useState(false);
   const [infosModal, setInfosModal] = useState<Feuillet | null>(null);
 
   useEffect(() => {
@@ -154,6 +171,7 @@ export default function DepliantsScreen() {
   function ouvrirRenommer(feuillet: Feuillet) {
     setMenuOuvert(null);
     setNouvelleDate(feuillet.date);
+    setPickerRenommerVisible(false);
     setRenommerCible(feuillet);
   }
 
@@ -333,7 +351,7 @@ export default function DepliantsScreen() {
 
       <Modal visible={!!menuOuvert} animationType="slide" transparent onRequestClose={() => setMenuOuvert(null)}>
         <Pressable style={styles.fondFeuille} onPress={() => setMenuOuvert(null)}>
-          <Pressable style={styles.feuilleBas} onPress={() => {}}>
+          <Pressable style={[styles.feuilleBas, { paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
             <View style={styles.poigneeFeuille} />
             <View style={styles.enteteFeuille}>
               <Text style={styles.titreFeuille}>Options du dépliant</Text>
@@ -384,7 +402,25 @@ export default function DepliantsScreen() {
         <View style={styles.fondModal}>
           <View style={styles.boiteModal}>
             <Text style={styles.titreModal}>Nouveau nom (Date de la célébration)</Text>
-            <TextInput style={styles.champModalSimple} value={nouvelleDate} onChangeText={setNouvelleDate} autoFocus />
+            <Pressable style={styles.champModalSimple} onPress={() => setPickerRenommerVisible(true)}>
+              <Text style={styles.texteChampDateModal}>{formaterDateAffichage(nouvelleDate) || "Sélectionner une date"}</Text>
+            </Pressable>
+            {pickerRenommerVisible && (
+              <DateTimePicker
+                value={nouvelleDate ? dateIsoVersDate(nouvelleDate) : new Date()}
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={(event, selectionne) => {
+                  if (Platform.OS !== "ios") setPickerRenommerVisible(false);
+                  if (event.type === "set" && selectionne) setNouvelleDate(dateVersIso(selectionne));
+                }}
+              />
+            )}
+            {Platform.OS === "ios" && pickerRenommerVisible && (
+              <Pressable style={styles.boutonValiderDateModal} onPress={() => setPickerRenommerVisible(false)}>
+                <Text style={styles.texteBoutonValiderDateModal}>OK</Text>
+              </Pressable>
+            )}
             <View style={styles.rangeeModal}>
               <View style={{ flex: 1 }}><Bouton titre="Annuler" variante="contour" onPress={() => setRenommerCible(null)} /></View>
               <View style={{ flex: 1 }}><Bouton titre="Renommer" onPress={confirmerRenommage} desactive={!nouvelleDate.trim()} /></View>
@@ -470,6 +506,9 @@ const styles = StyleSheet.create({
   titreModal: { fontSize: 16, fontWeight: "700", marginBottom: 10, color: "#1e293b" },
   champModal: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, minHeight: 70, textAlignVertical: "top", marginBottom: 14 },
   champModalSimple: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 14 },
+  texteChampDateModal: { fontSize: 14, color: "#1e293b", textTransform: "capitalize" },
+  boutonValiderDateModal: { alignSelf: "flex-end", paddingHorizontal: 16, paddingVertical: 8, backgroundColor: "#2563eb", borderRadius: 8, marginBottom: 10 },
+  texteBoutonValiderDateModal: { color: "#fff", fontWeight: "700", fontSize: 13 },
   rangeeModal: { flexDirection: "row", gap: 10 },
   fondFeuille: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-end" },
   feuilleBas: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, paddingBottom: 24, paddingTop: 8 },

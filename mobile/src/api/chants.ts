@@ -1,5 +1,7 @@
-import { apiFetch } from "./client";
-import { Chant, ChantCreate, ChantUpdate } from "../types";
+import * as FileSystem from "expo-file-system/legacy";
+import { apiFetch, apiFetchForm, jetonAuthorizationHeader } from "./client";
+import { API_BASE_URL } from "../config";
+import { Chant, ChantCreate, ChantMedia, ChantUpdate } from "../types";
 
 interface RechercheParams {
   q?: string;
@@ -61,6 +63,8 @@ export function dupliquerChant(chant: Chant): Promise<Chant> {
     tonalite: chant.tonalite,
     duree_estimee: chant.duree_estimee,
     remarques: chant.remarques,
+    auteur: chant.auteur,
+    compositeur: chant.compositeur,
     slug: null,
   });
 }
@@ -91,4 +95,47 @@ export function validerChant(id: number): Promise<Chant> {
 
 export function retirerValidationChant(id: number): Promise<Chant> {
   return apiFetch<Chant>(`/chants/${id}/retirer-validation`, { method: "POST" });
+}
+
+// --- Audio/vidéo facultatifs (voir routers/chants.py, db.py::chant_medias) --
+// Pas de workflow de modération : l'ajout est délibéré, rien à vérifier.
+// Jamais utilisés sur les feuillets PDF -- juste affichés/écoutables dans le
+// détail du chant (SongDetailModal).
+
+export function listerMediasChant(chantId: number): Promise<ChantMedia[]> {
+  return apiFetch<ChantMedia[]>(`/chants/${chantId}/medias`);
+}
+
+export function ajouterMediaChant(
+  chantId: number, type: "audio" | "video", uri: string, nom: string, mimeType: string,
+): Promise<ChantMedia> {
+  const form = new FormData();
+  form.append("fichier", { uri, name: nom, type: mimeType } as any);
+  return apiFetchForm<ChantMedia>(`/chants/${chantId}/medias?media_type=${type}`, form, { method: "POST" });
+}
+
+export function supprimerMediaChant(chantId: number, mediaId: number): Promise<{ ok: boolean }> {
+  return apiFetch<{ ok: boolean }>(`/chants/${chantId}/medias/${mediaId}`, { method: "DELETE" });
+}
+
+// Télécharge le média vers un fichier local (cache) avant lecture -- même
+// raison que telechargerFeuilletPdf (feuillets.ts) : l'endpoint exige le
+// jeton Bearer, qu'une WebView ne peut pas attacher à une requête média
+// distante. Même retry qu'ailleurs pour couvrir le réveil Render.
+export async function telechargerMediaChant(chantId: number, media: ChantMedia): Promise<string> {
+  const dest = `${FileSystem.cacheDirectory}chant_media_${media.id}_${media.filename}`;
+  const headers = await jetonAuthorizationHeader();
+  const url = `${API_BASE_URL}/chants/${chantId}/medias/${media.id}/fichier`;
+  let resultat;
+  try {
+    resultat = await FileSystem.downloadAsync(url, dest, { headers });
+  } catch {
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    resultat = await FileSystem.downloadAsync(url, dest, { headers });
+  }
+  if (resultat.status !== 200) {
+    await FileSystem.deleteAsync(dest, { idempotent: true });
+    throw new Error(`Erreur ${resultat.status} lors du téléchargement`);
+  }
+  return resultat.uri;
 }

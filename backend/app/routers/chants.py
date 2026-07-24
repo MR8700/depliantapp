@@ -8,6 +8,8 @@ from ..deps import identite_courante, require_chorale, require_superadmin
 from ..ml import classifier, duplicates
 
 _TAILLE_MAX_PARTITION = 15 * 1024 * 1024  # 15 Mo
+_TAILLE_MAX_AUDIO = 20 * 1024 * 1024  # 20 Mo
+_TAILLE_MAX_VIDEO = 60 * 1024 * 1024  # 60 Mo
 
 router = APIRouter(prefix="/chants", tags=["chants"])
 
@@ -206,3 +208,57 @@ def telecharger_partition(chant_id: int, _identite: auth.Identite = Depends(iden
         raise HTTPException(status_code=404, detail="Partition introuvable")
     contenu, content_type, _chorale_id = resultat
     return Response(content=contenu, media_type=content_type)
+
+
+# --- Audio/vidéo facultatifs (voir db.py::chant_medias) --------------------
+# Contrairement aux partitions : pas de workflow de modération (l'ajout est
+# un geste délibéré, rien à vérifier), pas de déduplication, jamais utilisés
+# sur les feuillets PDF -- juste affichés/écoutables dans le détail du chant.
+
+@router.get("/{chant_id}/medias", response_model=list[schemas.ChantMedia])
+def lister_medias_chant(chant_id: int, _identite: auth.Identite = Depends(identite_courante)):
+    if not crud.get_chant(chant_id):
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return crud.lister_medias_chant(chant_id)
+
+
+@router.post("/{chant_id}/medias", response_model=schemas.ChantMedia)
+async def ajouter_media_chant(
+    chant_id: int, media_type: str, fichier: UploadFile, identite: auth.Identite = Depends(identite_courante),
+):
+    if not crud.get_chant(chant_id):
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    if media_type not in ("audio", "video"):
+        raise HTTPException(status_code=400, detail="Type invalide (audio ou video)")
+    content_type = fichier.content_type or ""
+    if not content_type.startswith(f"{media_type}/"):
+        raise HTTPException(status_code=400, detail=f"Le fichier doit être un {media_type}")
+    contenu = await fichier.read()
+    if not contenu:
+        raise HTTPException(status_code=400, detail="Fichier vide")
+    taille_max = _TAILLE_MAX_AUDIO if media_type == "audio" else _TAILLE_MAX_VIDEO
+    if len(contenu) > taille_max:
+        raise HTTPException(status_code=400, detail=f"Le fichier ne doit pas dépasser {taille_max // (1024 * 1024)} Mo")
+
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return crud.ajouter_media_chant(chant_id, media_type, chorale_id, contenu, fichier.filename or media_type, fichier.content_type)
+
+
+@router.get("/{chant_id}/medias/{media_id}/fichier")
+def telecharger_media_chant(chant_id: int, media_id: int, _identite: auth.Identite = Depends(identite_courante)):
+    resultat = crud.get_media_chant_bytes(media_id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Média introuvable")
+    contenu, content_type, _chorale_id = resultat
+    return Response(content=contenu, media_type=content_type)
+
+
+@router.delete("/{chant_id}/medias/{media_id}")
+def supprimer_media_chant(chant_id: int, media_id: int, identite: auth.Identite = Depends(identite_courante)):
+    """Une chorale ne peut retirer que son propre ajout ; le super-admin peut
+    retirer n'importe lequel (voir crud.supprimer_media_chant)."""
+    est_superadmin = identite.type == "super"
+    chorale_id = identite.compte_id if identite.type == "chorale" else None
+    if not crud.supprimer_media_chant(media_id, chorale_id, est_superadmin):
+        raise HTTPException(status_code=404, detail="Média introuvable ou suppression non autorisée")
+    return {"ok": True}
