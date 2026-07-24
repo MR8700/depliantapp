@@ -6993,6 +6993,7 @@ input.special-label:focus {
 /* Mobile-only elements hidden on desktop */
 .moment-card-header,
 .moment-row-widgets-row,
+.moment-card-body-content,
 .moment-card-footer,
 .floating-toolbox,
 .mobile-bottom-nav,
