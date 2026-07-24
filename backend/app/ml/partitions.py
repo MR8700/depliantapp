@@ -14,6 +14,11 @@ from typing import Optional
 import fitz
 
 SEUIL_AUTO_VALIDATION = 50.0
+# Nombre minimal de signaux (sur 6) devant réellement s'être prononcés (donc
+# non None) pour qu'un score puisse déclencher une auto-validation -- évite
+# qu'un score élevé mais calculé sur seulement 1-2 signaux (ex. un simple nom
+# de fichier qui coïncide) ne suffise à publier automatiquement.
+SIGNAUX_MIN_AUTO_VALIDATION = 3
 
 _PRODUCTEURS_NOTATION = [
     "musescore", "finale", "sibelius", "dorico", "lilypond", "capella",
@@ -198,7 +203,13 @@ def analyser_partition(contenu: bytes, nom_fichier: str, chant: dict) -> dict:
         if not valeurs:
             return {"score": None, "signaux": signaux, "statut": "a_verifier"}
         score = round(sum(valeurs) / len(valeurs), 1)
-        statut = "validee" if score >= SEUIL_AUTO_VALIDATION else "a_verifier"
+        # Un score élevé calculé sur 1 ou 2 signaux seulement (les autres
+        # étant inapplicables, ex. un scan sans aucun texte extractible) est
+        # trop fragile pour publier automatiquement -- typiquement un nom de
+        # fichier qui matche le titre par coïncidence, aucun autre signal ne
+        # venant réellement corroborer. Sous ce plancher, toujours passer par
+        # la validation humaine, même si le score moyen dépasse le seuil.
+        statut = "validee" if score >= SEUIL_AUTO_VALIDATION and len(valeurs) >= SIGNAUX_MIN_AUTO_VALIDATION else "a_verifier"
         return {"score": score, "signaux": signaux, "statut": statut}
     except Exception as exc:
         return {"score": None, "signaux": {"erreur": str(exc)}, "statut": "a_verifier"}
