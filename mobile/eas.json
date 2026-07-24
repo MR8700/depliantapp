@@ -22,7 +22,7 @@
       "android": {
         "buildType": "apk"
       },
-      "autoIncrement": "versionCode"
+      "autoIncrement": true
     }
   },
   "submit": {
