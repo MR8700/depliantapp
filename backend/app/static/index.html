@@ -1490,6 +1490,17 @@
       </div>
     </div>
 
+    <!-- Pending sheet music (partitions) validation -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">📄 Partitions à vérifier</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Score de pertinence sous le seuil ou analyse impossible -- l'algorithme ne rejette jamais automatiquement, la décision finale te revient.</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-partitions-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+
     <!-- Hidden Resources (restore) -->
     <div class="settings-card" style="background: white; border-radius: 16px;">
       <div class="settings-card-header">
@@ -1920,6 +1931,14 @@
         <div class="cd-sidebar-block">
           <span class="cd-sidebar-label">Mots-clés</span>
           <div id="cd-mots-cles-list" class="cd-tags-list"></div>
+        </div>
+
+        <div class="cd-sidebar-block">
+          <span class="cd-sidebar-label">📄 Partition</span>
+          <div id="cd-partition-zone">
+            <span class="cd-partition-chargement">Chargement...</span>
+          </div>
+          <input type="file" id="cd-partition-fichier" accept="application/pdf" class="hidden">
         </div>
       </div>
     </div>

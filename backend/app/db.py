@@ -226,6 +226,30 @@ CREATE TABLE IF NOT EXISTS medias (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- Partitions (copies notées / PDF) associées à un chant de la bibliothèque
+-- partagée. Une ligne par tentative d'upload distincte (chant_id, chorale_id,
+-- contenu_hash) -- le hash sert de clé de déduplication : reuploader le même
+-- fichier ne recrée jamais de ligne ni de blob, voir ml/partitions.py et
+-- crud.py::creer_ou_recuperer_partition. `statut` : 'a_verifier' (score < 50
+-- ou erreur d'analyse -- toujours orienté vers la modération humaine, jamais
+-- un rejet automatique) | 'validee' (visible de tous) | 'revoquee' (retirée
+-- par le super-admin après publication, l'historique reste pour traçabilité).
+CREATE TABLE IF NOT EXISTS chant_partitions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chant_id INTEGER NOT NULL REFERENCES chants(id),
+    chorale_id INTEGER REFERENCES chorales(id),
+    media_id INTEGER NOT NULL REFERENCES medias(id),
+    contenu_hash TEXT NOT NULL,
+    statut TEXT NOT NULL DEFAULT 'a_verifier',
+    score_pertinence REAL,
+    signaux TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    decide_le TEXT,
+    UNIQUE (chant_id, chorale_id, contenu_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_chant_partitions_chant ON chant_partitions(chant_id);
+CREATE INDEX IF NOT EXISTS idx_chant_partitions_statut ON chant_partitions(statut);
+
 -- Réglages actifs PAR CHORALE (nom affiché, paroisse, contact, quelles
 -- images du pool `medias` ci-dessus sont utilisées pour chaque
 -- emplacement) — remplace l'ancienne ligne singleton partagée par tout le
@@ -455,6 +479,23 @@ CREATE TABLE IF NOT EXISTS medias (
     chorale_id INTEGER REFERENCES chorales(id),
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
+
+-- Partitions -- voir le commentaire équivalent dans SCHEMA_SQLITE.
+CREATE TABLE IF NOT EXISTS chant_partitions (
+    id SERIAL PRIMARY KEY,
+    chant_id INTEGER NOT NULL REFERENCES chants(id),
+    chorale_id INTEGER REFERENCES chorales(id),
+    media_id INTEGER NOT NULL REFERENCES medias(id),
+    contenu_hash TEXT NOT NULL,
+    statut TEXT NOT NULL DEFAULT 'a_verifier',
+    score_pertinence REAL,
+    signaux TEXT NOT NULL DEFAULT '{}',
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    decide_le TIMESTAMP,
+    UNIQUE (chant_id, chorale_id, contenu_hash)
+);
+CREATE INDEX IF NOT EXISTS idx_chant_partitions_chant ON chant_partitions(chant_id);
+CREATE INDEX IF NOT EXISTS idx_chant_partitions_statut ON chant_partitions(statut);
 
 -- Réglages actifs PAR CHORALE — voir le commentaire équivalent dans
 -- SCHEMA_SQLITE. Remplace l'ancienne ligne singleton id=1 partagée par tout

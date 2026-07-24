@@ -215,8 +215,13 @@ def list_medias(type_: Optional[str] = None) -> list[dict]:
 
 
 def upload_media(chorale_id: int, type_: str, filename: str, content: bytes, content_type: Optional[str] = None, nom: Optional[str] = None) -> dict:
-    max_dimension = _DIMENSION_MAX_BANNIERE if type_ == "banniere" else _DIMENSION_MAX_LOGO
-    content, content_type = _compresser_image(content, max_dimension)
+    # La compression Pillow ne s'applique qu'aux vrais types d'image (logos,
+    # bannières) -- un PDF de partition (voir ml/partitions.py) ne doit
+    # jamais y passer : Image.open() échouerait de toute façon, mais
+    # écraserait content_type en "application/octet-stream" au passage.
+    if type_ in ("logo", "banniere"):
+        max_dimension = _DIMENSION_MAX_BANNIERE if type_ == "banniere" else _DIMENSION_MAX_LOGO
+        content, content_type = _compresser_image(content, max_dimension)
     with db.get_connection() as conn:
         media_id = insert_returning_id(
             conn,
@@ -233,7 +238,7 @@ def recompresser_medias_existants() -> dict:
     diminué -- opération ponctuelle de rattrapage, à lancer une fois après
     déploiement (voir routers/parametres.py::POST /medias/recompresser)."""
     with db.get_connection() as conn:
-        rows = conn.execute("SELECT id, type, donnees FROM medias").fetchall()
+        rows = conn.execute("SELECT id, type, donnees FROM medias WHERE type IN ('logo', 'banniere')").fetchall()
     traitees = 0
     octets_avant = 0
     octets_apres = 0

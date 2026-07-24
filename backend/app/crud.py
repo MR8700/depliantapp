@@ -1,9 +1,11 @@
+import hashlib
 import json
 import re
 from typing import Optional
 
-from . import db, schemas, pdf_cache
+from . import config, db, schemas, pdf_cache
 from .db import get_connection, insert_returning_id
+from .ml import partitions
 from .slugify import unique_slug
 
 
@@ -114,6 +116,153 @@ def get_chant_by_reference(code_reference: str) -> Optional[schemas.Chant]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM chants WHERE code_reference = ?", (code_reference,)).fetchone()
         return _row_to_chant(row) if row else None
+
+
+# --- Partitions (copies notées) --------------------------------------------
+# Voir ml/partitions.py pour l'algorithme de vérification et db.py pour le
+# schéma de chant_partitions. Une ligne par (chant, chorale, contenu) --
+# reuploader le même fichier ne recrée jamais de ligne ni de blob.
+
+_PARTITION_SELECT = (
+    "SELECT cp.*, c.titre AS chant_titre, ch.nom AS chorale_nom "
+    "FROM chant_partitions cp "
+    "JOIN chants c ON c.id = cp.chant_id "
+    "LEFT JOIN chorales ch ON ch.id = cp.chorale_id"
+)
+
+
+def _row_to_partition(row) -> dict:
+    d = dict(row)
+    try:
+        d["signaux"] = json.loads(d.get("signaux") or "{}")
+    except (TypeError, ValueError):
+        d["signaux"] = {}
+    if d.get("created_at") is not None:
+        d["created_at"] = str(d["created_at"])
+    if d.get("decide_le") is not None:
+        d["decide_le"] = str(d["decide_le"])
+    return d
+
+
+def get_partition_active(chant_id: int) -> Optional[dict]:
+    """La partition actuellement publiée pour ce chant, visible de toutes
+    les chorales (au plus une 'validee' à la fois -- voir valider_partition)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            _PARTITION_SELECT + " WHERE cp.chant_id = ? AND cp.statut = 'validee' ORDER BY cp.created_at DESC LIMIT 1",
+            (chant_id,),
+        ).fetchone()
+        return _row_to_partition(row) if row else None
+
+
+def get_partition_chorale(chant_id: int, chorale_id: int) -> Optional[dict]:
+    """Dernière tentative de CETTE chorale pour ce chant, quel que soit le
+    statut -- pour lui montrer où en est SA soumission (ex. 'a_verifier')
+    même si ce n'est pas (encore) la partition publiée globalement."""
+    with get_connection() as conn:
+        row = conn.execute(
+            _PARTITION_SELECT + " WHERE cp.chant_id = ? AND cp.chorale_id = ? ORDER BY cp.created_at DESC LIMIT 1",
+            (chant_id, chorale_id),
+        ).fetchone()
+        return _row_to_partition(row) if row else None
+
+
+def get_partition_bytes(partition_id: int) -> Optional[tuple[bytes, str, Optional[int]]]:
+    """(contenu, content_type, chorale_id) pour le téléchargement -- le
+    chorale_id sert au contrôle d'accès si on décide un jour de le
+    restreindre (aujourd'hui public à tout compte authentifié, comme les
+    autres médias du pool partagé)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT m.donnees, m.content_type, cp.chorale_id FROM chant_partitions cp "
+            "JOIN medias m ON m.id = cp.media_id WHERE cp.id = ?",
+            (partition_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return bytes(row["donnees"]), row["content_type"] or "application/pdf", row["chorale_id"]
+
+
+def creer_ou_recuperer_partition(
+    chant_id: int, chorale_id: int, contenu: bytes, filename: str, content_type: Optional[str],
+) -> tuple[dict, bool]:
+    """Retourne (partition, nouvelle). Si CETTE chorale a déjà uploadé
+    exactement CE fichier pour CE chant (même hash), ne recrée rien --
+    renvoie simplement la ligne existante (voir contrainte UNIQUE côté
+    schéma). Sinon, lance l'analyse et enregistre une nouvelle ligne.
+    `chorale_id` suit la même convention que le reste du pool médias
+    partagé (0 = super-admin, voir routers/parametres.py)."""
+    contenu_hash = hashlib.sha256(contenu).hexdigest()
+    with get_connection() as conn:
+        existante = conn.execute(
+            "SELECT * FROM chant_partitions WHERE chant_id = ? AND chorale_id = ? AND contenu_hash = ?",
+            (chant_id, chorale_id, contenu_hash),
+        ).fetchone()
+        if existante:
+            return _row_to_partition(existante), False
+
+    chant = get_chant(chant_id)
+    chant_dict = chant.model_dump() if chant else {}
+    resultat = partitions.analyser_partition(contenu, filename, chant_dict)
+
+    media = config.upload_media(chorale_id, "partition", filename, contenu, content_type, nom=chant_dict.get("titre"))
+
+    with get_connection() as conn:
+        nouvelle_id = insert_returning_id(
+            conn,
+            "INSERT INTO chant_partitions (chant_id, chorale_id, media_id, contenu_hash, statut, score_pertinence, signaux) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (
+                chant_id, chorale_id, media["id"], contenu_hash,
+                resultat["statut"], resultat["score"],
+                json.dumps(resultat["signaux"], ensure_ascii=False),
+            ),
+        )
+        row = conn.execute(_PARTITION_SELECT + " WHERE cp.id = ?", (nouvelle_id,)).fetchone()
+        return _row_to_partition(row), True
+
+
+def lister_partitions_en_attente() -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            _PARTITION_SELECT + " WHERE cp.statut = 'a_verifier' ORDER BY cp.created_at ASC"
+        ).fetchall()
+        return [_row_to_partition(r) for r in rows]
+
+
+def valider_partition(partition_id: int) -> Optional[dict]:
+    """Publie cette partition et résilie automatiquement toute autre
+    partition déjà 'validee' pour le MÊME chant (une seule active à la fois,
+    le chant étant partagé par toute la bibliothèque)."""
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        cible = conn.execute("SELECT chant_id FROM chant_partitions WHERE id = ?", (partition_id,)).fetchone()
+        if not cible:
+            return None
+        conn.execute(
+            f"UPDATE chant_partitions SET statut = 'revoquee', decide_le = {horodatage} "
+            "WHERE chant_id = ? AND statut = 'validee' AND id != ?",
+            (cible["chant_id"], partition_id),
+        )
+        conn.execute(
+            f"UPDATE chant_partitions SET statut = 'validee', decide_le = {horodatage} WHERE id = ?",
+            (partition_id,),
+        )
+        row = conn.execute(_PARTITION_SELECT + " WHERE cp.id = ?", (partition_id,)).fetchone()
+        return _row_to_partition(row) if row else None
+
+
+def revoquer_partition(partition_id: int) -> Optional[dict]:
+    """Retire une partition publiée (ou rejette une soumission en attente) --
+    toujours une décision humaine du super-admin, jamais automatique."""
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE chant_partitions SET statut = 'revoquee', decide_le = {horodatage} WHERE id = ?",
+            (partition_id,),
+        )
+        row = conn.execute(_PARTITION_SELECT + " WHERE cp.id = ?", (partition_id,)).fetchone()
+        return _row_to_partition(row) if row else None
 
 
 def get_chant_by_slug(slug: str) -> Optional[schemas.Chant]:

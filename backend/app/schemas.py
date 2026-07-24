@@ -73,6 +73,19 @@ class Doublon(BaseModel):
     similarite: float
 
 
+class Partition(BaseModel):
+    id: int
+    chant_id: int
+    chant_titre: Optional[str] = None
+    chorale_id: Optional[int] = None
+    chorale_nom: Optional[str] = None
+    statut: Literal["a_verifier", "validee", "revoquee"]
+    score_pertinence: Optional[float] = None
+    signaux: dict = Field(default_factory=dict)
+    created_at: str
+    decide_le: Optional[str] = None
+
+
 # --- Feuillet (livret de messe) ---
 
 class MomentContenu(BaseModel):

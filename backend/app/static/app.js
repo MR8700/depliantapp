@@ -2937,6 +2937,71 @@ function ouvrirDetailChant(chant) {
   footerActions.appendChild(btnFermer);
 
   ouvrirModale("chant-detail-modal");
+  chargerPartitionChant(chant);
+}
+
+// --- Partitions (copies notées) : section dans le détail d'un chant -------
+// L'algorithme (voir ml/partitions.py) ne rejette jamais -- le message
+// affiché à l'auteur après upload est neutre dans tous les cas où la
+// partition n'est pas immédiatement publiée, jamais "ça ne va pas".
+async function chargerPartitionChant(chant) {
+  const zone = document.getElementById("cd-partition-zone");
+  const inputFichier = document.getElementById("cd-partition-fichier");
+  if (!zone || !inputFichier || !chant.id) return;
+  zone.innerHTML = `<span class="cd-partition-chargement">Chargement...</span>`;
+
+  let active = null;
+  let mienne = null;
+  try { active = await api(`/chants/${chant.id}/partition`); } catch (e) { /* aucune partition publiée */ }
+  try { mienne = await api(`/chants/${chant.id}/partition/mienne`); } catch (e) { /* aucune soumission */ }
+
+  let statutHtml = "";
+  if (active) {
+    statutHtml = `
+      <div class="cd-partition-carte">
+        <span class="cd-partition-badge cd-partition-validee">✓ Partition disponible</span>
+        <a href="/chants/${chant.id}/partition/fichier" target="_blank" class="cd-partition-lien">⬇ Télécharger le PDF</a>
+      </div>`;
+  } else if (mienne && mienne.statut === "a_verifier") {
+    statutHtml = `
+      <div class="cd-partition-carte">
+        <span class="cd-partition-badge cd-partition-attente">⏳ En cours de vérification</span>
+        <p class="cd-partition-hint">Ta partition a été reçue et sera vérifiée avant publication.</p>
+      </div>`;
+  } else {
+    statutHtml = `<p class="cd-partition-hint">Aucune partition disponible pour ce chant.</p>`;
+  }
+
+  const texteBouton = active || mienne ? "📎 Proposer une autre copie" : "📎 Ajouter une partition (PDF)";
+  zone.innerHTML = `${statutHtml}<button type="button" id="cd-partition-upload-btn" class="cd-partition-btn-upload">${texteBouton}</button>`;
+
+  const btnUpload = document.getElementById("cd-partition-upload-btn");
+  btnUpload.addEventListener("click", () => inputFichier.click());
+  inputFichier.onchange = async () => {
+    const fichier = inputFichier.files[0];
+    inputFichier.value = "";
+    if (!fichier) return;
+    const formData = new FormData();
+    formData.append("fichier", fichier);
+    try {
+      const resultat = await avecChargement(btnUpload, async () => {
+        const res = await fetch(`/chants/${chant.id}/partition`, { method: "POST", body: formData });
+        if (!res.ok) {
+          const texte = await res.text();
+          let detail = texte;
+          try { detail = JSON.parse(texte).detail; } catch (e) { /* non-JSON */ }
+          throw new Error(typeof detail === "string" ? detail : "Erreur lors de l'envoi");
+        }
+        return res.json();
+      });
+      alert(resultat.statut === "validee"
+        ? "Partition ajoutée et publiée avec succès !"
+        : "Ta partition a été reçue et sera vérifiée avant publication.");
+      await chargerPartitionChant(chant);
+    } catch (err) {
+      alert(`Erreur : ${err.message}`);
+    }
+  };
 }
 
 function construireFeuilletPayload() {
@@ -6608,10 +6673,54 @@ async function actualiserAdminMasques() {
   });
 }
 
+function adminPartitionCardHtml(p) {
+  const score = p.score_pertinence !== null && p.score_pertinence !== undefined ? `${p.score_pertinence}%` : "analyse impossible";
+  const signauxHtml = Object.entries(p.signaux || {}).map(([cle, valeur]) => {
+    if (cle === "erreur") return `<span class="cd-partition-signal signal-erreur">⚠️ ${escapeHtml(String(valeur))}</span>`;
+    const val = valeur === null || valeur === undefined ? "n/a" : `${valeur}%`;
+    return `<span class="cd-partition-signal">${escapeHtml(cle)} : ${val}</span>`;
+  }).join(" ");
+  return `
+    <li class="demande-card" data-id="${p.id}">
+      <div class="chant-titre" style="font-weight: 600;">Chant : <span style="color: #1F4A7C;">${escapeHtml(p.chant_titre || "?")}</span></div>
+      <div class="chant-meta" style="font-size: 0.8rem; color: #64748B;">Proposée par : ${escapeHtml(p.chorale_nom || "Système")} -- score moyen : ${score}</div>
+      <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:6px;">${signauxHtml}</div>
+      <div class="toolbar" style="margin-top: 8px; display: flex; gap: 8px;">
+        <a href="/moderation/partitions/${p.id}/fichier" target="_blank" class="btn-secondary" style="border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; text-decoration:none;">👁 Voir le PDF</a>
+        <button type="button" class="btn-valider" style="background: #16a34a; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: white; border: none; cursor: pointer;">Valider</button>
+        <button type="button" class="btn-rejeter" style="background: #dc2626; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; color: white; border: none; cursor: pointer;">Rejeter</button>
+      </div>
+    </li>`;
+}
+
+async function actualiserAdminPartitions() {
+  const partitions = await api("/moderation/partitions");
+  const list = document.getElementById("admin-partitions-list");
+  if (!list) return;
+  list.innerHTML = partitions.length
+    ? partitions.map(adminPartitionCardHtml).join("")
+    : `<p class="hint">Aucune partition en attente de validation.</p>`;
+
+  list.querySelectorAll(".demande-card").forEach((el) => {
+    const id = Number(el.dataset.id);
+    el.querySelector(".btn-valider").addEventListener("click", async (e) => {
+      if (!confirm("Publier cette partition pour tout le monde ?")) return;
+      await avecChargement(e.currentTarget, () => api(`/moderation/partitions/${id}/valider`, { method: "POST" }));
+      await actualiserAdminPartitions();
+    });
+    el.querySelector(".btn-rejeter").addEventListener("click", async (e) => {
+      if (!confirm("Rejeter cette partition ? Elle restera en base mais ne sera jamais publiée.")) return;
+      await avecChargement(e.currentTarget, () => api(`/moderation/partitions/${id}/revoquer`, { method: "POST" }));
+      await actualiserAdminPartitions();
+    });
+  });
+}
+
 async function actualiserAdmin() {
   await actualiserAdminChorales();
   await actualiserAdminDemandes();
   await actualiserAdminMasques();
+  await actualiserAdminPartitions();
   await actualiserAdminCategories();
 }
 

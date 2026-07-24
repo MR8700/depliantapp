@@ -1,10 +1,13 @@
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, UploadFile
+from fastapi.responses import Response
 
 from .. import auth, crud, schemas
 from ..deps import identite_courante, require_superadmin
 from ..ml import classifier, duplicates
+
+_TAILLE_MAX_PARTITION = 15 * 1024 * 1024  # 15 Mo
 
 router = APIRouter(prefix="/chants", tags=["chants"])
 
@@ -112,3 +115,62 @@ def doublons_possibles(chant_id: int):
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return duplicates.find_duplicates(chant.titre, exclude_id=chant_id)
+
+
+# --- Partitions (copies notées) --------------------------------------------
+
+@router.get("/{chant_id}/partition", response_model=Optional[schemas.Partition])
+def partition_active(chant_id: int, _identite: auth.Identite = Depends(identite_courante)):
+    """La partition actuellement publiée pour ce chant (visible de toutes
+    les chorales), ou null si aucune n'est encore validée."""
+    if not crud.get_chant(chant_id):
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return crud.get_partition_active(chant_id)
+
+
+@router.get("/{chant_id}/partition/mienne", response_model=Optional[schemas.Partition])
+def partition_soumission_chorale(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
+    """Dernière soumission de LA CHORALE APPELANTE pour ce chant, quel que
+    soit son statut -- pour lui montrer où en est SA proposition même si ce
+    n'est pas (encore) celle publiée globalement."""
+    if not crud.get_chant(chant_id):
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    return crud.get_partition_chorale(chant_id, chorale_id)
+
+
+@router.post("/{chant_id}/partition", response_model=schemas.Partition)
+async def uploader_partition(chant_id: int, fichier: UploadFile, identite: auth.Identite = Depends(identite_courante)):
+    """Uploade une copie notée pour ce chant. L'analyse (voir ml/partitions.py)
+    ne rejette jamais : sous le seuil ou en cas d'erreur d'analyse, la
+    partition est simplement soumise à la validation du super-admin --
+    l'appelant reçoit toujours le même message neutre, jamais une indication
+    que le système la soupçonne. Reuploader le fichier exact déjà soumis ne
+    recrée rien (voir crud.creer_ou_recuperer_partition)."""
+    if not crud.get_chant(chant_id):
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    if (fichier.content_type or "") != "application/pdf" and not (fichier.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Le fichier doit être un PDF")
+    contenu = await fichier.read()
+    if len(contenu) > _TAILLE_MAX_PARTITION:
+        raise HTTPException(status_code=400, detail="Le fichier ne doit pas dépasser 15 Mo")
+    if not contenu:
+        raise HTTPException(status_code=400, detail="Fichier vide")
+
+    chorale_id = identite.compte_id if identite.type == "chorale" else 0
+    partition, _nouvelle = crud.creer_ou_recuperer_partition(
+        chant_id, chorale_id, contenu, fichier.filename or "partition.pdf", fichier.content_type,
+    )
+    return partition
+
+
+@router.get("/{chant_id}/partition/fichier")
+def telecharger_partition(chant_id: int, _identite: auth.Identite = Depends(identite_courante)):
+    partition = crud.get_partition_active(chant_id)
+    if not partition:
+        raise HTTPException(status_code=404, detail="Aucune partition publiée pour ce chant")
+    resultat = crud.get_partition_bytes(partition["id"])
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    contenu, content_type, _chorale_id = resultat
+    return Response(content=contenu, media_type=content_type)

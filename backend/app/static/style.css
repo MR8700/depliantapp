@@ -2981,6 +2981,84 @@ button[type="submit"],
   border-radius: 6px;
 }
 
+.cd-partition-chargement {
+  font-size: 0.8rem;
+  color: #94a3b8;
+}
+
+.cd-partition-carte {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.cd-partition-badge {
+  display: inline-block;
+  align-self: flex-start;
+  font-size: 0.75rem;
+  font-weight: 700;
+  padding: 3px 10px;
+  border-radius: 999px;
+}
+
+.cd-partition-validee {
+  background: #dcfce7;
+  color: #16a34a;
+}
+
+.cd-partition-attente {
+  background: #fef9c3;
+  color: #a16207;
+}
+
+.cd-partition-lien {
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: var(--bleu);
+  text-decoration: none;
+}
+
+.cd-partition-lien:hover {
+  text-decoration: underline;
+}
+
+.cd-partition-hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #64748b;
+}
+
+.cd-partition-btn-upload {
+  width: 100%;
+  background: none;
+  border: 1px dashed #cbd5e1;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: var(--bleu);
+  cursor: pointer;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.cd-partition-btn-upload:hover {
+  background: #f8fafc;
+}
+
+.cd-partition-signal {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: #475569;
+  background: #eef2f7;
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+
+.cd-partition-signal.signal-erreur {
+  background: #fef2f2;
+  color: #b91c1c;
+}
+
 .cd-badge {
   font-size: 0.75rem;
   font-weight: 700;

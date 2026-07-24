@@ -120,7 +120,7 @@ def rejeter_categorie(id: int, payload: RejetCategoriePayload, _identite: auth.I
         if not cp:
             raise HTTPException(status_code=404, detail="Catégorie introuvable")
         conn.execute("UPDATE categories_personnalisees SET statut = 'rejete', motif_rejet = ? WHERE id = ?", (payload.motif, id))
-        
+
         # Send system notification message to the creator chorale
         if cp["cree_par"]:
             crud.creer_message(
@@ -129,3 +129,45 @@ def rejeter_categorie(id: int, payload: RejetCategoriePayload, _identite: auth.I
                 texte=f"Votre demande d'ajout de la catégorie '{cp['nom']}' a été rejetée par l'administrateur. Motif : {payload.motif}"
             )
     return {"ok": True}
+
+
+# --- Partitions (copies notées) --------------------------------------------
+# Voir ml/partitions.py : le score sous le seuil ou une erreur d'analyse
+# orientent TOUJOURS ici plutôt que vers un rejet automatique.
+
+@router.get("/partitions")
+def list_partitions_en_attente(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.lister_partitions_en_attente()
+
+
+@router.get("/partitions/{id}/fichier")
+def apercu_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Aperçu d'une soumission -- y compris NON validée -- réservé au
+    super-admin, pour décider en connaissance de cause (voir aussi
+    GET /chants/{id}/partition/fichier, public, qui ne sert que la partition
+    déjà publiée)."""
+    from fastapi.responses import Response
+    resultat = crud.get_partition_bytes(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    contenu, content_type, _chorale_id = resultat
+    return Response(content=contenu, media_type=content_type)
+
+
+@router.post("/partitions/{id}/valider")
+def valider_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    resultat = crud.valider_partition(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    return resultat
+
+
+@router.post("/partitions/{id}/revoquer")
+def revoquer_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Retire une partition publiée, OU rejette une soumission en attente --
+    toujours une décision humaine, jamais automatique (voir aussi
+    valider_partition qui résilie l'ancienne active au passage)."""
+    resultat = crud.revoquer_partition(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    return resultat
