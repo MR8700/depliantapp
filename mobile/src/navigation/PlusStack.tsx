@@ -1,3 +1,4 @@
+import { useCallback } from "react";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import PlusMenuScreen from "../screens/PlusMenuScreen";
 import ReglagesScreen from "../screens/ReglagesScreen";
@@ -15,12 +16,17 @@ interface Props {
 }
 
 export default function PlusStack({ onDeconnecte }: Props) {
+  // Même précaution qu'HomeTabs : une fonction fléchée inline ici
+  // redémonterait l'écran Profil (et sa navigation interne) à chaque
+  // re-rendu de PlusStack.
+  const rendreProfil = useCallback(() => <ProfilScreen onDeconnecte={onDeconnecte} />, [onDeconnecte]);
+
   return (
     <Stack.Navigator>
       <Stack.Screen name="PlusMenu" component={PlusMenuScreen} options={{ title: "Plus" }} />
       <Stack.Screen name="Reglages" component={ReglagesScreen} options={{ title: "Réglages" }} />
       <Stack.Screen name="Profil" options={{ title: "Mon profil" }}>
-        {() => <ProfilScreen onDeconnecte={onDeconnecte} />}
+        {rendreProfil}
       </Stack.Screen>
       <Stack.Screen name="Editeur" component={EditeurScreen} options={{ title: "Éditeur de chants" }} />
       <Stack.Screen name="Import" component={ImportScreen} options={{ title: "Importer" }} />

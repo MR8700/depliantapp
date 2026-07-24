@@ -34,6 +34,35 @@ export default function App() {
     setConnecte(!!jetonSession);
   }, []);
 
+  const demanderConnexionAdmin = useCallback(() => setModeConnexionAdmin(true), []);
+
+  // Les 3 écrans ci-dessous utilisaient des fonctions fléchées inline comme
+  // `children` de Stack.Screen -- React Navigation ré-invoque ce render prop
+  // à chaque re-rendu du Stack.Navigator (pas seulement quand l'état de App
+  // change), et traite chaque nouvelle référence de fonction comme un
+  // composant différent : tout le sous-arbre (pour "Home", ça veut dire
+  // TOUTE l'appli une fois connecté, y compris PlusStack) était démonté et
+  // remonté, perdant sa navigation interne -- c'est ce qui rendait le menu
+  // "Plus" silencieux au clic une fois l'activation/connexion passée.
+  // useCallback garde des références stables tant que leurs dépendances
+  // (elles-mêmes stables) ne changent pas.
+  const rendreActivation = useCallback(
+    () => <ActivationScreen onActivee={rafraichirEtat} onDemandeConnexionAdmin={demanderConnexionAdmin} />,
+    [rafraichirEtat, demanderConnexionAdmin],
+  );
+  const rendreLogin = useCallback(
+    () => <LoginScreen choraleNom={activation?.choraleNom} onConnecte={rafraichirEtat} />,
+    [activation?.choraleNom, rafraichirEtat],
+  );
+  const rendreHome = useCallback(
+    () => (
+      <IdentiteProvider>
+        <HomeTabs onDeconnecte={rafraichirEtat} />
+      </IdentiteProvider>
+    ),
+    [rafraichirEtat],
+  );
+
   useEffect(() => {
     rafraichirEtat();
     const minuteur = setTimeout(() => setSplashMinimumEcoule(true), DUREE_MIN_SPLASH_MS);
@@ -48,21 +77,11 @@ export default function App() {
     <NavigationContainer>
       <Stack.Navigator screenOptions={{ headerShown: false }}>
         {!activation && !modeConnexionAdmin ? (
-          <Stack.Screen name="Activation">
-            {() => <ActivationScreen onActivee={rafraichirEtat} onDemandeConnexionAdmin={() => setModeConnexionAdmin(true)} />}
-          </Stack.Screen>
+          <Stack.Screen name="Activation">{rendreActivation}</Stack.Screen>
         ) : !connecte ? (
-          <Stack.Screen name="Login">
-            {() => <LoginScreen choraleNom={activation?.choraleNom} onConnecte={rafraichirEtat} />}
-          </Stack.Screen>
+          <Stack.Screen name="Login">{rendreLogin}</Stack.Screen>
         ) : (
-          <Stack.Screen name="Home">
-            {() => (
-              <IdentiteProvider>
-                <HomeTabs onDeconnecte={rafraichirEtat} />
-              </IdentiteProvider>
-            )}
-          </Stack.Screen>
+          <Stack.Screen name="Home">{rendreHome}</Stack.Screen>
         )}
       </Stack.Navigator>
     </NavigationContainer>
