@@ -8916,11 +8916,41 @@ function initApropos() {
 async function init() {
   const debutChargement = Date.now();
 
+  // Sur l'hébergement gratuit, le service se met en veille après inactivité
+  // -- le tout premier chargement peut prendre jusqu'à une minute pendant
+  // qu'il se réveille, sans qu'il se passe visiblement rien. Un message
+  // après quelques secondes évite de laisser croire que la page est cassée.
+  const messageEl = document.getElementById("splash-message");
+  const texteInitial = messageEl ? messageEl.textContent : null;
+  const minuteurReveil = setTimeout(() => {
+    if (messageEl) messageEl.textContent = "Le service se réveille après une période d'inactivité -- ça peut prendre jusqu'à une minute, merci de patienter.";
+  }, 6000);
+
+  // Isolé du reste de l'initialisation : seul CET appel (identité + méta de
+  // base) est traité comme fatal si le serveur ne répond vraiment pas dans
+  // un délai raisonnable -- une erreur plus loin dans init() (une section
+  // annexe qui échoue) ne doit surtout pas, elle, bloquer tout l'écran de
+  // démarrage indéfiniment, d'où ce bloc séparé du grand try/catch permissif
+  // qui suit.
+  let identiteRes, metaRes;
   try {
-    const [identiteRes, metaRes] = await Promise.all([
-      api("/auth/status"),
-      api("/meta")
+    const delaiMaxInit = new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Le serveur met trop de temps à répondre. Recharge la page dans quelques instants.")), 60000)
+    );
+    [identiteRes, metaRes] = await Promise.race([
+      Promise.all([api("/auth/status"), api("/meta")]),
+      delaiMaxInit,
     ]);
+  } catch (err) {
+    console.error("Critical initialization failure:", err);
+    clearTimeout(minuteurReveil);
+    if (messageEl) {
+      messageEl.innerHTML = `${escapeHtml(err.message || "Erreur de connexion au serveur.")}<br><button type="button" onclick="window.location.reload()" style="margin-top:10px; padding:6px 16px; border-radius:999px; border:1px solid rgba(255,255,255,0.3); background:rgba(255,255,255,0.1); color:white; cursor:pointer;">Recharger</button>`;
+    }
+    return; // laisse le message d'erreur affiché -- ne masque pas le splash
+  }
+
+  try {
     IDENTITE = identiteRes;
     if (IDENTITE && IDENTITE.type === "super") {
       currentDepliantsTab = "tous";
@@ -8974,8 +9004,13 @@ async function init() {
     initTirerPourRafraichir();
 
   } catch (err) {
-    console.error("Critical initialization failure:", err);
+    // Non-fatal : une section annexe a échoué, mais l'identité/méta de base
+    // sont déjà chargées -- on révèle quand même l'appli plutôt que de
+    // bloquer l'utilisateur derrière le splash pour un problème mineur.
+    console.error("Non-critical initialization failure:", err);
   } finally {
+    clearTimeout(minuteurReveil);
+    if (messageEl && texteInitial !== null) messageEl.textContent = texteInitial;
     const tempsRestant = 150 - (Date.now() - debutChargement);
     setTimeout(masquerSplash, Math.max(0, tempsRestant));
   }
