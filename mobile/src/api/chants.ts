@@ -7,9 +7,13 @@ interface RechercheParams {
   occasion?: string;
   limit?: number;
   offset?: number;
+  /** Réponse allégée (couplets tronqués au premier) pour peupler une grille
+   * de cartes -- voir routers/chants.py::resume. Ne jamais l'utiliser pour
+   * un export/sauvegarde qui a besoin du contenu complet. */
+  resume?: boolean;
 }
 
-function query(params: Record<string, string | number | undefined>): string {
+function query(params: Record<string, string | number | boolean | undefined>): string {
   const entrees = Object.entries(params).filter(([, v]) => v !== undefined && v !== "");
   if (entrees.length === 0) return "";
   return "?" + entrees.map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`).join("&");

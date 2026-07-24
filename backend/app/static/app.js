@@ -873,6 +873,10 @@ async function rechercherChants(q, categorie, occasion) {
   if (categorie) params.set("categorie", categorie);
   if (occasion) params.set("occasion", occasion);
   params.set("limit", "1000");
+  // Les cartes de la bibliothèque ne montrent jamais qu'un aperçu tronqué
+  // (voir chantCardHtml) -- inutile de faire voyager tous les couplets de
+  // chaque chant pour peupler une grille (voir routers/chants.py::resume).
+  params.set("resume", "true");
 
   const url = `/chants?${params.toString()}`;
 
@@ -1817,30 +1821,49 @@ function renderMomentBody(row, moment) {
     if (state.type === "aucun" || (state.type === "chant" && !isFilledChant) || (state.type === "texte_libre" && !isFilledManual)) {
       cardContent.innerHTML = `<div class="card-empty-state" style="color:#94a3b8; font-style:italic; font-size:0.85rem; padding:8px 0; text-align:left;">Vide</div>`;
     } else if (state.type === "chant" && isFilledChant) {
-      const labelAuteur = state.chant_auteur || "Système";
-      const codeRef = state.chant_reference || state.code_reference || "N/A";
+      const codeRef = state.chant_reference || state.code_reference || null;
       const catClass = "cat-pill-" + (state.chant_categorie ? state.chant_categorie.toLowerCase().replace(/[^a-z0-9]/g, "-") : "autre");
       const catLabel = categorieLabel(state.chant_categorie);
+
+      const apercuTexte = (state.refrain || (state.couplets && state.couplets[0]) || "").slice(0, 140);
+      const apercuHtml = apercuTexte
+        ? `<p style="margin:2px 0 0 0; padding-left:8px; border-left:2px solid #cbd5e1; font-size:0.78rem; color:#64748b; font-style:italic; line-height:1.4; white-space:pre-line;">${escapeHtml(apercuTexte)}${apercuTexte.length >= 140 ? "…" : ""}</p>`
+        : "";
+
+      let coupletsBadge = "";
+      if (state.total_couplets > 0) {
+        const limite = state.couplet_limit;
+        const texteLimite = limite === 0 ? "Aucun couplet inclus" : (limite ? `${limite} couplet${limite > 1 ? "s" : ""} sur ${state.total_couplets}` : `${state.total_couplets} couplet${state.total_couplets > 1 ? "s" : ""}`);
+        coupletsBadge = `<span style="font-size:0.72rem; font-weight:600; color:#475569; background:#eef2f7; border-radius:4px; padding:2px 6px;">📝 ${texteLimite}</span>`;
+      }
 
       cardContent.innerHTML = `
         <div class="moment-card-song-details" style="padding:12px; background:#f8fafc; border-radius:10px; border:1px solid #e2e8f0; margin:6px 0; display:flex; flex-direction:column; gap:6px; position:relative; text-align:left;">
           <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px;">
-            <div style="display:flex; flex-direction:column; gap:4px; max-width:80%;">
+            <div style="display:flex; flex-direction:column; gap:4px; max-width:75%;">
               <span class="chant-categorie-pill ${catClass}" style="align-self:flex-start; font-size:0.7rem; font-weight:700; text-transform:uppercase; padding:2px 6px; border-radius:4px;">${catLabel}</span>
               <h3 style="margin:0; font-size:0.95rem; font-weight:700; color:#1e293b; line-height:1.3;">${escapeHtml(state.chant_titre)}</h3>
             </div>
-            <button type="button" class="btn-card-changer" style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; padding:4px 10px; font-size:0.75rem; font-weight:600; color:#475569; cursor:pointer; transition:all 0.15s; white-space:nowrap; height:28px; box-sizing:border-box;">Changer</button>
+            <div style="display:flex; gap:6px; flex-shrink:0;">
+              <button type="button" class="btn-card-apercu" title="Aperçu complet" style="background:#ffffff; border:1px solid #cbd5e1; border-radius:6px; width:28px; height:28px; font-size:0.85rem; color:#475569; cursor:pointer;">👁</button>
+              <button type="button" class="btn-card-changer" style="background:#f1f5f9; border:1px solid #cbd5e1; border-radius:6px; padding:4px 10px; font-size:0.75rem; font-weight:600; color:#475569; cursor:pointer; transition:all 0.15s; white-space:nowrap; height:28px; box-sizing:border-box;">Changer</button>
+            </div>
           </div>
-          <div style="display:flex; flex-wrap:wrap; gap:12px; font-size:0.78rem; color:#64748b; margin-top:4px;">
-            <span>Auteur : <strong style="color:#475569;">${escapeHtml(labelAuteur)}</strong></span>
-            <span>Réf : <strong style="color:#475569;">${escapeHtml(codeRef)}</strong></span>
+          ${apercuHtml}
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:0.78rem; color:#64748b; margin-top:4px;">
+            ${codeRef ? `<span>Réf : <strong style="color:#475569;">${escapeHtml(codeRef)}</strong></span>` : ""}
+            ${coupletsBadge}
           </div>
         </div>
       `;
-      // Bind click on "Changer"
+      // Bind click on "Changer" et "Aperçu complet"
       const btnChanger = cardContent.querySelector(".btn-card-changer");
       if (btnChanger) {
         btnChanger.addEventListener("click", () => ouvrirPicker(moment));
+      }
+      const btnApercu = cardContent.querySelector(".btn-card-apercu");
+      if (btnApercu) {
+        btnApercu.addEventListener("click", () => ouvrirDetailsChant(state.chant_id, false));
       }
     } else if (state.type === "texte_libre") {
       const textPreview = state.texte_libre ? state.texte_libre.split("\n").slice(0, 3).join("\n") : "";
@@ -2465,7 +2488,7 @@ function rechercherChantsDepuisCache(q, categorie) {
   return list;
 }
 
-function selectionnerChantPourComposer(chant) {
+async function selectionnerChantPourComposer(chant) {
   if (pickerTargetInputId) {
     const input = document.getElementById(pickerTargetInputId);
     if (input) {
@@ -2477,15 +2500,24 @@ function selectionnerChantPourComposer(chant) {
     return;
   }
   if (!pickerTargetMoment) return;
+  // `chant` peut venir d'une liste allégée (voir routers/chants.py::resume,
+  // couplets tronqués au premier) -- on recharge le détail complet pour que
+  // le compteur de couplets et l'aperçu du moment restent exacts.
+  let chantComplet = chant;
+  try {
+    chantComplet = await api(`/chants/${chant.id}`);
+  } catch (e) { /* repli sur la version en cache si le détail échoue */ }
   momentsState[pickerTargetMoment] = {
     ...momentsState[pickerTargetMoment],
     type: "chant",
-    chant_id: chant.id,
-    chant_titre: chant.titre,
-    total_couplets: (chant.couplets || []).length,
+    chant_id: chantComplet.id,
+    chant_titre: chantComplet.titre,
+    chant_categorie: chantComplet.categorie,
+    chant_reference: chantComplet.code_reference,
+    total_couplets: (chantComplet.couplets || []).length,
     couplet_limit: null,
-    refrain: chant.refrain,
-    couplets: chant.couplets,
+    refrain: chantComplet.refrain,
+    couplets: chantComplet.couplets,
   };
   const row = document.querySelector(`.moment-row[data-moment="${pickerTargetMoment}"]`);
   renderMomentBody(row, pickerTargetMoment);
@@ -2980,13 +3012,29 @@ const PAS_TAILLE_TEXTE = 1;
 const TAILLE_TEXTE_PLANCHER = 8;
 const TAILLE_TEXTE_PLAFOND = 32;
 
+// Un hébergement gratuit (Render) met en veille le service après inactivité
+// -- la toute première requête qui le réveille peut échouer au niveau réseau
+// (pas une erreur HTTP, la connexion elle-même est coupée pendant le
+// réveil) avant qu'un simple nouvel essai ne fonctionne. Un seul retry après
+// une courte pause suffit à couvrir ce cas sans masquer une vraie panne.
+async function fetchAvecRetry(url, tentatives = 2, delaiMs = 1500) {
+  for (let i = 0; i < tentatives; i++) {
+    try {
+      return await fetch(url);
+    } catch (err) {
+      if (i === tentatives - 1) throw err;
+      await new Promise((resolve) => setTimeout(resolve, delaiMs));
+    }
+  }
+}
+
 async function afficherResultatFeuillet(feuilletId) {
   const resultDiv = document.getElementById("composer-result");
   nettoyerMomentsEnCause();
   resultDiv.innerHTML = `<p class="hint">Génération du PDF…</p>`;
   const pdfUrl = `/feuillets/${feuilletId}/pdf?t=${Date.now()}`;
   try {
-    const res = await fetch(pdfUrl);
+    const res = await fetchAvecRetry(pdfUrl);
     if (!res.ok) {
       const texte = await res.text();
       let detail = texte;
@@ -3041,7 +3089,10 @@ async function afficherResultatFeuillet(feuilletId) {
       });
     });
   } catch (err) {
-    resultDiv.innerHTML = `<p class="hint">Erreur : ${escapeHtml(err.message)}</p>`;
+    resultDiv.innerHTML = `
+      <p class="hint">Le serveur n'a pas répondu (connexion coupée). C'est fréquent juste après une période d'inactivité -- réessaie dans quelques secondes.</p>
+      <button type="button" class="btn-outline" onclick="afficherResultatFeuillet(${feuilletId})">Réessayer</button>
+    `;
   }
 }
 
@@ -3822,8 +3873,9 @@ async function actualiserEditeur() {
 
   const q = document.getElementById("edit-q").value.trim().toLowerCase();
 
-  // Load full chants list (increase limit to 500 to fetch them all)
-  const chants = await api(`/chants?limit=500`);
+  // Liste pour la grille de cartes (voir routers/chants.py::resume) -- pas
+  // besoin des couplets complets, seulement d'un aperçu tronqué par carte.
+  const chants = await api(`/chants?limit=500&resume=true`);
   editeurChantsCache = chants;
   idsAffichesEditeur = chants.map((c) => c.id);
 
@@ -4533,6 +4585,8 @@ function afficherDetailsChantModification() {
           const state = momentsState[momentKey];
           if (state && state.type === "chant" && state.chant_id === chantModifie.id) {
             state.chant_titre = chantModifie.titre;
+            state.chant_categorie = chantModifie.categorie;
+            state.chant_reference = chantModifie.code_reference;
             state.refrain = chantModifie.refrain;
             state.couplets = chantModifie.couplets;
             state.total_couplets = chantModifie.couplets ? chantModifie.couplets.length : 0;
@@ -5935,6 +5989,7 @@ async function modifierDepliant(id) {
         const chant = await api(`/chants/${m.chant_id}`);
         etat = {
           type: "chant", chant_id: chant.id, chant_titre: chant.titre,
+          chant_categorie: chant.categorie, chant_reference: chant.code_reference,
           total_couplets: (chant.couplets || []).length, couplet_limit: m.couplet_limit === 0 ? 0 : (m.couplet_limit || null),
           refrain: chant.refrain, couplets: chant.couplets,
         };

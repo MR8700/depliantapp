@@ -21,13 +21,18 @@ def search_chants(
     categorie: Optional[str] = None,
     occasion: Optional[str] = None,
     confiance_max: Optional[float] = None,
+    resume: bool = False,
     limit: int = 100,
     offset: int = 0,
     identite: auth.Identite = Depends(identite_courante),
 ):
+    """`resume=true` : réponse allégée pour peupler une grille/liste de
+    cartes (tronque les couplets au premier seul, jamais affiché en entier
+    sur une carte -- voir chantCardHtml()/ChantCard.tsx). Ne jamais l'utiliser
+    pour un export/sauvegarde qui a besoin du contenu complet."""
     return crud.list_chants(
         q=q, categorie=categorie, occasion=occasion, confiance_max=confiance_max, limit=limit, offset=offset,
-        chorale_id_appelant=_chorale_id_pour_masquage(identite),
+        chorale_id_appelant=_chorale_id_pour_masquage(identite), resume=resume,
     )
 
 

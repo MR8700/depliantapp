@@ -23,14 +23,21 @@ def _fts_query(q: str) -> Optional[str]:
     return " ".join(f'"{t}"*' for t in tokens)
 
 
-def _row_to_chant(row) -> schemas.Chant:
+def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
+    couplets = json.loads(row["couplets"])
+    if resume:
+        # Les cartes de liste n'affichent jamais qu'un aperçu tronqué du 1er
+        # couplet en repli du refrain (voir chantCardHtml() / ChantCard.tsx)
+        # -- inutile de faire voyager des dizaines de couplets complets pour
+        # chaque chant de la bibliothèque juste pour peupler une grille.
+        couplets = couplets[:1]
     return schemas.Chant(
         id=row["id"],
         slug=row["slug"],
         titre=row["titre"],
         categorie=row["categorie"],
         refrain=row["refrain"],
-        couplets=json.loads(row["couplets"]),
+        couplets=couplets,
         code_reference=row["code_reference"],
         langue=row["langue"],
         occasions=json.loads(row["occasions"]),
@@ -123,6 +130,7 @@ def list_chants(
     limit: int = 100,
     offset: int = 0,
     chorale_id_appelant: Optional[int] = None,
+    resume: bool = False,
 ) -> list[schemas.Chant]:
     clauses = []
     params: list = []
@@ -163,7 +171,7 @@ def list_chants(
             f"SELECT chants.* FROM {from_clause} {where} ORDER BY {order} LIMIT ? OFFSET ?",
             (*params, limit, offset),
         ).fetchall()
-        return [_row_to_chant(r) for r in rows]
+        return [_row_to_chant(r, resume=resume) for r in rows]
 
 
 def bulk_update_categorie(ids: list[int], categorie: str) -> int:

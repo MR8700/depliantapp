@@ -12,6 +12,7 @@ import { Chant, FeuilletCreate, MomentContenu } from "../types";
 import SelecteurChant from "../components/SelecteurChant";
 import PdfViewer from "../components/PdfViewer";
 import Bouton from "../components/Bouton";
+import { categorieLabel } from "../utils/labels";
 
 const CLE_CELEBRATION_INFO = "depliantapp.composer_celebration_info";
 
@@ -23,6 +24,10 @@ interface LigneMoment {
   type: "vide" | "chant" | "texte_libre";
   chant_id?: number;
   chant_titre?: string;
+  chant_categorie?: string;
+  chant_reference?: string | null;
+  refrain?: string | null;
+  couplets?: string[];
   titre_libre?: string;
   texte_libre?: string;
 }
@@ -148,7 +153,14 @@ export default function ComposerScreen({ route, navigation }: Props) {
         await Promise.all(
           toutesLesLignes.map(async (l) => {
             if (l.type === "chant" && l.chant_id) {
-              try { l.chant_titre = (await getChant(l.chant_id)).titre; } catch { l.chant_titre = `Chant #${l.chant_id}`; }
+              try {
+                const chant = await getChant(l.chant_id);
+                l.chant_titre = chant.titre;
+                l.chant_categorie = chant.categorie;
+                l.chant_reference = chant.code_reference;
+                l.refrain = chant.refrain;
+                l.couplets = chant.couplets;
+              } catch { l.chant_titre = `Chant #${l.chant_id}`; }
             }
           }),
         );
@@ -230,7 +242,11 @@ export default function ComposerScreen({ route, navigation }: Props) {
       return;
     }
     if (!ligneCiblee) return;
-    majLigne(ligneCiblee, { type: "chant", chant_id: chant.id, chant_titre: chant.titre });
+    majLigne(ligneCiblee, {
+      type: "chant", chant_id: chant.id, chant_titre: chant.titre,
+      chant_categorie: chant.categorie, chant_reference: chant.code_reference,
+      refrain: chant.refrain, couplets: chant.couplets,
+    });
     setLigneCiblee(null);
   }
 
@@ -370,15 +386,28 @@ export default function ComposerScreen({ route, navigation }: Props) {
         {ligne.type === "chant" && (
           <View style={styles.contenuLigne}>
             {ligne.chant_titre ? (
-              <>
-                <Text style={styles.chantChoisi}>🎵 {ligne.chant_titre}</Text>
-                <View style={styles.rangeeLiens}>
-                  <Pressable onPress={() => setLigneCiblee(ligne.cle)}><Text style={styles.lienAction}>Changer</Text></Pressable>
-                  <Pressable onPress={() => majLigne(ligne.cle, { type: "vide", chant_id: undefined, chant_titre: undefined })}>
+              <View style={styles.carteApercuChant}>
+                <View style={styles.enteteApercuChant}>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.pillCategorieApercu}>{categorieLabel(ligne.chant_categorie)}</Text>
+                    <Text style={styles.chantChoisi}>{ligne.chant_titre}</Text>
+                  </View>
+                  <Pressable style={styles.boutonChanger} onPress={() => setLigneCiblee(ligne.cle)}>
+                    <Text style={styles.texteBoutonChanger}>Changer</Text>
+                  </Pressable>
+                </View>
+                {!!(ligne.refrain || ligne.couplets?.[0]) && (
+                  <Text style={styles.apercuChant} numberOfLines={2}>
+                    {(ligne.refrain || ligne.couplets?.[0] || "").slice(0, 140)}
+                  </Text>
+                )}
+                <View style={styles.piedApercuChant}>
+                  {!!ligne.chant_reference && <Text style={styles.referenceApercu}>Réf : {ligne.chant_reference}</Text>}
+                  <Pressable onPress={() => majLigne(ligne.cle, { type: "vide", chant_id: undefined, chant_titre: undefined, chant_categorie: undefined, chant_reference: undefined, refrain: undefined, couplets: undefined })}>
                     <Text style={styles.lienEffacer}>Retirer</Text>
                   </Pressable>
                 </View>
-              </>
+              </View>
             ) : (
               <Pressable style={styles.actionVide} onPress={() => setLigneCiblee(ligne.cle)}>
                 <Text style={styles.texteActionVide}>📚 Choisir dans la bibliothèque</Text>
@@ -569,7 +598,15 @@ const styles = StyleSheet.create({
   fleche: { fontSize: 14, color: "#94a3b8" },
   supprimer: { fontSize: 14, color: "#dc2626" },
   contenuLigne: { marginTop: 8, gap: 6 },
-  chantChoisi: { fontSize: 14, color: "#1e293b" },
+  chantChoisi: { fontSize: 14, fontWeight: "700", color: "#1e293b", marginTop: 2 },
+  carteApercuChant: { backgroundColor: "#f8fafc", borderRadius: 10, borderWidth: 1, borderColor: "#e2e8f0", padding: 10, gap: 6 },
+  enteteApercuChant: { flexDirection: "row", alignItems: "flex-start", gap: 8 },
+  pillCategorieApercu: { alignSelf: "flex-start", fontSize: 9, fontWeight: "700", color: "#2563eb", backgroundColor: "#dbeafe", borderRadius: 999, paddingHorizontal: 7, paddingVertical: 1, textTransform: "uppercase" },
+  boutonChanger: { backgroundColor: "#f1f5f9", borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
+  texteBoutonChanger: { fontSize: 11, fontWeight: "600", color: "#475569" },
+  apercuChant: { fontSize: 12, color: "#64748b", fontStyle: "italic", lineHeight: 17, borderLeftWidth: 2, borderLeftColor: "#cbd5e1", paddingLeft: 8 },
+  piedApercuChant: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 2 },
+  referenceApercu: { fontSize: 11, color: "#64748b", fontWeight: "600" },
   champPetit: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 8, padding: 10, fontSize: 13, backgroundColor: "#fafcff" },
   lienEffacer: { color: "#dc2626", fontSize: 12 },
   rangeeActions: { flexDirection: "row", gap: 8, marginTop: 8 },
