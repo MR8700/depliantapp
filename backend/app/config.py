@@ -3,11 +3,51 @@ import json
 from pathlib import Path
 from typing import Optional
 
+from PIL import Image
 from reportlab.lib.utils import ImageReader
 
 from . import db
 from .db import insert_returning_id
 from .paths import DATA_DIR
+
+# Dimension max (plus grand côté, en px) avant stockage -- une photo prise au
+# téléphone peut peser plusieurs Mo alors que ces images ne sont jamais
+# affichées à plus de 26mm (logos) / 20mm de haut (bannière) dans le PDF
+# rendu (voir render/widgets.py::HAUTEUR_LOGO/HAUTEUR_BANNIERE_IMG) -- large
+# marge conservée même pour une impression haute résolution.
+_DIMENSION_MAX_LOGO = 600
+_DIMENSION_MAX_BANNIERE = 2000
+
+
+def _compresser_image(content: bytes, max_dimension: int) -> tuple[bytes, str]:
+    """Redimensionne/recompresse une image avant stockage en base : sans
+    cette étape, une image envoyée telle quelle depuis un téléphone (plusieurs
+    Mo) alourdit à la fois le chargement des pages web ET le PDF généré, qui
+    réutilise ces mêmes octets tels quels (voir get_active_image_reader). En
+    cas d'échec de décodage (fichier corrompu, format non supporté par
+    Pillow), le contenu original est conservé sans modification."""
+    try:
+        image = Image.open(io.BytesIO(content))
+        image.load()
+    except Exception:
+        return content, "application/octet-stream"
+
+    format_original = (image.format or "PNG").upper()
+    if image.width > max_dimension or image.height > max_dimension:
+        ratio = max_dimension / max(image.width, image.height)
+        nouvelle_taille = (max(1, round(image.width * ratio)), max(1, round(image.height * ratio)))
+        image = image.resize(nouvelle_taille, Image.Resampling.LANCZOS)
+
+    tampon = io.BytesIO()
+    if format_original in ("JPEG", "JPG"):
+        if image.mode not in ("RGB", "L"):
+            image = image.convert("RGB")
+        image.save(tampon, format="JPEG", quality=85, optimize=True)
+        content_type = "image/jpeg"
+    else:
+        image.save(tampon, format="PNG", optimize=True)
+        content_type = "image/png"
+    return tampon.getvalue(), content_type
 
 # Historique, conservés uniquement pour la migration ponctuelle depuis
 # l'ancien modèle mono-tenant (voir migrer_donnees_legacy_vers_chorale) —
@@ -175,6 +215,8 @@ def list_medias(type_: Optional[str] = None) -> list[dict]:
 
 
 def upload_media(chorale_id: int, type_: str, filename: str, content: bytes, content_type: Optional[str] = None, nom: Optional[str] = None) -> dict:
+    max_dimension = _DIMENSION_MAX_BANNIERE if type_ == "banniere" else _DIMENSION_MAX_LOGO
+    content, content_type = _compresser_image(content, max_dimension)
     with db.get_connection() as conn:
         media_id = insert_returning_id(
             conn,
@@ -182,6 +224,35 @@ def upload_media(chorale_id: int, type_: str, filename: str, content: bytes, con
             (type_, nom, filename, content_type, db.binary(content), chorale_id),
         )
     return {"id": media_id, "type": type_, "nom": nom, "filename": filename, "content_type": content_type, "chorale_id": chorale_id}
+
+
+def recompresser_medias_existants() -> dict:
+    """Repasse toutes les images déjà stockées (logos/bannières uploadés
+    avant l'ajout de la compression automatique dans upload_media) dans
+    _compresser_image, et ne réécrit la ligne que si la taille a réellement
+    diminué -- opération ponctuelle de rattrapage, à lancer une fois après
+    déploiement (voir routers/parametres.py::POST /medias/recompresser)."""
+    with db.get_connection() as conn:
+        rows = conn.execute("SELECT id, type, donnees FROM medias").fetchall()
+    traitees = 0
+    octets_avant = 0
+    octets_apres = 0
+    for row in rows:
+        contenu_original = bytes(row["donnees"])
+        max_dimension = _DIMENSION_MAX_BANNIERE if row["type"] == "banniere" else _DIMENSION_MAX_LOGO
+        nouveau_contenu, nouveau_type = _compresser_image(contenu_original, max_dimension)
+        octets_avant += len(contenu_original)
+        if len(nouveau_contenu) < len(contenu_original):
+            with db.get_connection() as conn:
+                conn.execute(
+                    "UPDATE medias SET donnees = ?, content_type = ? WHERE id = ?",
+                    (db.binary(nouveau_contenu), nouveau_type, row["id"]),
+                )
+            traitees += 1
+            octets_apres += len(nouveau_contenu)
+        else:
+            octets_apres += len(contenu_original)
+    return {"images_reduites": traitees, "total": len(rows), "octets_avant": octets_avant, "octets_apres": octets_apres}
 
 
 def get_media_bytes(media_id: int) -> Optional[tuple[bytes, str]]:

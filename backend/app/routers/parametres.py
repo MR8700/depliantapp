@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
 from .. import auth, config, schemas, crud, pdf_cache
-from ..deps import identite_courante
+from ..deps import identite_courante, require_superadmin
 
 router = APIRouter(prefix="/parametres", tags=["parametres"])
 
@@ -34,6 +34,17 @@ def read_global_parametres(identite: auth.Identite = Depends(identite_courante))
 
 
 # --- Pool partagé de médias (logos, bannières) : voir config.py -----------
+
+@router.post("/medias/recompresser")
+def recompresser_medias(_identite: auth.Identite = Depends(require_superadmin)):
+    """Rattrapage ponctuel : recompresse toutes les images du pool partagé
+    déjà stockées (uploadées avant l'ajout de la compression automatique
+    dans config.upload_media), puis vide le cache PDF de toutes les
+    chorales pour qu'elles régénèrent avec les images allégées."""
+    resultat = config.recompresser_medias_existants()
+    pdf_cache.invalidate_all_cache()
+    return resultat
+
 
 @router.get("/medias")
 def list_medias(type: Optional[str] = None):

@@ -3249,9 +3249,6 @@ async function chargerParametres() {
   debouncedRegenererSettingsPdf();
 }
 
-const PRIERE_TEXTE_STANDARD =
-  "Dieu notre père ce qu'il y a de meilleur dans ta création c'est l'homme…";
-
 function actualiserApercuEntete() {
   document.getElementById("apercu-paroisse").textContent =
     document.getElementById("p-paroisse").value || "Paroisse / CCB";
@@ -3275,7 +3272,6 @@ function actualiserApercuBanniere() {
 
 function actualiserApercuPriere() {
   const texte = document.getElementById("p-priere-defaut").value;
-  document.getElementById("apercu-priere-texte").textContent = texte || PRIERE_TEXTE_STANDARD;
   document.getElementById("p-priere-char-count").textContent = texte.length;
 }
 

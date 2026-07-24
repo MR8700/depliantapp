@@ -52,3 +52,13 @@ def invalidate_chorale_cache(chorale_id: int) -> None:
             shutil.rmtree(dir_path)
     except Exception:
         pass
+
+def invalidate_all_cache() -> None:
+    """Invalide le cache PDF de TOUTES les chorales -- utilisé après une
+    opération qui touche le pool de médias partagé dans son ensemble (ex:
+    recompression rétroactive des images, voir config.py::recompresser_medias_existants)."""
+    try:
+        if CACHE_DIR.exists():
+            shutil.rmtree(CACHE_DIR)
+    except Exception:
+        pass
