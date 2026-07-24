@@ -6717,11 +6717,20 @@ async function actualiserAdminPartitions() {
 }
 
 async function actualiserAdmin() {
-  await actualiserAdminChorales();
-  await actualiserAdminDemandes();
-  await actualiserAdminMasques();
-  await actualiserAdminPartitions();
-  await actualiserAdminCategories();
+  // En parallèle plutôt qu'enchaînés : 5 sections indépendantes qui n'ont
+  // aucune raison d'attendre l'une sur l'autre -- enchaînés, un simple aller-
+  // retour un peu lent sur l'une d'elles retardait l'affichage de TOUTES les
+  // autres (ex. les Chorales, censées être immédiates). allSettled plutôt
+  // que all : l'échec d'une section (ex. Partitions) n'empêche jamais les
+  // autres de s'afficher normalement.
+  const resultats = await Promise.allSettled([
+    actualiserAdminChorales(),
+    actualiserAdminDemandes(),
+    actualiserAdminMasques(),
+    actualiserAdminPartitions(),
+    actualiserAdminCategories(),
+  ]);
+  resultats.forEach((r) => { if (r.status === "rejected") console.error("Erreur section admin:", r.reason); });
 }
 
 function adminCategorieCardHtml(cat) {
