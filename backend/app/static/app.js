@@ -2321,6 +2321,13 @@ function initComposer() {
       regenererApercuSiPossible(true);
     });
   }
+  const btnPartagerApercu = document.getElementById("pv-btn-partager");
+  if (btnPartagerApercu) {
+    btnPartagerApercu.addEventListener("click", () => {
+      if (!feuilletCourantId) return;
+      partagerPdf(feuilletCourantId);
+    });
+  }
   const btnSupprimerApercu = document.getElementById("pv-btn-supprimer");
   if (btnSupprimerApercu) {
     btnSupprimerApercu.addEventListener("click", () => {
