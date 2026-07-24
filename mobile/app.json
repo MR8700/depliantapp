@@ -1,0 +1,31 @@
+{
+  "expo": {
+    "name": "DepliantApp",
+    "slug": "depliantapp",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.gotechnologie.depliantapp"
+    },
+    "android": {
+      "package": "com.gotechnologie.depliantapp",
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "backgroundColor": "#1a3c6e",
+        "foregroundImage": "./assets/android-icon-foreground.png",
+        "backgroundImage": "./assets/android-icon-background.png",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
+      },
+      "predictiveBackGestureEnabled": false
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-secure-store"
+    ]
+  }
+}

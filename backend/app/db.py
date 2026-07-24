@@ -299,6 +299,37 @@ CREATE TABLE IF NOT EXISTS categories_personnalisees (
     motif_rejet TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+-- Licences mobiles : gate d'activation de l'app React Native, avant tout
+-- login classique (voir app/licences.py + routers/licences.py). Une
+-- licence par chorale, utilisable par plusieurs appareils jusqu'à
+-- max_appareils. chorale_id peut rester NULL pour une licence générée à
+-- l'avance (ex. commande groupée) et attribuée plus tard.
+CREATE TABLE IF NOT EXISTS licences (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    code TEXT NOT NULL,
+    chorale_id INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'active',
+    max_appareils INTEGER NOT NULL DEFAULT 5,
+    expire_le TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_code ON licences(code);
+
+-- Un appareil ayant activé une licence donnée. Permet de compter les
+-- activations actives (contre max_appareils) et de révoquer un appareil
+-- précis (perte/vol) sans toucher aux autres ni à la licence elle-même.
+CREATE TABLE IF NOT EXISTS licence_activations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    licence_id INTEGER NOT NULL REFERENCES licences(id),
+    appareil_id TEXT NOT NULL,
+    appareil_nom TEXT,
+    active_le TEXT NOT NULL DEFAULT (datetime('now')),
+    dernier_contact_le TEXT NOT NULL DEFAULT (datetime('now')),
+    revoque_le TEXT
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licence_activations_unique ON licence_activations(licence_id, appareil_id);
 """
 
 # Équivalent Postgres : mêmes tables/colonnes, mais SERIAL (pas AUTOINCREMENT),
@@ -385,6 +416,30 @@ CREATE TABLE IF NOT EXISTS categories_personnalisees (
     motif_rejet TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
+
+-- Licences mobiles -- voir le commentaire équivalent dans SCHEMA_SQLITE.
+CREATE TABLE IF NOT EXISTS licences (
+    id SERIAL PRIMARY KEY,
+    code TEXT NOT NULL,
+    chorale_id INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'active',
+    max_appareils INTEGER NOT NULL DEFAULT 5,
+    expire_le TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    updated_at TIMESTAMP NOT NULL DEFAULT now()
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_code ON licences(code);
+
+CREATE TABLE IF NOT EXISTS licence_activations (
+    id SERIAL PRIMARY KEY,
+    licence_id INTEGER NOT NULL REFERENCES licences(id),
+    appareil_id TEXT NOT NULL,
+    appareil_nom TEXT,
+    active_le TIMESTAMP NOT NULL DEFAULT now(),
+    dernier_contact_le TIMESTAMP NOT NULL DEFAULT now(),
+    revoque_le TIMESTAMP
+);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licence_activations_unique ON licence_activations(licence_id, appareil_id);
 
 -- Pool partagé de médias (logos, bannières) : voir le commentaire équivalent
 -- dans SCHEMA_SQLITE. Remplace l'ancienne table à un logo par emplacement,

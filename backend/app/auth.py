@@ -259,6 +259,21 @@ def create_session_token(identite: Identite) -> str:
     return base64.urlsafe_b64encode(brut.encode("utf-8")).decode("ascii")
 
 
+def identite_depuis_requete(request) -> Optional[Identite]:
+    """Résout l'identité depuis une requête Starlette/FastAPI : cookie de
+    session (client web) ou header ``Authorization: Bearer`` (app mobile
+    React Native, qui ne persiste pas les cookies entre deux lancements --
+    voir routers/auth.py::login et memory project_depliantapp_mobile_licence).
+    Centralisé ici pour que le middleware ET les routes qui redécodent
+    l'identité elles-mêmes (status, change-password) restent cohérents."""
+    token = request.cookies.get(COOKIE_NAME)
+    if not token:
+        entete = request.headers.get("authorization", "")
+        if entete.lower().startswith("bearer "):
+            token = entete[7:].strip()
+    return verify_session_token(token) if token else None
+
+
 def verify_session_token(token: str) -> Optional[Identite]:
     """Retourne l'identité résolue si le jeton est valide (signature intacte,
     non expiré), sinon None. Le username est extrait en 3 temps (signature

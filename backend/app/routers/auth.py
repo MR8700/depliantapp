@@ -30,7 +30,12 @@ def login(identifiants: Identifiants, response: Response):
         compte = auth.get_account()
     else:
         compte = auth.get_chorale(identite.compte_id)
-    return {"ok": True, "must_change_password": bool(compte["must_change_password"])}
+    # `jeton` en plus du cookie : l'app mobile React Native (offline-first,
+    # voir memory project_depliantapp_mobile_licence) ne peut pas compter sur
+    # la persistance du cookie entre deux lancements -- elle stocke ce jeton
+    # elle-même (SecureStore) et le renvoie via `Authorization: Bearer` (voir
+    # AuthMiddleware dans main.py). Inoffensif pour le client web, qui l'ignore.
+    return {"ok": True, "must_change_password": bool(compte["must_change_password"]), "jeton": token}
 
 
 @router.post("/logout")
@@ -41,8 +46,7 @@ def logout(response: Response):
 
 @router.get("/status")
 def status(request: Request):
-    token = request.cookies.get(auth.COOKIE_NAME)
-    identite = auth.verify_session_token(token) if token else None
+    identite = auth.identite_depuis_requete(request)
     if not identite:
         return {"authenticated": False}
     if identite.type == "super":
@@ -68,8 +72,7 @@ def status(request: Request):
 
 @router.post("/change-password")
 def changer_mot_de_passe(payload: ChangementMotDePasse, request: Request):
-    token = request.cookies.get(auth.COOKIE_NAME)
-    identite = auth.verify_session_token(token) if token else None
+    identite = auth.identite_depuis_requete(request)
     if not identite:
         raise HTTPException(status_code=401, detail="Non authentifié")
     if len(payload.nouveau_mot_de_passe) < 8:

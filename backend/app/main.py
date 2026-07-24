@@ -11,7 +11,7 @@ from .constants import CATEGORIES_CHANTS, MOMENTS_LITURGIQUES
 from .db import init_db
 from .ml import classifier
 from .routers import auth as auth_router
-from .routers import chants, chorales, feuillets, import_, messages, ml, moderation, parametres, statistiques
+from .routers import chants, chorales, feuillets, import_, licences, messages, ml, moderation, parametres, statistiques
 
 app = FastAPI(title="DepliantApp API", version="0.1.0")
 
@@ -32,6 +32,10 @@ app.add_middleware(
 _CHEMINS_PUBLICS = {
     "/auth/login", "/auth/status", "/health", "/login.html", "/favicon.ico",
     "/manifest.json", "/sw.js", "/icon-192.png", "/icon-512.png",
+    # Activation/vérification de licence mobile : appelées par l'app React
+    # Native AVANT tout login (voir app/licences.py) -- protégées par leur
+    # propre throttling anti brute-force, pas par la session web.
+    "/licences/activer", "/licences/verifier",
 }
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
 # doit encore être changé (sinon impossible de le changer...).
@@ -56,8 +60,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         from . import db
         db.nettoyer_chorales_supprimees()
 
-        token = request.cookies.get(auth.COOKIE_NAME)
-        identite = auth.verify_session_token(token) if token else None
+        identite = auth.identite_depuis_requete(request)
         if not identite:
             return self._refuser(request)
         request.state.identite = identite
@@ -119,6 +122,7 @@ app.include_router(statistiques.router)
 app.include_router(messages.router)
 app.include_router(ml.router)
 app.include_router(import_.router)
+app.include_router(licences.router)
 
 
 @app.on_event("startup")

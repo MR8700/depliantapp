@@ -1,6 +1,7 @@
 backend/data/
-backend/uvicorn_out*.log
-backend/uvicorn_err*.log
+backend/*.db
+backend/*.log
+backend/*.pid
 **/__pycache__/
 *.pyc
 .venv/

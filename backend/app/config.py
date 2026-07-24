@@ -35,6 +35,10 @@ DEFAULTS = {
     "contact": "",
     "annonce": "",
     "priere_texte_defaut": "",
+    # Consentement de la chorale à la synchronisation hors-ligne de la
+    # bibliothèque partagée de chants sur l'app mobile (voir storage/sync.ts
+    # côté mobile) -- activé par défaut, réglable par chorale dans Réglages.
+    "sync_bibliotheque_partagee": True,
     **{f"{slot}_media_id": None for slot in IMAGE_SLOTS},
     # GOT About Page parameters
     "got_nom_entreprise": "GO Technologie (GOT)",
