@@ -72,6 +72,9 @@ export interface MomentContenu {
   texte_libre?: string | null;
   couplet_limit?: number | null;
   ordre?: number | null;
+  /** Agrandissement ciblé (en pt, ajouté à la taille de corps de base) pour
+   * ce chant/texte uniquement -- voir render/typography.ts. */
+  taille_texte_supplement?: number | null;
 }
 
 export interface Lectures {

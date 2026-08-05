@@ -7,6 +7,7 @@
 // de distribuer) avant de dessiner, jamais de réduction chant par chant,
 // jamais de 3e page.
 import * as Print from "expo-print";
+import * as FileSystem from "expo-file-system/legacy";
 import { MeasurementBridgeHandle } from "../components/MeasurementBridge";
 import { Feuillet } from "../types";
 import { telechargerFeuilletPdf, getFeuillet, PdfLocal } from "../api/feuillets";
@@ -34,18 +35,75 @@ const MM_VERS_PT = 2.83465;
 const LARGEUR_PT = Math.round(PAGE_W_MM * MM_VERS_PT);
 const HAUTEUR_PT = Math.round(PAGE_H_MM * MM_VERS_PT);
 
+// Print.printToFileAsync() rend le HTML dans un contexte isolé (WebView
+// interne côté Android, UIPrintPageRenderer côté iOS) qui n'a PAS accès au
+// système de fichiers de l'app pour résoudre des <img src="file://...">
+// -- contrairement à MeasurementBridge (react-native-webview classique),
+// l'image y reste silencieusement invisible, sans erreur ni avertissement,
+// que l'appareil soit en ligne ou non (le PDF local "réussit" quand même,
+// donc obtenirPdfAvecRepliLocal ne bascule jamais sur le réseau pour
+// autant). Seule solution fiable : encoder l'image en data URI (base64),
+// autonome et indépendant du bac à sable de fichiers.
+async function fichierVersDataUri(uriFichier: string): Promise<string> {
+  const base64 = await FileSystem.readAsStringAsync(uriFichier, { encoding: FileSystem.EncodingType.Base64 });
+  // Signature du contenu réellement décodé plutôt que l'extension du fichier
+  // (téléchargé sous un nom générique "parametres_<slot>.img", voir
+  // storage/parametresCache.ts) -- suffisant pour les deux formats produits
+  // par le picker/upload de l'app (PNG depuis un export/capture, JPEG depuis
+  // une photo). La plupart des moteurs de rendu sniffent de toute façon le
+  // contenu réel d'une data URI, mais autant être exact.
+  const type = base64.startsWith("iVBOR") ? "image/png" : base64.startsWith("/9j/") ? "image/jpeg" : "image/png";
+  return `data:${type};base64,${base64}`;
+}
+
+async function imagesEnDataUri<T extends Record<string, string | undefined>>(images: T): Promise<T> {
+  const resultat = { ...images };
+  await Promise.all(
+    (Object.keys(images) as (keyof T)[]).map(async (slot) => {
+      const uri = images[slot];
+      if (!uri) return;
+      try {
+        resultat[slot] = (await fichierVersDataUri(uri as string)) as T[keyof T];
+      } catch {
+        // Fichier illisible/disparu -- on retire plutôt que de garder un
+        // file:// mort qui ne s'afficherait de toute façon pas.
+        delete resultat[slot];
+      }
+    }),
+  );
+  return resultat;
+}
+
+// Un seul jeu de styles concrets par taille EFFECTIVE distincte rencontrée
+// (normalement 2 : la taille de base, et base+supplément pour le chant
+// ciblé -- voir measure.ts::UniteNonMesuree.supplement) -- mémoïsé pour ne
+// pas recalculer construireStyles() une fois par unité.
+function stylesPourTaille(cache: Map<number, Record<NomStyle, StyleParagraphe>>, taille: number): Record<NomStyle, StyleParagraphe> {
+  let s = cache.get(taille);
+  if (!s) { s = construireStyles(taille); cache.set(taille, s); }
+  return s;
+}
+
 async function testerTaille(
-  bridge: MeasurementBridgeHandle, unitesNonMesurees: UniteNonMesuree[], sections: Section[], grille: Grille, tailleTexte: number,
-): Promise<{ styles: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> }> {
-  const styles = construireStyles(tailleTexte);
-  const demandes = unitesNonMesurees.map((u) => ({ html: u.html, nomStyle: u.nomStyle }));
-  const hauteurs = await bridge.mesurer(demandes, styles, LARGEUR_COLONNE_MM);
+  bridge: MeasurementBridgeHandle, unitesNonMesurees: UniteNonMesuree[], sections: Section[], grille: Grille, tailleTexteBase: number,
+): Promise<{ stylesBase: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> }> {
+  const cache = new Map<number, Record<NomStyle, StyleParagraphe>>();
+  const stylesBase = stylesPourTaille(cache, tailleTexteBase);
+  const demandes = unitesNonMesurees.map((u) => {
+    // Le supplément ne s'applique qu'au contenu du chant ciblé (voir
+    // measure.ts) -- jamais au-delà du plafond, comme la taille de base
+    // elle-même.
+    const tailleEffective = u.supplement ? Math.min(TAILLE_TEXTE_PLAFOND, tailleTexteBase + u.supplement) : tailleTexteBase;
+    const style = stylesPourTaille(cache, tailleEffective)[u.nomStyle];
+    return { html: u.html, style };
+  });
+  const hauteurs = await bridge.mesurer(demandes, LARGEUR_COLONNE_MM);
   const unites: Unite[] = unitesNonMesurees.map((u, i) => ({
-    html: u.html, nomStyle: u.nomStyle, hauteur: hauteurs[i], sectionOrdre: u.sectionOrdre, nature: u.nature,
+    html: u.html, nomStyle: u.nomStyle, style: demandes[i].style, hauteur: hauteurs[i], sectionOrdre: u.sectionOrdre, nature: u.nature,
   }));
   const engine = new LayoutEngine(grille.flowOrder);
   const assignation = engine.distribuer(unites, sections); // lève DepassementImpossible si ça ne rentre pas
-  return { styles, assignation };
+  return { stylesBase, assignation };
 }
 
 /** Génère le PDF d'un feuillet entièrement sur l'appareil, sans réseau.
@@ -61,31 +119,43 @@ export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: Measur
 
   const parametres = await lireParametresCache();
   const config = parametres?.donnees ?? {};
-  const images = parametres?.images ?? {};
+  const images = await imagesEnDataUri(parametres?.images ?? {});
 
   async function assemblerEtEcrire(tailleTexte: number, styles: Record<NomStyle, StyleParagraphe>, assignation: Record<string, Unite[]>): Promise<ResultatPdfLocal> {
     const contenuPriereHtml = feuillet.priere_active ? construireContenuPriere(feuillet, styles, config) : null;
-    const html = assemblerHtml({ feuillet, config, images, grille, assignation, styles, contenuPriereHtml });
+    const html = assemblerHtml({ feuillet, config, images, grille, assignation, contenuPriereHtml });
     const { uri } = await Print.printToFileAsync({ html, width: LARGEUR_PT, height: HAUTEUR_PT, base64: false });
     return { uri, tailleTexte };
   }
 
+  // Chant(s) avec un agrandissement ciblé actif -- sert uniquement à clarifier
+  // le message d'erreur si le feuillet ne tient plus (voir plus bas), pas au
+  // calcul lui-même (déjà géré unité par unité dans testerTaille).
+  const sectionsAvecSupplement = sections.filter((s) => s.song.tailleTexteSupplement > 0);
+
   if (feuillet.taille_texte_manuelle != null) {
     const taille = Math.max(TAILLE_TEXTE, Math.min(TAILLE_TEXTE_PLAFOND, feuillet.taille_texte_manuelle));
-    const { styles, assignation } = await testerTaille(bridge, unitesNonMesurees, sections, grille, taille);
-    return assemblerEtEcrire(taille, styles, assignation);
+    const { stylesBase, assignation } = await testerTaille(bridge, unitesNonMesurees, sections, grille, taille);
+    return assemblerEtEcrire(taille, stylesBase, assignation);
   }
 
   let derniereErreur: DepassementImpossible | null = null;
   for (const tailleTexte of ECHELLES_CORPS) {
-    let resultat: { styles: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> };
+    let resultat: { stylesBase: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> };
     try {
       resultat = await testerTaille(bridge, unitesNonMesurees, sections, grille, tailleTexte);
     } catch (exc) {
       if (exc instanceof DepassementImpossible) { derniereErreur = exc; continue; }
       throw exc;
     }
-    return assemblerEtEcrire(tailleTexte, resultat.styles, resultat.assignation);
+    return assemblerEtEcrire(tailleTexte, resultat.stylesBase, resultat.assignation);
+  }
+  if (derniereErreur && sectionsAvecSupplement.length > 0) {
+    const noms = sectionsAvecSupplement.map((s) => s.song.titre || s.label).join(", ");
+    throw new DepassementImpossible(
+      `${derniereErreur.message} L'agrandissement ciblé de « ${noms} » y contribue probablement -- réduis-le ou retire-le si besoin.`,
+      derniereErreur.momentsEnCause,
+    );
   }
   throw derniereErreur ?? new DepassementImpossible("Aucune taille de police ne convient.", []);
 }

@@ -8,6 +8,7 @@
 // dans AUCUNE zone restante, le moteur ne réduit jamais la police et ne crée
 // jamais de 3e page : il signale l'impossibilité (DepassementImpossible).
 import { Section } from "./model";
+import { StyleParagraphe } from "./typography";
 import { Zone } from "./zones";
 
 export type NatureUnite = "titre" | "refrain" | "couplet";
@@ -16,6 +17,12 @@ export interface Unite {
   /** Contenu HTML déjà prêt à insérer tel quel (voir measure.ts). */
   html: string;
   nomStyle: "titre_section" | "titre_chant" | "refrain" | "couplet" | "priere_corps";
+  /** Style déjà résolu (taille effective = base +/- supplément ciblé par
+   * chant, voir measure.ts::UniteNonMesuree.supplement) -- calculé une seule
+   * fois à la mesure, réutilisé tel quel à l'assemblage (pdfAssembler.ts)
+   * pour ne jamais recalculer/re-dériver un style différent entre les deux
+   * passes. */
+  style: StyleParagraphe;
   /** Hauteur réellement mesurée (mm), marges de paragraphe incluses. */
   hauteur: number;
   sectionOrdre: number;

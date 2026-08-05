@@ -13,14 +13,20 @@ export interface UniteNonMesuree {
   nomStyle: NomStyle;
   sectionOrdre: number;
   nature: "titre" | "refrain" | "couplet";
+  /** Agrandissement ciblé (pt) hérité de section.song.tailleTexteSupplement
+   * -- jamais appliqué à "titre_section" (l'étiquette du moment, ex.
+   * "ENTRÉE", reste toujours à la taille normale, seul le contenu du
+   * chant/texte lui-même grossit). */
+  supplement: number;
 }
 
 export function construireUnitesSection(section: Section): UniteNonMesuree[] {
   const unites: UniteNonMesuree[] = [];
+  const supplement = section.song.tailleTexteSupplement;
 
   unites.push({
     html: `<u>${escapeHtml(section.label).toUpperCase()}</u>`,
-    nomStyle: "titre_section", sectionOrdre: section.ordre, nature: "titre",
+    nomStyle: "titre_section", sectionOrdre: section.ordre, nature: "titre", supplement: 0,
   });
 
   const song = section.song;
@@ -33,20 +39,20 @@ export function construireUnitesSection(section: Section): UniteNonMesuree[] {
       // de zone/colonne (même invariant que measure.py côté backend).
       html += `<br/><span class="auteur-compositeur">${escapeHtml(song.auteurCompositeur)}</span>`;
     }
-    unites.push({ html, nomStyle: "titre_chant", sectionOrdre: section.ordre, nature: "titre" });
+    unites.push({ html, nomStyle: "titre_chant", sectionOrdre: section.ordre, nature: "titre", supplement });
   }
 
   if (song.refrain) {
     unites.push({
       html: mettreEnGrasRefrain(escapeHtml(song.refrain)),
-      nomStyle: "refrain", sectionOrdre: section.ordre, nature: "refrain",
+      nomStyle: "refrain", sectionOrdre: section.ordre, nature: "refrain", supplement,
     });
   }
 
   song.couplets.forEach((couplet, i) => {
     unites.push({
       html: mettreEnGrasNumero(couplet, i + 1),
-      nomStyle: "couplet", sectionOrdre: section.ordre, nature: "couplet",
+      nomStyle: "couplet", sectionOrdre: section.ordre, nature: "couplet", supplement,
     });
   });
 

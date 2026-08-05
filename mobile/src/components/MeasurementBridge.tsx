@@ -1,18 +1,23 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
-import { NomStyle, StyleParagraphe } from "../render/typography";
+import { StyleParagraphe } from "../render/typography";
 
 export interface MesureDemandee {
   html: string;
-  nomStyle: NomStyle;
+  /** Style déjà résolu par l'appelant (taille effective = base +/-
+   * supplément ciblé par chant, voir genererPdfLocal.ts::testerTaille) --
+   * ce composant ne connaît plus les "nomStyle", juste des styles concrets,
+   * pour que deux unités du même rôle (ex: deux "couplet") puissent être
+   * mesurées à des tailles différentes dans la même passe. */
+  style: StyleParagraphe;
 }
 
 export interface MeasurementBridgeHandle {
-  /** Mesure la hauteur réelle (mm) de chaque unité HTML à une taille de
-   * police donnée, en une seule passe DOM -- équivalent mobile de
-   * Paragraph.wrap() (ReportLab), voir render/measure.py côté backend. */
-  mesurer(unites: MesureDemandee[], styles: Record<NomStyle, StyleParagraphe>, largeurColonneMm: number): Promise<number[]>;
+  /** Mesure la hauteur réelle (mm) de chaque unité HTML, en une seule passe
+   * DOM -- équivalent mobile de Paragraph.wrap() (ReportLab), voir
+   * render/measure.py côté backend. */
+  mesurer(unites: MesureDemandee[], largeurColonneMm: number): Promise<number[]>;
 }
 
 let compteurRequete = 0;
@@ -41,7 +46,7 @@ const HTML_HARNAIS = `<!DOCTYPE html><html><head><meta charset="utf-8">
       racine.innerHTML = '';
       racine.style.width = demande.largeurColonneMm + 'mm';
       const noeuds = demande.unites.map(function (u) {
-        const style = demande.styles[u.nomStyle] || {};
+        const style = u.style || {};
         const div = document.createElement('div');
         div.innerHTML = u.html;
         div.style.fontSize = (style.fontSize || 8) + 'pt';
@@ -86,12 +91,12 @@ const MeasurementBridge = forwardRef<MeasurementBridgeHandle>((_props, ref) => {
   }
 
   useImperativeHandle(ref, () => ({
-    async mesurer(unites, styles, largeurColonneMm) {
+    async mesurer(unites, largeurColonneMm) {
       await pret.current;
       return new Promise((resolve, reject) => {
         const id = ++compteurRequete;
         enAttente.current.set(id, { resolve, reject });
-        webviewRef.current?.postMessage(JSON.stringify({ id, unites, styles, largeurColonneMm }));
+        webviewRef.current?.postMessage(JSON.stringify({ id, unites, largeurColonneMm }));
       });
     },
   }));

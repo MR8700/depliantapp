@@ -6,7 +6,7 @@
 // dessiné directement (voir genererPdfLocal.ts).
 import { Feuillet } from "../types";
 import { Unite } from "./layoutEngine";
-import { NomStyle, StyleParagraphe } from "./typography";
+import { StyleParagraphe } from "./typography";
 import { ParametresCache } from "../storage/parametresCache";
 import { construireBanniere, construireEntete } from "./widgets";
 import { Grille, HAUTEUR_UTILE_MM, LARGEUR_UTILE_MM, PAGE_H_MM, PAGE_W_MM, X0_MM, Y0_MM, Zone } from "./zones";
@@ -20,9 +20,13 @@ function styleZoneCss(style: StyleParagraphe): string {
     + `font-weight:${style.fontWeight ?? "normal"}; margin-top:${style.marginTop ?? 0}pt; margin-bottom:${style.marginBottom ?? 0}pt;`;
 }
 
-function contenuZone(unites: Unite[] | undefined, styles: Record<NomStyle, StyleParagraphe>): string {
+// Chaque unité porte déjà son style résolu (voir genererPdfLocal.ts::testerTaille)
+// -- plus besoin de le re-dériver depuis un `nomStyle`+registre partagé ici,
+// ce qui permet à deux unités du même rôle (ex: deux "couplet") d'avoir des
+// tailles différentes (agrandissement ciblé d'un chant, voir measure.ts).
+function contenuZone(unites: Unite[] | undefined): string {
   if (!unites || unites.length === 0) return "";
-  return unites.map((u) => `<div style="${styleZoneCss(styles[u.nomStyle])}">${u.html}</div>`).join("");
+  return unites.map((u) => `<div style="${styleZoneCss(u.style)}">${u.html}</div>`).join("");
 }
 
 function divZone(zone: Zone, contenuHtml: string): string {
@@ -61,12 +65,11 @@ export interface DonneesAssemblage {
   images: ParametresCache["images"];
   grille: Grille;
   assignation: Record<string, Unite[]>;
-  styles: Record<NomStyle, StyleParagraphe>;
   contenuPriereHtml: string | null;
 }
 
 export function assemblerHtml(d: DonneesAssemblage): string {
-  const { feuillet, config, images, grille, assignation, styles, contenuPriereHtml } = d;
+  const { feuillet, config, images, grille, assignation, contenuPriereHtml } = d;
   const onePageMode = !!feuillet.one_page_mode;
   const banniereActive = feuillet.banniere_active !== false;
   const priereActive = !!feuillet.priere_active;
@@ -74,7 +77,7 @@ export function assemblerHtml(d: DonneesAssemblage): string {
   const zoneAvecContenu = (nom: string, contenuSupplementaire?: string) => {
     const zone = grille.toutes[nom];
     if (!zone) return "";
-    const contenu = contenuSupplementaire ?? contenuZone(assignation[nom], styles);
+    const contenu = contenuSupplementaire ?? contenuZone(assignation[nom]);
     return divZone(zone, contenu);
   };
 

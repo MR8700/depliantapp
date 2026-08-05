@@ -51,6 +51,9 @@ interface LigneMoment {
   refrain?: string | null;
   couplets?: string[];
   couplet_limit?: number | null;
+  /** Agrandissement ciblé (pt) pour ce chant uniquement -- le reste du
+   * feuillet garde l'auto-ajustement normal (voir render/typography.ts). */
+  taille_texte_supplement?: number | null;
   titre_libre?: string;
   texte_libre?: string;
 }
@@ -64,6 +67,7 @@ function ligneVersMomentContenu(l: LigneMoment): MomentContenu | null {
     titre_libre: l.titre_libre || undefined,
     texte_libre: l.texte_libre || undefined,
     couplet_limit: l.type === "chant" ? l.couplet_limit ?? null : undefined,
+    taille_texte_supplement: l.taille_texte_supplement ?? null,
     ordre: l.ordre,
   };
 }
@@ -179,6 +183,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
             titre_libre: existant.titre_libre ?? undefined,
             texte_libre: existant.texte_libre ?? undefined,
             couplet_limit: existant.couplet_limit ?? undefined,
+            taille_texte_supplement: existant.taille_texte_supplement ?? undefined,
           };
         });
         const lignesSpeciales: LigneMoment[] = Array.from(restants.values()).map((m) => ({
@@ -188,6 +193,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
           titre_libre: m.titre_libre ?? undefined,
           texte_libre: m.texte_libre ?? undefined,
           couplet_limit: m.couplet_limit ?? undefined,
+          taille_texte_supplement: m.taille_texte_supplement ?? undefined,
         }));
         const toutesLesLignes = [...lignesFixes, ...lignesSpeciales];
 
@@ -286,7 +292,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
     majLigne(ligneCiblee, {
       type: "chant", chant_id: chant.id, chant_titre: chant.titre,
       chant_categorie: chant.categorie, chant_reference: chant.code_reference,
-      refrain: chant.refrain, couplets: chant.couplets, couplet_limit: null,
+      refrain: chant.refrain, couplets: chant.couplets, couplet_limit: null, taille_texte_supplement: null,
     });
     setLigneCiblee(null);
   }
@@ -506,6 +512,27 @@ export default function ComposerScreen({ route, navigation }: Props) {
                     />
                   </View>
                 )}
+                <View style={styles.rangeeCoupletLimite}>
+                  <Text style={styles.labelCoupletLimite}>Taille du texte pour ce chant</Text>
+                  <SelectModal
+                    label="Taille du texte pour ce chant"
+                    value={String(ligne.taille_texte_supplement ?? 0)}
+                    options={[
+                      { value: "0", label: "Normale (auto comme le reste)" },
+                      { value: "2", label: "Agrandie (+2pt)" },
+                      { value: "4", label: "Très agrandie (+4pt)" },
+                      { value: "6", label: "Maximale (+6pt)" },
+                    ]}
+                    onChange={(v) => majLigne(ligne.cle, { taille_texte_supplement: v === "0" ? null : Number(v) })}
+                    style={styles.selectCoupletLimite}
+                  />
+                  {!!ligne.taille_texte_supplement && (
+                    <Text style={styles.hintTailleSupplement}>
+                      Le reste du feuillet continue de s'ajuster automatiquement autour de ce chant agrandi ;
+                      si ça ne rentre plus, un message te le signalera à la génération du PDF.
+                    </Text>
+                  )}
+                </View>
                 <View style={styles.piedApercuChant}>
                   {!!ligne.chant_reference && <Text style={styles.referenceApercu}>Réf : {ligne.chant_reference}</Text>}
                   <Pressable onPress={() => majLigne(ligne.cle, { type: "vide", chant_id: undefined, chant_titre: undefined, chant_categorie: undefined, chant_reference: undefined, refrain: undefined, couplets: undefined })}>
@@ -738,6 +765,7 @@ const styles = StyleSheet.create({
   rangeeCoupletLimite: { gap: 4, marginTop: 2 },
   labelCoupletLimite: { fontSize: 10, color: "#94a3b8", fontWeight: "600", textTransform: "uppercase" },
   selectCoupletLimite: { paddingVertical: 7 },
+  hintTailleSupplement: { fontSize: 10, color: "#b45309", fontStyle: "italic", marginTop: 2 },
   piedApercuChant: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 2 },
   referenceApercu: { fontSize: 11, color: "#64748b", fontWeight: "600" },
   champPetit: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 8, padding: 10, fontSize: 13, backgroundColor: "#fafcff" },

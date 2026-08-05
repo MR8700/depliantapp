@@ -127,6 +127,11 @@ class MomentContenu(BaseModel):
     couplet_limit: Optional[int] = None
     """Limite le nombre de couplets affichés pour ce chant dans ce feuillet
     (sans modifier le chant dans la bibliothèque) — utile pour tenir sur 2 pages."""
+    taille_texte_supplement: Optional[float] = None
+    """Agrandissement ciblé (en pt, ajoute a la taille de corps de base) pour
+    CE chant/texte uniquement -- champ conserve pour le round-trip ; le
+    moteur de rendu serveur (render/*.py) ne l'applique pas encore, seul le
+    moteur local mobile (render/typography.ts) le fait."""
     ordre: Optional[int] = None
     """Position explicite dans le flux de composition (drag&drop ou saisie
     numérique côté client). Si absent, l'ordre de la liste `moments` fait foi —

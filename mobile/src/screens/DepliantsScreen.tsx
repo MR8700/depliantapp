@@ -76,6 +76,8 @@ export default function DepliantsScreen() {
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [pdfChargement, setPdfChargement] = useState(false);
   const [pdfErreur, setPdfErreur] = useState<DepassementPdf | null>(null);
+  const [feuilletApercuId, setFeuilletApercuId] = useState<number | null>(null);
+  const [tailleTexteApercu, setTailleTexteApercu] = useState<number | null>(null);
   const bridgeMesure = useRef<MeasurementBridgeHandle>(null);
   const [raisonModal, setRaisonModal] = useState<{ id: number } | null>(null);
   const [raison, setRaison] = useState("");
@@ -121,6 +123,8 @@ export default function DepliantsScreen() {
     setPdfChargement(true);
     setPdfErreur(null);
     setPdfUri(null);
+    setFeuilletApercuId(feuillet.id);
+    setTailleTexteApercu(feuillet.taille_texte_manuelle ?? null);
     try {
       // Réseau prioritaire ; repli automatique sur le rendu 100% local si le
       // réseau échoue (voir render/genererPdfLocal.ts::obtenirPdfAvecRepliLocal).
@@ -136,6 +140,35 @@ export default function DepliantsScreen() {
       } else {
         Alert.alert("Erreur", "Impossible d'ouvrir ce dépliant, ni en ligne ni hors-ligne");
       }
+    } finally {
+      setPdfChargement(false);
+    }
+  }
+
+  // Réglage manuel de la taille du texte directement depuis l'aperçu d'un
+  // dépliant déjà enregistré -- pas besoin de passer par "Modifier" (Composer)
+  // pour ajuster, comme sur le web (le "zoom" du panneau d'aperçu EST en
+  // réalité ce réglage, voir PdfViewer.tsx). Persiste sur le feuillet pour
+  // que le prochain "Voir"/téléchargement conserve le choix.
+  async function changerTailleTexteApercu(taille: number | null) {
+    if (!feuilletApercuId) return;
+    setTailleTexteApercu(taille);
+    setPdfChargement(true);
+    setPdfErreur(null);
+    try {
+      const orig = await getFeuillet(feuilletApercuId);
+      const maj = await mettreAJourFeuillet(feuilletApercuId, {
+        date: orig.date, lieu: orig.lieu, lectures: orig.lectures, moments: orig.moments,
+        priere_active: orig.priere_active, priere_texte: orig.priere_texte,
+        taille_texte_manuelle: taille, one_page_mode: orig.one_page_mode, banniere_active: orig.banniere_active,
+      });
+      if (maj.id !== feuilletApercuId) setFeuilletApercuId(maj.id);
+      const { uri } = await obtenirPdfAvecRepliLocal(maj.id, bridgeMesure.current!);
+      setPdfUri(uri);
+    } catch (erreur) {
+      if (erreur instanceof ApiError && erreur.status === 409) setPdfErreur(erreur.detail as DepassementPdf);
+      else if (erreur instanceof DepassementImpossible) setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
+      else Alert.alert("Erreur", "Impossible d'appliquer cette taille de texte.");
     } finally {
       setPdfChargement(false);
     }
@@ -378,7 +411,15 @@ export default function DepliantsScreen() {
       />
 
       <Modal visible={apercuVisible} animationType="slide" onRequestClose={() => setApercuVisible(false)}>
-        <PdfViewer uri={pdfUri} chargement={pdfChargement} erreur={pdfErreur?.message ?? null} momentsEnCause={pdfErreur?.moments_en_cause} onFermer={() => setApercuVisible(false)} />
+        <PdfViewer
+          uri={pdfUri}
+          chargement={pdfChargement}
+          erreur={pdfErreur?.message ?? null}
+          momentsEnCause={pdfErreur?.moments_en_cause}
+          onFermer={() => setApercuVisible(false)}
+          tailleTexteManuelle={tailleTexteApercu}
+          onChangerTailleTexte={changerTailleTexteApercu}
+        />
       </Modal>
 
       <Modal visible={!!raisonModal} animationType="fade" transparent onRequestClose={() => setRaisonModal(null)}>

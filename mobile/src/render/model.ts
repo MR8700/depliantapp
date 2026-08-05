@@ -12,6 +12,10 @@ export interface Song {
   /** Affiché en plus petit sous le titre -- même repli que partout ailleurs
    * (chant.auteur || chant.compositeur). */
   auteurCompositeur: string | null;
+  /** Agrandissement ciblé (pt) pour CE chant uniquement -- voir
+   * MomentContenu.taille_texte_supplement / render/typography.ts. 0 = pas de
+   * supplément (comportement normal, auto-ajusté comme le reste). */
+  tailleTexteSupplement: number;
 }
 
 export interface Section {
@@ -32,18 +36,20 @@ export class ChantIntrouvableHorsLigne extends Error {
 }
 
 function resoudreChant(moment: MomentContenu, chantsParId: Map<number, Chant>): Song {
+  const supplement = moment.taille_texte_supplement ?? 0;
   if (moment.type === "chant" && moment.chant_id != null) {
     const chant = chantsParId.get(moment.chant_id);
     if (chant) {
       let couplets = chant.couplets;
       if (moment.couplet_limit != null) couplets = couplets.slice(0, moment.couplet_limit);
-      return { titre: chant.titre, refrain: chant.refrain, couplets, auteurCompositeur: chant.auteur || chant.compositeur || null };
+      return { titre: chant.titre, refrain: chant.refrain, couplets, auteurCompositeur: chant.auteur || chant.compositeur || null, tailleTexteSupplement: supplement };
     }
     return {
       titre: moment.titre_libre ?? `Chant #${moment.chant_id}`,
       refrain: null,
       couplets: moment.texte_libre ? [moment.texte_libre] : [],
       auteurCompositeur: null,
+      tailleTexteSupplement: supplement,
     };
   }
   return {
@@ -51,6 +57,7 @@ function resoudreChant(moment: MomentContenu, chantsParId: Map<number, Chant>): 
     refrain: null,
     couplets: moment.texte_libre ? [moment.texte_libre] : [],
     auteurCompositeur: null,
+    tailleTexteSupplement: supplement,
   };
 }
 
