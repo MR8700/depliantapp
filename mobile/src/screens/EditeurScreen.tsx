@@ -2,6 +2,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Alert, FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import * as FileSystem from "expo-file-system/legacy";
+import * as Sharing from "expo-sharing";
 import { rechercherChants, bulkCategoriser, bulkSupprimer, modifierChant } from "../api/chants";
 import { demanderSuppression } from "../api/moderation";
 import { getMeta } from "../api/meta";
@@ -32,6 +34,9 @@ export default function EditeurScreen() {
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [chantOuvert, setChantOuvert] = useState<Chant | null>(null);
   const [modeCreation, setModeCreation] = useState(false);
+  const [pageIndex, setPageIndex] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const [exportEnCours, setExportEnCours] = useState(false);
 
   useEffect(() => {
     getMeta().then((m) => setCategories(m.categories)).catch(() => {});
@@ -70,6 +75,27 @@ export default function EditeurScreen() {
     });
     return liste;
   }, [chants, recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, tri]);
+
+  useEffect(() => { setPageIndex(1); }, [recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, tri]);
+
+  const totalPages = Math.max(1, Math.ceil(filtres.length / pageSize));
+  const pageEffective = Math.min(Math.max(1, pageIndex), totalPages);
+  const page = filtres.slice((pageEffective - 1) * pageSize, pageEffective * pageSize);
+
+  async function exporterSelection() {
+    const cible = selection.size > 0 ? chants.filter((c) => selection.has(c.id)) : filtres;
+    if (cible.length === 0) return;
+    setExportEnCours(true);
+    try {
+      const dest = `${FileSystem.cacheDirectory}chants_export_${Date.now()}.json`;
+      await FileSystem.writeAsStringAsync(dest, JSON.stringify(cible, null, 2));
+      if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(dest, { mimeType: "application/json" });
+    } catch {
+      Alert.alert("Erreur", "Impossible d'exporter cette sélection.");
+    } finally {
+      setExportEnCours(false);
+    }
+  }
 
   function toggleSelection(id: number) {
     setSelection((prev) => {
@@ -173,8 +199,17 @@ export default function EditeurScreen() {
         <Pressable style={styles.boutonFiltres} onPress={() => setDrawerOuvert(true)}><Text style={styles.texteBoutonFiltres}>⚙️ Filtres avancés</Text></Pressable>
       </View>
 
+      <View style={styles.rangeeCompteExport}>
+        <Text style={styles.hintPagination}>{filtres.length} chant{filtres.length !== 1 ? "s" : ""}</Text>
+        <Pressable onPress={exporterSelection} disabled={exportEnCours}>
+          <Text style={styles.lienExportTout}>
+            {exportEnCours ? "Export..." : selection.size > 0 ? `⬇️ Exporter la sélection (${selection.size})` : "⬇️ Exporter tout"}
+          </Text>
+        </Pressable>
+      </View>
+
       <FlatList
-        data={filtres}
+        data={page}
         keyExtractor={(c) => String(c.id)}
         contentContainerStyle={{ padding: 16, paddingBottom: selection.size > 0 ? 80 : 16 }}
         renderItem={({ item }) => {
@@ -192,6 +227,25 @@ export default function EditeurScreen() {
           );
         }}
         ListEmptyComponent={<Text style={styles.vide}>Aucun chant.</Text>}
+      />
+
+      {totalPages > 1 && (
+        <View style={styles.pagination}>
+          <Pressable disabled={pageEffective === 1} onPress={() => setPageIndex(pageEffective - 1)}>
+            <Text style={[styles.pageBouton, pageEffective === 1 && styles.pageBoutonDesactive]}>‹</Text>
+          </Pressable>
+          <Text style={styles.pageInfo}>{pageEffective} / {totalPages}</Text>
+          <Pressable disabled={pageEffective === totalPages} onPress={() => setPageIndex(pageEffective + 1)}>
+            <Text style={[styles.pageBouton, pageEffective === totalPages && styles.pageBoutonDesactive]}>›</Text>
+          </Pressable>
+        </View>
+      )}
+      <SelectModal
+        label="Par page"
+        value={String(pageSize)}
+        options={[{ value: "20", label: "20 par page" }, { value: "50", label: "50 par page" }, { value: "100", label: "100 par page" }]}
+        onChange={(v) => { setPageSize(Number(v)); setPageIndex(1); }}
+        style={styles.selectPageSize}
       />
 
       {selection.size > 0 && (
@@ -285,6 +339,14 @@ const styles = StyleSheet.create({
   titreLigne: { fontSize: 14, fontWeight: "600", color: "#1e293b" },
   sousLigne: { fontSize: 12, color: "#94a3b8" },
   vide: { textAlign: "center", color: "#94a3b8", marginTop: 40 },
+  rangeeCompteExport: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 16, marginBottom: 4 },
+  hintPagination: { fontSize: 11, color: "#94a3b8" },
+  lienExportTout: { fontSize: 12, color: "#2563eb", fontWeight: "600" },
+  pagination: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 20, marginTop: 4 },
+  pageBouton: { fontSize: 20, color: "#2563eb", fontWeight: "700" },
+  pageBoutonDesactive: { color: "#cbd5e1" },
+  pageInfo: { fontSize: 13, color: "#64748b" },
+  selectPageSize: { marginTop: 8, marginHorizontal: 16, marginBottom: 8, alignSelf: "center", minWidth: 140 },
   barreActions: { position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#1e293b", flexDirection: "row", alignItems: "center", padding: 14, gap: 12 },
   texteSelection: { color: "#fff", fontSize: 12 },
   rangeeLiensBarre: { flexDirection: "row", alignItems: "center", gap: 16 },

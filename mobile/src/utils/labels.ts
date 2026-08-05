@@ -17,6 +17,8 @@ export const LABELS_MOMENTS: Record<string, string> = {
   Sortie: "Sortie",
 };
 
+export const DEFAULT_MOMENTS: string[] = Object.keys(LABELS_MOMENTS);
+
 export function categorieLabel(c: string | null | undefined): string {
   if (!c) return "Autre";
   return LABELS_MOMENTS[c] || c.replace(/_/g, " ");

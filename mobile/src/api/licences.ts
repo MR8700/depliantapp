@@ -17,10 +17,24 @@ export interface Licence {
   chorale_nom: string | null;
   max_appareils: number;
   expire_le: string | null;
+  /** null = illimité. */
+  quota_feuillets: number | null;
+  feuillets_produits: number;
   statut: "active" | "revoquee";
   created_at: string;
   updated_at: string;
 }
+
+export type MonAbonnement =
+  | { licence: false }
+  | {
+      licence: true;
+      statut: "active" | "revoquee";
+      max_appareils: number;
+      quota_feuillets: number | null;
+      feuillets_produits: number;
+      expire_le: string | null;
+    };
 
 export interface ActivationAppareil {
   id: number;
@@ -38,8 +52,30 @@ export function listerLicences(choraleId?: number): Promise<Licence[]> {
   return apiFetch<Licence[]>(`/licences${choraleId ? `?chorale_id=${choraleId}` : ""}`);
 }
 
-export function creerLicence(choraleId: number, maxAppareils = 5, expireLe?: string | null): Promise<Licence> {
-  return apiFetch<Licence>("/licences", { method: "POST", body: { chorale_id: choraleId, max_appareils: maxAppareils, expire_le: expireLe ?? null } });
+export function creerLicence(
+  choraleId: number, maxAppareils = 1, expireLe?: string | null, quotaFeuillets?: number | null,
+): Promise<Licence> {
+  return apiFetch<Licence>("/licences", {
+    method: "POST",
+    body: { chorale_id: choraleId, max_appareils: maxAppareils, expire_le: expireLe ?? null, quota_feuillets: quotaFeuillets ?? null },
+  });
+}
+
+// Reconfiguration complète d'une licence déjà créée (les 3 valeurs sont
+// toujours renvoyées, pas un patch partiel -- voir routers/licences.py).
+export function configurerLicence(
+  licenceId: number, maxAppareils: number, expireLe: string | null, quotaFeuillets: number | null,
+): Promise<Licence> {
+  return apiFetch<Licence>(`/licences/${licenceId}`, {
+    method: "PUT",
+    body: { max_appareils: maxAppareils, expire_le: expireLe, quota_feuillets: quotaFeuillets },
+  });
+}
+
+// Vue chorale de sa propre licence -- alimente la section "Abonnement" de
+// Réglages (voir ReglagesScreen.tsx).
+export function obtenirMonAbonnement(): Promise<MonAbonnement> {
+  return apiFetch<MonAbonnement>("/licences/mon-abonnement");
 }
 
 export function listerActivationsLicence(licenceId: number): Promise<ActivationAppareil[]> {

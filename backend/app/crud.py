@@ -3,7 +3,7 @@ import json
 import re
 from typing import Optional
 
-from . import config, db, schemas, pdf_cache
+from . import config, db, licences, schemas, pdf_cache
 from .db import get_connection, insert_returning_id
 from .ml import partitions
 from .slugify import unique_slug
@@ -373,16 +373,33 @@ def list_chants(
     from_clause = "chants LEFT JOIN chorales pc ON pc.id = chants.propose_par_chorale_id"
     fts_q = _fts_query(q) if (q and db.BACKEND == "sqlite") else None
     if fts_q:
-        from_clause += " JOIN chants_fts ON chants.id = chants_fts.rowid"
-        clauses.append("chants_fts MATCH ?")
-        params.append(fts_q)
+        # chants_fts n'indexe que titre/refrain/couplets -- auteur/compositeur
+        # ne passent jamais par une réécriture de schéma FTS5 (migration
+        # lourde pour une table virtuelle). SQLite interdit MATCH dans une
+        # expression OR ("unable to use function MATCH in the requested
+        # context") : on combine donc les deux univers de résultats (ids
+        # trouvés par le plein texte, ids trouvés par un LIKE sur
+        # auteur/compositeur) via UNION dans une sous-requête `id IN (...)`,
+        # chaque branche gardant son propre MATCH au premier niveau.
+        motif = f"%{q}%"
+        clauses.append(
+            "chants.id IN ("
+            "SELECT rowid FROM chants_fts WHERE chants_fts MATCH ? "
+            "UNION SELECT id FROM chants WHERE auteur LIKE ? OR compositeur LIKE ?"
+            ")"
+        )
+        params.extend([fts_q, motif, motif])
     elif q:
         # Postgres : pas de FTS5 disponible, recherche par sous-chaîne (ILIKE,
         # insensible à la casse/accents suffisant à l'échelle d'une seule
-        # chorale) sur titre/refrain/couplets plutôt qu'un moteur plein texte.
-        clauses.append("(chants.titre ILIKE ? OR chants.refrain ILIKE ? OR chants.couplets ILIKE ?)")
+        # chorale) sur titre/refrain/couplets/auteur/compositeur plutôt qu'un
+        # moteur plein texte.
+        clauses.append(
+            "(chants.titre ILIKE ? OR chants.refrain ILIKE ? OR chants.couplets ILIKE ? "
+            "OR chants.auteur ILIKE ? OR chants.compositeur ILIKE ?)"
+        )
         motif = f"%{q}%"
-        params.extend([motif, motif, motif])
+        params.extend([motif, motif, motif, motif, motif])
     if categorie:
         clauses.append("chants.categorie = ?")
         params.append(categorie)
@@ -396,10 +413,12 @@ def list_chants(
         clauses.append(_MASQUE_CLAUSE.format(table="chants"))
         params.extend(["chant", chorale_id_appelant])
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    # Le classement par pertinence FTS5 (`rank`) exige que le MATCH soit dans
+    # la requête SELECT principale -- ce n'est plus le cas ici (il vit dans la
+    # sous-requête `id IN (...)` ci-dessus), donc on retombe sur un tri par
+    # titre pour toute recherche texte, FTS ou non.
     if confiance_max is not None:
         order = "chants.confiance ASC, chants.titre"
-    elif fts_q:
-        order = "rank"
     else:
         order = "chants.titre"
     with get_connection() as conn:
@@ -698,6 +717,12 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
 
 
 def create_feuillet(feuillet: schemas.FeuilletCreate, chorale_id: int, clone_de_id: Optional[int] = None) -> schemas.Feuillet:
+    # Lève licences.QuotaFeuilletsAtteint si la licence active de cette
+    # chorale a atteint son quota configuré par l'admin -- avant toute
+    # écriture, pour ne jamais créer un feuillet qui dépasse le quota puis
+    # échouer après coup. Couvre aussi le clonage implicite (voir
+    # update_feuillet, qui appelle cette même fonction).
+    licences.consommer_quota_feuillet(chorale_id)
     with get_connection() as conn:
         new_id = insert_returning_id(
             conn,

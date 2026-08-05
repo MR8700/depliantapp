@@ -1,6 +1,10 @@
 import * as FileSystem from "expo-file-system/legacy";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { API_BASE_URL } from "../config";
-import { apiFetch, apiFetchForm, jetonAuthorizationHeader } from "./client";
+import { apiFetch, apiFetchForm, jetonAuthorizationHeader, ApiError } from "./client";
+import { lireDonneesEffectives, fusionnerPatchEnAttente } from "../storage/parametresCache";
+
+const CLE_CACHE_GLOBAUX = "depliantapp.parametres_globaux_cache";
 
 export type ImageSlot = "logo_gauche" | "logo_droit" | "banniere_bas";
 
@@ -11,16 +15,56 @@ export interface Media {
   filename: string;
 }
 
-export function getParametres(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/parametres");
+// Utilisé aussi bien par Réglages (chorale) que par l'onglet "À propos" de
+// Administration (super-admin, config GOT) -- même table côté serveur, juste
+// scopée par identité. Réseau prioritaire ; repli sur le dernier état connu
+// fusionné avec les modifications pas encore synchronisées (voir
+// storage/parametresCache.ts) si l'appel échoue faute de connexion.
+export async function getParametres(): Promise<Record<string, any>> {
+  try {
+    return await apiFetch<Record<string, any>>("/parametres");
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    const effectives = await lireDonneesEffectives();
+    if (Object.keys(effectives).length > 0) return effectives;
+    throw erreur;
+  }
 }
 
-export function sauvegarderParametres(data: Record<string, any>): Promise<Record<string, any>> {
+// Variante réseau "brute", sans repli hors-ligne -- réservée à
+// storage/sync.ts (rejoue le patch en attente au retour du réseau ; un échec
+// ici doit le laisser en attente tel quel).
+export function sauvegarderParametresDistant(data: Record<string, any>): Promise<Record<string, any>> {
   return apiFetch<Record<string, any>>("/parametres", { method: "PUT", body: data });
 }
 
-export function getParametresGlobaux(): Promise<Record<string, any>> {
-  return apiFetch<Record<string, any>>("/parametres/global");
+// Écrit en réseau ; sur échec RÉSEAU (pas une erreur serveur -- même
+// distinction que chants.ts/feuillets.ts) fusionne le patch localement
+// (affichage optimiste immédiat dans Réglages/Administration) et le laisse
+// en attente pour resynchronisation différée (voir storage/sync.ts) plutôt
+// que de faire échouer l'enregistrement pour l'utilisateur.
+export async function sauvegarderParametres(data: Record<string, any>): Promise<Record<string, any>> {
+  try {
+    return await sauvegarderParametresDistant(data);
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    return fusionnerPatchEnAttente(data);
+  }
+}
+
+// Contenu statique (À propos) -- mis en cache pour éviter un écran vide
+// hors-ligne, même repli que le reste de l'app (réseau toujours prioritaire).
+export async function getParametresGlobaux(): Promise<Record<string, any>> {
+  try {
+    const donnees = await apiFetch<Record<string, any>>("/parametres/global");
+    await AsyncStorage.setItem(CLE_CACHE_GLOBAUX, JSON.stringify(donnees));
+    return donnees;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    const brut = await AsyncStorage.getItem(CLE_CACHE_GLOBAUX);
+    if (brut) return JSON.parse(brut);
+    throw erreur;
+  }
 }
 
 export function listerMedias(type?: string): Promise<Media[]> {

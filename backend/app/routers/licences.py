@@ -10,7 +10,7 @@ from pydantic import BaseModel
 
 from .. import auth
 from .. import licences as licences_module
-from ..deps import require_superadmin
+from ..deps import identite_courante, require_superadmin
 
 router = APIRouter(prefix="/licences", tags=["licences"])
 
@@ -34,8 +34,15 @@ def _throttle(ip: str) -> None:
 
 class LicenceCreation(BaseModel):
     chorale_id: int
-    max_appareils: int = 5
+    max_appareils: int = 1
     expire_le: str | None = None
+    quota_feuillets: int | None = None
+
+
+class LicenceConfiguration(BaseModel):
+    max_appareils: int = 1
+    expire_le: str | None = None
+    quota_feuillets: int | None = None
 
 
 class ActivationPayload(BaseModel):
@@ -57,7 +64,40 @@ def lister(chorale_id: int | None = None, _identite: auth.Identite = Depends(req
 def creer(payload: LicenceCreation, _identite: auth.Identite = Depends(require_superadmin)):
     if not auth.get_chorale(payload.chorale_id):
         raise HTTPException(status_code=404, detail="Chorale introuvable")
-    return licences_module.creer_licence(payload.chorale_id, payload.max_appareils, payload.expire_le)
+    return licences_module.creer_licence(
+        payload.chorale_id, payload.max_appareils, payload.expire_le, payload.quota_feuillets,
+    )
+
+
+@router.put("/{licence_id}")
+def configurer(licence_id: int, payload: LicenceConfiguration, _identite: auth.Identite = Depends(require_superadmin)):
+    """Reconfiguration complète (appareils/expiration/quota) d'une licence
+    déjà créée -- distinct de /regenerer-code (qui ne change que le code) et
+    /revoquer (qui ne change que le statut)."""
+    if not licences_module.get_licence(licence_id):
+        raise HTTPException(status_code=404, detail="Licence introuvable")
+    licences_module.modifier_licence(licence_id, payload.max_appareils, payload.expire_le, payload.quota_feuillets)
+    return licences_module.get_licence(licence_id)
+
+
+@router.get("/mon-abonnement")
+def mon_abonnement(identite: auth.Identite = Depends(identite_courante)):
+    """Vue lecture seule pour un compte chorale -- alimente la section
+    Abonnement de Réglages (mobile). N'expose que sa propre licence, jamais
+    la liste complète (réservée au super-admin via GET /licences)."""
+    if identite.type != "chorale":
+        raise HTTPException(status_code=403, detail="Réservé à un compte chorale")
+    licence = licences_module.get_licence_active_pour_chorale(identite.compte_id)
+    if not licence:
+        return {"licence": False}
+    return {
+        "licence": True,
+        "statut": licence["statut"],
+        "max_appareils": licence["max_appareils"],
+        "quota_feuillets": licence["quota_feuillets"],
+        "feuillets_produits": licence["feuillets_produits"],
+        "expire_le": licence["expire_le"],
+    }
 
 
 @router.get("/{licence_id}/activations")

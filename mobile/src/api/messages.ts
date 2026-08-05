@@ -1,5 +1,6 @@
-import { apiFetch, apiFetchForm } from "./client";
+import { apiFetch, apiFetchForm, ApiError } from "./client";
 import { API_BASE_URL } from "../config";
+import { lireMessagesCache, lireThreadsCache, mettreEnCacheMessages, mettreEnCacheThreads } from "../storage/messagesLocal";
 
 export interface PieceJointeAEnvoyer {
   uri: string;
@@ -30,12 +31,39 @@ export interface FilThread {
   non_lus: number;
 }
 
-export function listerThreadsAdmin(): Promise<FilThread[]> {
-  return apiFetch<FilThread[]>("/messages/chorales");
+// Portée par une vraie coupure réseau (pas une erreur serveur) sur un appel
+// de lecture messagerie -- transporte le dernier état connu (cache) pour que
+// l'écran affiche quand même quelque chose plutôt qu'un vide, TOUT en
+// sachant qu'il doit garder son bandeau "hors-ligne" affiché (contrairement
+// à chants.ts/feuillets.ts qui masquent la coupure derrière un repli
+// silencieux, la messagerie doit rester visiblement "pas à jour" puisque
+// envoyer/recevoir en direct exige une connexion).
+export class MessagerieHorsLigneError<T> extends Error {
+  constructor(public donneesCache: T) {
+    super("Messagerie hors-ligne -- dernier état connu affiché");
+  }
 }
 
-export function listerMessages(choraleId?: number): Promise<Message[]> {
-  return apiFetch<Message[]>(`/messages${choraleId ? `?chorale_id=${choraleId}` : ""}`);
+export async function listerThreadsAdmin(): Promise<FilThread[]> {
+  try {
+    const threads = await apiFetch<FilThread[]>("/messages/chorales");
+    await mettreEnCacheThreads(threads);
+    return threads;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    throw new MessagerieHorsLigneError(await lireThreadsCache());
+  }
+}
+
+export async function listerMessages(choraleId?: number): Promise<Message[]> {
+  try {
+    const messages = await apiFetch<Message[]>(`/messages${choraleId ? `?chorale_id=${choraleId}` : ""}`);
+    await mettreEnCacheMessages(choraleId, messages);
+    return messages;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    throw new MessagerieHorsLigneError(await lireMessagesCache(choraleId));
+  }
 }
 
 export function envoyerMessage(params: { choraleId?: number; texte?: string; parentId?: number; pieceJointe?: PieceJointeAEnvoyer }): Promise<Message> {

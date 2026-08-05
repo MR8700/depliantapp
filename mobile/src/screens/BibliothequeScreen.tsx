@@ -37,7 +37,8 @@ const OPTIONS_ETAT = [
 
 export default function BibliothequeScreen() {
   const navigation = useNavigation<any>();
-  const { estSuperAdmin } = useIdentite();
+  const { estSuperAdmin, syncBibliothequeJamaisEffectuee } = useIdentite();
+  const [bandeauSyncMasque, setBandeauSyncMasque] = useState(false);
 
   const [recherche, setRecherche] = useState("");
   const [rechercheDebattue, setRechercheDebattue] = useState("");
@@ -197,7 +198,25 @@ export default function BibliothequeScreen() {
 
   return (
     <View style={styles.conteneur}>
-      <ScrollView contentContainerStyle={styles.scroll} stickyHeaderIndices={[]}>
+      <ScrollView
+        contentContainerStyle={styles.scroll}
+        stickyHeaderIndices={[]}
+        refreshControl={<RefreshControl refreshing={rafraichissement} onRefresh={onRafraichir} />}
+      >
+        {syncBibliothequeJamaisEffectuee && !bandeauSyncMasque && (
+          // Invitation non bloquante : l'app fonctionne entièrement hors-ligne
+          // (composer/enregistrer/générer un PDF), mais tant qu'aucune
+          // synchronisation n'a réussi, la bibliothèque partagée par les
+          // autres chorales n'est pas encore disponible localement.
+          <View style={styles.bandeauSync}>
+            <Text style={styles.texteBandeauSync}>
+              📡 Connecte-toi à internet pour récupérer les chants de toutes les chorales. L'app fonctionne sans, mais la bibliothèque partagée sera vide en attendant.
+            </Text>
+            <Pressable onPress={() => setBandeauSyncMasque(true)} hitSlop={8}>
+              <Text style={styles.fermerBandeauSync}>✕</Text>
+            </Pressable>
+          </View>
+        )}
         {/* En-tête */}
         <View style={styles.entete}>
           <View style={styles.ligneTitre}>
@@ -359,6 +378,12 @@ export default function BibliothequeScreen() {
 const styles = StyleSheet.create({
   conteneur: { flex: 1, backgroundColor: "#eef2f9" },
   scroll: { padding: 16, paddingBottom: 24 },
+  bandeauSync: {
+    flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fef9c3",
+    borderRadius: 10, padding: 12, marginBottom: 12,
+  },
+  texteBandeauSync: { flex: 1, fontSize: 12, color: "#713f12", lineHeight: 17 },
+  fermerBandeauSync: { fontSize: 15, color: "#713f12", fontWeight: "700", padding: 4 },
   entete: { marginBottom: 12 },
   ligneTitre: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 10 },
   titrePrincipal: { fontSize: 19, fontWeight: "800", color: "#1e293b" },

@@ -1,7 +1,7 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Chant } from "../types";
-import { rechercherChants, creerChant } from "../api/chants";
-import { fusionnerDansCache, lireCache } from "./chantsCache";
+import { rechercherChants, creerChant, modifierChantDistant, supprimerChantDistant } from "../api/chants";
+import { fusionnerDansCache, lireCache, retirerDuCache } from "./chantsCache";
 import { lireOutbox, retirerDeOutbox } from "./chantsOutbox";
 
 const CLE_DERNIERE_SYNC = "depliantapp.derniere_sync_bibliotheque";
@@ -66,16 +66,24 @@ export async function synchroniserBibliotheque(): Promise<ResultatSync> {
     for (const chant of distant) index.set(normaliserTitre(chant.titre), chant);
 
     for (const entree of enAttente) {
-      const doublon = trouverDoublon(entree.payload.titre, entree.payload.code_reference, index);
-      if (doublon) {
-        doublonsEvites++;
-        await retirerDeOutbox(entree.cle);
-        continue;
-      }
       try {
-        const cree = await creerChant(entree.payload);
-        index.set(normaliserTitre(cree.titre), cree);
-        await fusionnerDansCache([cree]);
+        if (entree.type === "creation") {
+          const doublon = trouverDoublon(entree.payload.titre, entree.payload.code_reference, index);
+          if (doublon) {
+            doublonsEvites++;
+            await retirerDeOutbox(entree.cle);
+            continue;
+          }
+          const cree = await creerChant(entree.payload);
+          index.set(normaliserTitre(cree.titre), cree);
+          await fusionnerDansCache([cree]);
+        } else if (entree.type === "modification") {
+          const maj = await modifierChantDistant(entree.chantId, entree.patch);
+          await fusionnerDansCache([maj]);
+        } else {
+          await supprimerChantDistant(entree.chantId);
+          await retirerDuCache(entree.chantId);
+        }
         await retirerDeOutbox(entree.cle);
         pousses++;
       } catch {

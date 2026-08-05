@@ -1,10 +1,27 @@
-import { apiFetch } from "./client";
+import { apiFetch, ApiError } from "./client";
+import { ajouterDemandeEnAttente } from "../storage/moderationOutbox";
 
-export function demanderSuppression(typeCible: "chant" | "feuillet", cibleId: number, raison: string) {
+// Variante réseau "brute", sans repli hors-ligne -- réservée à
+// storage/syncModeration.ts.
+export function demanderSuppressionDistant(typeCible: "chant" | "feuillet", cibleId: number, raison: string) {
   return apiFetch<{ id: number }>("/moderation/demandes", {
     method: "POST",
     body: { type_cible: typeCible, cible_id: cibleId, raison },
   });
+}
+
+// Sur échec RÉSEAU (pas une erreur serveur), met la demande en file
+// d'attente locale plutôt que de faire échouer l'action pour l'utilisateur
+// -- une chorale doit pouvoir demander une suppression hors-ligne, comme
+// n'importe quelle autre action de la bibliothèque.
+export async function demanderSuppression(typeCible: "chant" | "feuillet", cibleId: number, raison: string): Promise<{ id: number } | { enAttente: true }> {
+  try {
+    return await demanderSuppressionDistant(typeCible, cibleId, raison);
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    await ajouterDemandeEnAttente(typeCible, cibleId, raison);
+    return { enAttente: true };
+  }
 }
 
 export interface DemandeSuppression {

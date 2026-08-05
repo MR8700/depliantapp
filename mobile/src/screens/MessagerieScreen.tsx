@@ -11,7 +11,7 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import {
   listerThreadsAdmin, listerMessages, envoyerMessage, modifierMessage, supprimerMessage,
-  toggleReaction, marquerLu, urlPieceJointe, FilThread, Message, PieceJointeAEnvoyer,
+  toggleReaction, marquerLu, urlPieceJointe, MessagerieHorsLigneError, FilThread, Message, PieceJointeAEnvoyer,
 } from "../api/messages";
 import { jetonAuthorizationHeader } from "../api/client";
 import { useIdentite } from "../context/IdentiteContext";
@@ -63,6 +63,10 @@ export default function MessagerieScreen() {
   const [telechargementEnCours, setTelechargementEnCours] = useState<number | null>(null);
   const intervalle = useRef<ReturnType<typeof setInterval> | null>(null);
   const [authHeaders, setAuthHeaders] = useState<Record<string, string>>({});
+  const [estHorsLigne, setEstHorsLigne] = useState(false);
+  const [rechercheConvVisible, setRechercheConvVisible] = useState(false);
+  const [rechercheConv, setRechercheConv] = useState("");
+  const [infoPanelVisible, setInfoPanelVisible] = useState(false);
 
   useEffect(() => { jetonAuthorizationHeader().then(setAuthHeaders); }, []);
 
@@ -85,14 +89,26 @@ export default function MessagerieScreen() {
     try {
       const liste = await listerMessages(estSuperAdmin ? choraleActive.id : undefined);
       setMessages(liste);
+      setEstHorsLigne(false);
       marquerLu(estSuperAdmin ? choraleActive.id : undefined).catch(() => {});
-    } catch {
-      // silencieux : la liste précédente reste affichée (voir pattern web §10 de l'inventaire)
+    } catch (erreur) {
+      // Dernier état connu affiché quand même (voir messagesLocal.ts), mais
+      // le bandeau hors-ligne reste visible : contrairement à
+      // chants/feuillets, la messagerie ne doit jamais avoir l'air "à jour"
+      // sans connexion puisqu'envoyer/recevoir exige le réseau.
+      if (erreur instanceof MessagerieHorsLigneError) setMessages(erreur.donneesCache as Message[]);
+      setEstHorsLigne(true);
     }
   }, [choraleActive, estSuperAdmin]);
 
   const chargerThreads = useCallback(async () => {
-    try { setThreads(await listerThreadsAdmin()); } catch {}
+    try {
+      setThreads(await listerThreadsAdmin());
+      setEstHorsLigne(false);
+    } catch (erreur) {
+      if (erreur instanceof MessagerieHorsLigneError) setThreads(erreur.donneesCache as FilThread[]);
+      setEstHorsLigne(true);
+    }
   }, []);
 
   useEffect(() => {
@@ -107,6 +123,13 @@ export default function MessagerieScreen() {
 
   async function envoyer() {
     if ((!texte.trim() && !pieceJointe) || !choraleActive) return;
+    if (estHorsLigne) {
+      Alert.alert(
+        "Connexion requise",
+        "La messagerie nécessite une connexion Internet active pour envoyer votre message. Veuillez vous connecter au réseau.",
+      );
+      return;
+    }
     const brouillon = texte.trim();
     const piece = pieceJointe;
     setTexte("");
@@ -129,10 +152,15 @@ export default function MessagerieScreen() {
         parentId: enReponseA?.id,
         pieceJointe: piece ?? undefined,
       });
+      setEstHorsLigne(false);
       chargerMessages();
     } catch {
       setMessages((prev) => prev.filter((m) => m.id !== idTemporaire));
-      Alert.alert("Échec de l'envoi", "Le message n'a pas pu être envoyé.");
+      setEstHorsLigne(true);
+      Alert.alert(
+        "Connexion requise",
+        "La messagerie nécessite une connexion Internet. Le message n'a pas pu être envoyé.",
+      );
     }
   }
 
@@ -202,6 +230,13 @@ export default function MessagerieScreen() {
 
   const estMonMessage = (m: Message) => (estSuperAdmin ? m.expediteur_type === "super" : m.expediteur_type === "chorale");
 
+  const messagesVisibles = messages.filter((m) => !m.supprime);
+  const messagesAffiches = rechercheConv.trim()
+    ? messagesVisibles.filter((m) => (m.texte ?? "").toLowerCase().includes(rechercheConv.trim().toLowerCase())
+        || (m.piece_jointe_filename ?? "").toLowerCase().includes(rechercheConv.trim().toLowerCase()))
+    : messagesVisibles;
+  const piecesJointes = messagesVisibles.filter((m) => !!m.piece_jointe_filename);
+
   if (estSuperAdmin && !choraleActive) {
     const threadsFiltres = threads.filter((t) => {
       if (rechercheThreads.trim() && !t.chorale_nom.toLowerCase().includes(rechercheThreads.trim().toLowerCase())) return false;
@@ -251,23 +286,56 @@ export default function MessagerieScreen() {
 
   return (
     <KeyboardAvoidingView style={styles.fond} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-      {estSuperAdmin && (
-        <View style={styles.enteteConversation}>
+      {estHorsLigne && (
+        <View style={styles.bandeauHorsLigne}>
+          <Text style={styles.texteBandeauHorsLigne}>
+            💬 La messagerie nécessite une connexion Internet. Vous êtes actuellement hors-ligne.
+          </Text>
+        </View>
+      )}
+      <View style={styles.enteteConversation}>
+        {estSuperAdmin ? (
           <Pressable style={styles.retour} onPress={() => setChoraleActive(null)}>
             <Text style={styles.texteRetour}>‹ {choraleActive?.nom}</Text>
           </Pressable>
-          <Pressable
-            style={styles.boutonArchiverConversation}
-            onPress={() => choraleActive && basculerArchiveConversation(choraleActive.id)}
-          >
-            <Text style={styles.texteArchiverConversation}>
-              {choraleActive && archives.includes(choraleActive.id) ? "📦 Désarchiver" : "📦 Archiver"}
-            </Text>
+        ) : (
+          <Text style={styles.titreMessagerie}>Messagerie</Text>
+        )}
+        <View style={{ flexDirection: "row" }}>
+          <Pressable style={styles.boutonArchiverConversation} onPress={() => setRechercheConvVisible((v) => !v)}>
+            <Text style={styles.texteArchiverConversation}>🔍</Text>
+          </Pressable>
+          <Pressable style={styles.boutonArchiverConversation} onPress={() => setInfoPanelVisible(true)}>
+            <Text style={styles.texteArchiverConversation}>ℹ️</Text>
+          </Pressable>
+          {estSuperAdmin && (
+            <Pressable
+              style={styles.boutonArchiverConversation}
+              onPress={() => choraleActive && basculerArchiveConversation(choraleActive.id)}
+            >
+              <Text style={styles.texteArchiverConversation}>
+                {choraleActive && archives.includes(choraleActive.id) ? "📦 Désarchiver" : "📦 Archiver"}
+              </Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+      {rechercheConvVisible && (
+        <View style={styles.rechercheConvWrapper}>
+          <TextInput
+            style={styles.champRechercheConv}
+            placeholder="Rechercher dans cette conversation..."
+            value={rechercheConv}
+            onChangeText={setRechercheConv}
+            autoFocus
+          />
+          <Pressable onPress={() => { setRechercheConvVisible(false); setRechercheConv(""); }}>
+            <Text style={styles.annulerContexte}>✕</Text>
           </Pressable>
         </View>
       )}
       <FlatList
-        data={messages.filter((m) => !m.supprime)}
+        data={messagesAffiches}
         keyExtractor={(m) => String(m.id)}
         contentContainerStyle={{ padding: 16 }}
         renderItem={({ item }) => {
@@ -332,7 +400,7 @@ export default function MessagerieScreen() {
             </View>
           );
         }}
-        ListEmptyComponent={<Text style={styles.vide}>Aucun message pour le moment.</Text>}
+        ListEmptyComponent={<Text style={styles.vide}>{rechercheConv.trim() ? "Aucun résultat dans cette conversation." : "Aucun message pour le moment."}</Text>}
       />
       {(messageEnReponseA || messageEnEdition) && (
         <View style={styles.barreContexte}>
@@ -389,6 +457,39 @@ export default function MessagerieScreen() {
               <Text style={styles.texteItemAttach}>📁 Fichier</Text>
             </Pressable>
           </View>
+        </Pressable>
+      </Modal>
+
+      <Modal visible={infoPanelVisible} animationType="fade" transparent onRequestClose={() => setInfoPanelVisible(false)}>
+        <Pressable style={styles.fondPopover} onPress={() => setInfoPanelVisible(false)}>
+          <Pressable style={[styles.panneauInfo, { paddingBottom: 20 + insets.bottom }]} onPress={() => {}}>
+            <Text style={styles.titreInfo}>ℹ️ Informations</Text>
+            <View style={styles.ligneInfoConv}>
+              <Text style={styles.labelInfoConv}>Conversation avec</Text>
+              <Text style={styles.valeurInfoConv}>{estSuperAdmin ? choraleActive?.nom : "Administrateur"}</Text>
+            </View>
+            <View style={styles.ligneInfoConv}>
+              <Text style={styles.labelInfoConv}>Messages</Text>
+              <Text style={styles.valeurInfoConv}>{messagesVisibles.length}</Text>
+            </View>
+            <View style={styles.ligneInfoConv}>
+              <Text style={styles.labelInfoConv}>Pièces jointes</Text>
+              <Text style={styles.valeurInfoConv}>{piecesJointes.length}</Text>
+            </View>
+            {piecesJointes.length > 0 && (
+              <FlatList
+                style={{ maxHeight: 200, marginTop: 8 }}
+                data={piecesJointes}
+                keyExtractor={(m) => String(m.id)}
+                renderItem={({ item }) => (
+                  <Pressable style={styles.ligneFichierInfo} onPress={() => { setInfoPanelVisible(false); ouvrirPieceJointe(item); }}>
+                    <Text style={styles.iconePieceJointe}>{iconePieceJointe(item.piece_jointe_filename)}</Text>
+                    <Text style={styles.nomFichierInfo} numberOfLines={1}>{item.piece_jointe_filename}</Text>
+                  </Pressable>
+                )}
+              />
+            )}
+          </Pressable>
         </Pressable>
       </Modal>
 
@@ -469,4 +570,15 @@ const styles = StyleSheet.create({
   texteItemAttach: { fontSize: 14, fontWeight: "500", color: "#334155" },
   popoverEmoji: { flexDirection: "row", flexWrap: "wrap", gap: 12, backgroundColor: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20 },
   emojiPopoverItem: { fontSize: 28 },
+  bandeauHorsLigne: { backgroundColor: "#fef3c7", paddingHorizontal: 16, paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "#fde68a" },
+  texteBandeauHorsLigne: { fontSize: 13, color: "#92400e", fontWeight: "600", textAlign: "center" },
+  rechercheConvWrapper: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", paddingHorizontal: 16, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#e2e8f0" },
+  champRechercheConv: { flex: 1, borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, paddingHorizontal: 12, paddingVertical: 8, fontSize: 13, backgroundColor: "#fafcff" },
+  panneauInfo: { backgroundColor: "#fff", borderTopLeftRadius: 16, borderTopRightRadius: 16, padding: 20 },
+  titreInfo: { fontSize: 16, fontWeight: "700", color: "#1e293b", marginBottom: 12 },
+  ligneInfoConv: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  labelInfoConv: { fontSize: 12, color: "#64748b" },
+  valeurInfoConv: { fontSize: 13, fontWeight: "700", color: "#1e293b" },
+  ligneFichierInfo: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 8, borderBottomWidth: 1, borderBottomColor: "#f8fafc" },
+  nomFichierInfo: { flex: 1, fontSize: 12, color: "#334155" },
 });

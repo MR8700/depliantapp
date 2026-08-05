@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import Response
 
-from .. import auth, config, crud, pdf_cache, schemas
+from .. import auth, config, crud, licences, pdf_cache, schemas
 from ..deps import identite_courante, require_superadmin
 from ..render.pdf import DepassementImpossible, render_feuillet_pdf_auto
 
@@ -23,7 +23,10 @@ def list_feuillets(mine: bool = False, limit: int = 50, offset: int = 0, identit
 @router.post("", response_model=schemas.Feuillet)
 def create_feuillet(feuillet: schemas.FeuilletCreate, identite: auth.Identite = Depends(identite_courante)):
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    return crud.create_feuillet(feuillet, chorale_id=chorale_id)
+    try:
+        return crud.create_feuillet(feuillet, chorale_id=chorale_id)
+    except licences.QuotaFeuilletsAtteint as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
 
 
 @router.get("/{feuillet_id}", response_model=schemas.Feuillet)
@@ -46,7 +49,10 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, identite
     la réponse peut donc porter un id différent de `feuillet_id` : le
     frontend doit adopter ce nouvel id."""
     chorale_id = identite.compte_id if identite.type == "chorale" else 0
-    updated = crud.update_feuillet(feuillet_id, feuillet, chorale_id=chorale_id)
+    try:
+        updated = crud.update_feuillet(feuillet_id, feuillet, chorale_id=chorale_id)
+    except licences.QuotaFeuilletsAtteint as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
     if not updated:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
     return updated

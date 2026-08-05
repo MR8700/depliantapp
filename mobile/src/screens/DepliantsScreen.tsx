@@ -1,11 +1,11 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, FlatList, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sharing from "expo-sharing";
-import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, telechargerFeuilletPdf, DepassementPdf } from "../api/feuillets";
+import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, DepassementPdf } from "../api/feuillets";
 import { demanderSuppression } from "../api/moderation";
 import { ApiError } from "../api/client";
 import { useIdentite } from "../context/IdentiteContext";
@@ -13,6 +13,8 @@ import { Feuillet } from "../types";
 import PdfViewer from "../components/PdfViewer";
 import SelectModal from "../components/SelectModal";
 import Bouton from "../components/Bouton";
+import MeasurementBridge, { MeasurementBridgeHandle } from "../components/MeasurementBridge";
+import { obtenirPdfAvecRepliLocal, DepassementImpossible, ChantIntrouvableHorsLigne } from "../render/genererPdfLocal";
 
 type Onglet = "mine" | "publics" | "tous" | "favoris" | "recents" | "sauvegardes";
 type Tri = "recent" | "ancien" | "nom-asc" | "nom-desc" | "creation" | "modification";
@@ -74,6 +76,7 @@ export default function DepliantsScreen() {
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [pdfChargement, setPdfChargement] = useState(false);
   const [pdfErreur, setPdfErreur] = useState<DepassementPdf | null>(null);
+  const bridgeMesure = useRef<MeasurementBridgeHandle>(null);
   const [raisonModal, setRaisonModal] = useState<{ id: number } | null>(null);
   const [raison, setRaison] = useState("");
   const [menuOuvert, setMenuOuvert] = useState<Feuillet | null>(null);
@@ -119,11 +122,20 @@ export default function DepliantsScreen() {
     setPdfErreur(null);
     setPdfUri(null);
     try {
-      const { uri } = await telechargerFeuilletPdf(feuillet.id);
+      // Réseau prioritaire ; repli automatique sur le rendu 100% local si le
+      // réseau échoue (voir render/genererPdfLocal.ts::obtenirPdfAvecRepliLocal).
+      const { uri } = await obtenirPdfAvecRepliLocal(feuillet.id, bridgeMesure.current!);
       setPdfUri(uri);
     } catch (erreur) {
-      if (erreur instanceof ApiError && erreur.status === 409) setPdfErreur(erreur.detail as DepassementPdf);
-      else Alert.alert("Erreur", "Impossible d'ouvrir ce dépliant");
+      if (erreur instanceof ApiError && erreur.status === 409) {
+        setPdfErreur(erreur.detail as DepassementPdf);
+      } else if (erreur instanceof DepassementImpossible) {
+        setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
+      } else if (erreur instanceof ChantIntrouvableHorsLigne) {
+        Alert.alert("Chant indisponible hors-ligne", erreur.message);
+      } else {
+        Alert.alert("Erreur", "Impossible d'ouvrir ce dépliant, ni en ligne ni hors-ligne");
+      }
     } finally {
       setPdfChargement(false);
     }
@@ -139,7 +151,7 @@ export default function DepliantsScreen() {
 
   async function partager(feuillet: Feuillet) {
     try {
-      const { uri } = await telechargerFeuilletPdf(feuillet.id);
+      const { uri } = await obtenirPdfAvecRepliLocal(feuillet.id, bridgeMesure.current!);
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible de partager");
@@ -215,7 +227,7 @@ export default function DepliantsScreen() {
   async function telechargerPdf(feuillet: Feuillet) {
     setMenuOuvert(null);
     try {
-      const { uri } = await telechargerFeuilletPdf(feuillet.id);
+      const { uri } = await obtenirPdfAvecRepliLocal(feuillet.id, bridgeMesure.current!);
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible de télécharger le PDF");
@@ -235,9 +247,14 @@ export default function DepliantsScreen() {
   async function envoyerDemande() {
     if (!raisonModal || !raison.trim()) return;
     try {
-      await demanderSuppression("feuillet", raisonModal.id, raison.trim());
+      const resultat = await demanderSuppression("feuillet", raisonModal.id, raison.trim());
       setRaisonModal(null);
-      Alert.alert("Demande envoyée", "Le super-admin va examiner ta demande.");
+      Alert.alert(
+        "enAttente" in resultat ? "Mise en attente" : "Demande envoyée",
+        "enAttente" in resultat
+          ? "Pas de connexion -- la demande sera envoyée dès le retour du réseau."
+          : "Le super-admin va examiner ta demande.",
+      );
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer la demande");
     }
@@ -263,6 +280,28 @@ export default function DepliantsScreen() {
     if (tri === "modification") return (b.created_at ?? "").localeCompare(a.created_at ?? "");
     return b.date.localeCompare(a.date); // recent (défaut)
   });
+
+  // Sur l'onglet "Tous les feuillets" uniquement, le web regroupe visuellement
+  // en 2 sections avec compteurs séparés ("⭐ MES CRÉATIONS" / "👥 FEUILLETS
+  // PUBLICS") plutôt qu'une liste plate -- reproduit ici via une FlatList
+  // unique dont les données incluent des lignes d'en-tête, pour ne pas
+  // dupliquer tout le rendu de carte dans un composant SectionList séparé.
+  type LigneListe = { type: "header"; label: string; count: number } | { type: "item"; feuillet: Feuillet };
+  const donneesListe: LigneListe[] = useMemo(() => {
+    if (onglet !== "tous") return tries.map((f) => ({ type: "item", feuillet: f }) as const);
+    const mesCreations = tries.filter((f) => f.chorale_id === identite?.compte_id);
+    const publics = tries.filter((f) => f.chorale_id !== identite?.compte_id);
+    const lignes: LigneListe[] = [];
+    if (mesCreations.length > 0) {
+      lignes.push({ type: "header", label: "⭐ Mes créations", count: mesCreations.length });
+      lignes.push(...mesCreations.map((f) => ({ type: "item", feuillet: f }) as const));
+    }
+    if (publics.length > 0) {
+      lignes.push({ type: "header", label: "👥 Feuillets publics", count: publics.length });
+      lignes.push(...publics.map((f) => ({ type: "item", feuillet: f }) as const));
+    }
+    return lignes;
+  }, [onglet, tries, identite?.compte_id]);
 
   return (
     <View style={styles.conteneur}>
@@ -298,12 +337,18 @@ export default function DepliantsScreen() {
       </View>
 
       <FlatList
-        data={tries}
-        keyExtractor={(f) => String(f.id)}
+        data={donneesListe}
+        keyExtractor={(ligne) => (ligne.type === "header" ? `h-${ligne.label}` : String(ligne.feuillet.id))}
         contentContainerStyle={styles.liste}
         refreshControl={<RefreshControl refreshing={rafraichissement} onRefresh={onRafraichir} tintColor="#2563eb" />}
         ListEmptyComponent={!chargement ? <Text style={styles.vide}>Aucun dépliant.</Text> : null}
-        renderItem={({ item }) => {
+        renderItem={({ item: ligne }) => {
+          if (ligne.type === "header") {
+            return (
+              <Text style={styles.enteteSection}>{ligne.label} ({ligne.count})</Text>
+            );
+          }
+          const item = ligne.feuillet;
           const estAMoi = item.chorale_id === identite?.compte_id || estSuperAdmin;
           const nbChants = item.moments.filter((m) => m.type === "chant").length;
           const format = item.one_page_mode ? "1 page paysage" : "2 pages paysage";
@@ -467,6 +512,8 @@ export default function DepliantsScreen() {
           </View>
         </View>
       </Modal>
+
+      <MeasurementBridge ref={bridgeMesure} />
     </View>
   );
 }
@@ -490,6 +537,7 @@ const styles = StyleSheet.create({
   selectTri: { minWidth: 160 },
   liste: { paddingHorizontal: 16, paddingBottom: 24 },
   vide: { textAlign: "center", color: "#94a3b8", marginTop: 40 },
+  enteteSection: { fontSize: 12, fontWeight: "800", color: "#1F4A7C", textTransform: "uppercase", letterSpacing: 0.4, marginTop: 12, marginBottom: 8 },
   carte: { backgroundColor: "#fff", borderRadius: 14, padding: 16, marginBottom: 10 },
   badgeType: { alignSelf: "flex-start", fontSize: 10, fontWeight: "700", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 6 },
   badgePrive: { backgroundColor: "#dbeafe", color: "#2563eb" },

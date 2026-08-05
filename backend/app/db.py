@@ -358,8 +358,13 @@ CREATE TABLE IF NOT EXISTS licences (
     code TEXT NOT NULL,
     chorale_id INTEGER REFERENCES chorales(id),
     statut TEXT NOT NULL DEFAULT 'active',
-    max_appareils INTEGER NOT NULL DEFAULT 5,
+    max_appareils INTEGER NOT NULL DEFAULT 1,
     expire_le TEXT,
+    -- NULL = illimité. Nombre de feuillets que cette licence autorise encore
+    -- à produire (voir app/licences.py::consommer_quota_feuillet) ; décidé
+    -- par le super-admin à la création/reconfiguration de la licence.
+    quota_feuillets INTEGER,
+    feuillets_produits INTEGER NOT NULL DEFAULT 0,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -479,8 +484,10 @@ CREATE TABLE IF NOT EXISTS licences (
     code TEXT NOT NULL,
     chorale_id INTEGER REFERENCES chorales(id),
     statut TEXT NOT NULL DEFAULT 'active',
-    max_appareils INTEGER NOT NULL DEFAULT 5,
+    max_appareils INTEGER NOT NULL DEFAULT 1,
     expire_le TEXT,
+    quota_feuillets INTEGER,
+    feuillets_produits INTEGER NOT NULL DEFAULT 0,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -703,6 +710,13 @@ def _init_sqlite() -> None:
         if colonnes_demandes and "raison" not in colonnes_demandes:
             conn.execute("ALTER TABLE demandes_suppression ADD COLUMN raison TEXT")
 
+        colonnes_licences = {row["name"] for row in conn.execute("PRAGMA table_info(licences)").fetchall()}
+        if colonnes_licences:
+            if "quota_feuillets" not in colonnes_licences:
+                conn.execute("ALTER TABLE licences ADD COLUMN quota_feuillets INTEGER")
+            if "feuillets_produits" not in colonnes_licences:
+                conn.execute("ALTER TABLE licences ADD COLUMN feuillets_produits INTEGER NOT NULL DEFAULT 0")
+
         colonnes_chorales = {row["name"] for row in conn.execute("PRAGMA table_info(chorales)").fetchall()}
         if colonnes_chorales:
             if "suppression_date_butoir" not in colonnes_chorales:
@@ -814,6 +828,9 @@ def _init_postgres() -> None:
         conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_delai_jours INTEGER")
         conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_demande_revision INTEGER NOT NULL DEFAULT 0")
         conn.execute("ALTER TABLE chorales ADD COLUMN IF NOT EXISTS suppression_revision_raison TEXT")
+
+        conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS quota_feuillets INTEGER")
+        conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS feuillets_produits INTEGER NOT NULL DEFAULT 0")
 
         conn.executescript(SCHEMA_POSTGRES)
 

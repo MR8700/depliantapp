@@ -4,9 +4,11 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
-import { uploaderCarnet, finaliserImport, ChantExtrait } from "../api/import";
+import { uploaderCarnet, uploaderCarnetDistant, finaliserImport, ChantExtrait, ImportMisEnAttente } from "../api/import";
 import { getMeta } from "../api/meta";
 import { niveauConfiance, LABEL_CONFIANCE, COULEUR_CONFIANCE } from "../utils/confiance";
+import { lireImportOutbox, retirerDImportOutbox, EntreeImportOutbox } from "../storage/importOutbox";
+import { ApiError } from "../api/client";
 import SelectModal from "../components/SelectModal";
 import Bouton from "../components/Bouton";
 
@@ -41,10 +43,45 @@ export default function ImportScreen() {
   const [categories, setCategories] = useState<string[]>([]);
   const [indexEnEdition, setIndexEnEdition] = useState<number | null>(null);
   const [brouillonEdition, setBrouillonEdition] = useState<{ titre: string; categorie: string; langue: string; refrain: string; couplets: string } | null>(null);
+  const [enAttente, setEnAttente] = useState<EntreeImportOutbox[]>([]);
+  const [reessaiEnCours, setReessaiEnCours] = useState<string | null>(null);
+
+  const chargerEnAttente = () => { lireImportOutbox().then(setEnAttente).catch(() => {}); };
 
   useEffect(() => {
     getMeta().then((m) => setCategories(m.categories)).catch(() => {});
+    chargerEnAttente();
   }, []);
+
+  async function reessayerImportEnAttente(entree: EntreeImportOutbox) {
+    setReessaiEnCours(entree.cle);
+    try {
+      const reponse = await uploaderCarnetDistant({
+        uri: entree.uriLocal, nom: entree.nom, mimeType: entree.mimeType,
+        categorieDefaut: entree.categorieDefaut, occasions: entree.occasions, langue: entree.langue, auteur: entree.auteur,
+      });
+      await retirerDImportOutbox(entree.cle);
+      chargerEnAttente();
+      setLignes(reponse.chants.map((c) => ({ ...c, inclus: true })));
+    } catch (erreur) {
+      if (erreur instanceof ApiError) {
+        Alert.alert("Erreur", erreur.message);
+        await retirerDImportOutbox(entree.cle);
+        chargerEnAttente();
+      } else {
+        Alert.alert("Toujours hors-ligne", "Ce carnet reste en attente -- réessaie une fois la connexion revenue.");
+      }
+    } finally {
+      setReessaiEnCours(null);
+    }
+  }
+
+  function abandonnerImportEnAttente(entree: EntreeImportOutbox) {
+    Alert.alert("Retirer ce carnet en attente ?", entree.nom, [
+      { text: "Annuler", style: "cancel" },
+      { text: "Retirer", style: "destructive", onPress: async () => { await retirerDImportOutbox(entree.cle); chargerEnAttente(); } },
+    ]);
+  }
 
   async function choisirFichier() {
     const resultat = await DocumentPicker.getDocumentAsync({
@@ -61,8 +98,14 @@ export default function ImportScreen() {
     try {
       const reponse = await uploaderCarnet({ ...fichier, categorieDefaut, occasions, langue, auteur });
       setLignes(reponse.chants.map((c) => ({ ...c, inclus: true })));
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Échec de l'analyse du fichier");
+    } catch (erreur) {
+      if (erreur instanceof ImportMisEnAttente) {
+        setFichier(null);
+        chargerEnAttente();
+        Alert.alert("Mis en attente", erreur.message);
+      } else {
+        Alert.alert("Erreur", (erreur as any)?.message ?? "Échec de l'analyse du fichier");
+      }
     } finally {
       setEnCours(false);
     }
@@ -240,6 +283,26 @@ export default function ImportScreen() {
         </View>
       </View>
 
+      {enAttente.length > 0 && (
+        <View style={styles.blocEnAttente}>
+          <Text style={styles.titreEnAttente}>⏳ {enAttente.length} carnet(s) en attente de connexion</Text>
+          {enAttente.map((e) => (
+            <View key={e.cle} style={styles.ligneEnAttente}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.nomFichier} numberOfLines={1}>{e.nom}</Text>
+                <Text style={styles.tailleFichier}>Ajouté le {new Date(e.creeLe).toLocaleString("fr-FR")}</Text>
+              </View>
+              <Pressable onPress={() => reessayerImportEnAttente(e)} disabled={reessaiEnCours === e.cle}>
+                <Text style={styles.lienReessayer}>{reessaiEnCours === e.cle ? "…" : "Réessayer"}</Text>
+              </Pressable>
+              <Pressable onPress={() => abandonnerImportEnAttente(e)} hitSlop={8}>
+                <Text style={styles.retirerFichier}>✕</Text>
+              </Pressable>
+            </View>
+          ))}
+        </View>
+      )}
+
       <Pressable style={styles.zoneFichier} onPress={choisirFichier}>
         <Text style={styles.iconeZoneFichier}>📤</Text>
         <Text style={styles.titreZoneFichier}>Glissez-déposez votre document ici</Text>
@@ -297,6 +360,10 @@ const styles = StyleSheet.create({
   iconeFormat: { fontSize: 22, backgroundColor: "#eaf0fa", width: 40, height: 40, textAlign: "center", textAlignVertical: "center", borderRadius: 8 },
   titreFormat: { fontWeight: "700", fontSize: 12, color: "#0f172a" },
   texteFormat: { fontSize: 11, color: "#64748b" },
+  blocEnAttente: { backgroundColor: "#fef9c3", borderRadius: 12, padding: 14, marginBottom: 16 },
+  titreEnAttente: { fontSize: 12, fontWeight: "700", color: "#713f12", marginBottom: 8 },
+  ligneEnAttente: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 8, padding: 10, marginBottom: 6 },
+  lienReessayer: { fontSize: 12, fontWeight: "700", color: "#2563eb" },
   zoneFichier: { borderWidth: 2, borderColor: "#cbd5e1", borderStyle: "dashed", borderRadius: 16, padding: 24, alignItems: "center", backgroundColor: "#fff", marginBottom: 20 },
   iconeZoneFichier: { fontSize: 40, marginBottom: 8 },
   titreZoneFichier: { fontSize: 15, color: "#1e293b", fontWeight: "600" },

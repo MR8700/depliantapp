@@ -25,15 +25,33 @@ def generer_code() -> str:
     return "-".join(groupes)
 
 
-def creer_licence(chorale_id: Optional[int], max_appareils: int = 5, expire_le: Optional[str] = None) -> dict:
+def creer_licence(
+    chorale_id: Optional[int], max_appareils: int = 1, expire_le: Optional[str] = None,
+    quota_feuillets: Optional[int] = None,
+) -> dict:
     code = generer_code()
     with get_connection() as conn:
         licence_id = insert_returning_id(
             conn,
-            "INSERT INTO licences (code, chorale_id, max_appareils, expire_le) VALUES (?, ?, ?, ?)",
-            (code, chorale_id, max_appareils, expire_le),
+            "INSERT INTO licences (code, chorale_id, max_appareils, expire_le, quota_feuillets) VALUES (?, ?, ?, ?, ?)",
+            (code, chorale_id, max_appareils, expire_le, quota_feuillets),
         )
     return get_licence(licence_id)
+
+
+def modifier_licence(
+    licence_id: int, max_appareils: int, expire_le: Optional[str], quota_feuillets: Optional[int],
+) -> None:
+    """Reconfiguration complète (pas un patch partiel) -- l'appelant renvoie
+    toujours les 3 valeurs voulues, `None` pour expire_le/quota_feuillets
+    signifiant explicitement "illimité"/"jamais", pas "ne pas toucher"."""
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE licences SET max_appareils = ?, expire_le = ?, quota_feuillets = ?, updated_at = {horodatage} "
+            f"WHERE id = ?",
+            (max_appareils, expire_le, quota_feuillets, licence_id),
+        )
 
 
 def get_licence(licence_id: int) -> Optional[dict]:
@@ -46,6 +64,49 @@ def get_licence_par_code(code: str) -> Optional[dict]:
     with get_connection() as conn:
         row = conn.execute("SELECT * FROM licences WHERE code = ?", (code.strip().upper(),)).fetchone()
         return dict(row) if row else None
+
+
+def get_licence_active_pour_chorale(chorale_id: int) -> Optional[dict]:
+    """La licence active la plus récente d'une chorale -- une chorale ne
+    devrait normalement en avoir qu'une, mais rien n'empêche l'admin d'en
+    recréer une (perte, renouvellement) sans révoquer l'ancienne."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM licences WHERE chorale_id = ? AND statut = 'active' ORDER BY created_at DESC LIMIT 1",
+            (chorale_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+class QuotaFeuilletsAtteint(Exception):
+    """Levée par consommer_quota_feuillet() quand la licence active de la
+    chorale a atteint son quota_feuillets configuré par l'admin."""
+
+    def __init__(self, quota: int):
+        self.quota = quota
+        super().__init__(f"Quota de {quota} feuillet(s) atteint pour votre licence. Contactez l'administrateur.")
+
+
+def consommer_quota_feuillet(chorale_id: int) -> None:
+    """Incrémente feuillets_produits pour la licence active de `chorale_id`
+    après vérification du quota (None = illimité, voir schéma). Sans effet
+    si la chorale n'a pas (ou plus) de licence active -- comptes créés avant
+    l'introduction du système de licences, ou super-admin (chorale_id=0,
+    jamais rattaché à une licence)."""
+    if not chorale_id:
+        return
+    licence = get_licence_active_pour_chorale(chorale_id)
+    if not licence:
+        return
+    quota = licence["quota_feuillets"]
+    if quota is not None and licence["feuillets_produits"] >= quota:
+        raise QuotaFeuilletsAtteint(quota)
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE licences SET feuillets_produits = feuillets_produits + 1, updated_at = {horodatage} WHERE id = ?",
+            (licence["id"],),
+        )
 
 
 def lister_licences(chorale_id: Optional[int] = None) -> list[dict]:

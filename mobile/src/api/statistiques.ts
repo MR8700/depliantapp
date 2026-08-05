@@ -1,4 +1,5 @@
-import { apiFetch } from "./client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { apiFetch, ApiError } from "./client";
 
 export interface Statistiques {
   total_chants: number;
@@ -13,6 +14,20 @@ export interface Statistiques {
   chants_recents: { titre: string; categorie: string; created_at: string }[];
 }
 
-export function getStatistiques(): Promise<Statistiques> {
-  return apiFetch<Statistiques>("/statistiques");
+const CLE_CACHE = "depliantapp.statistiques_cache";
+
+// Calcul serveur agrégé, admin uniquement -- pas de file d'écriture (rien à
+// pousser), mais un cache de LECTURE évite un écran vide en cas de coupure
+// réseau ponctuelle : on affiche le dernier instantané connu.
+export async function getStatistiques(): Promise<Statistiques> {
+  try {
+    const stats = await apiFetch<Statistiques>("/statistiques");
+    await AsyncStorage.setItem(CLE_CACHE, JSON.stringify(stats));
+    return stats;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    const brut = await AsyncStorage.getItem(CLE_CACHE);
+    if (brut) return JSON.parse(brut);
+    throw erreur;
+  }
 }

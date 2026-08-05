@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Linking, ScrollView, StyleSheet, Text, View } from "react-native";
-import { useNavigation } from "@react-navigation/native";
+import { useNavigation, useIsFocused } from "@react-navigation/native";
 import { getParametresGlobaux } from "../api/parametres";
 import Bouton from "../components/Bouton";
 
@@ -33,11 +33,17 @@ function CarteGrille({ item, accentColor }: { item: CarteIcone; accentColor?: st
 
 export default function AProposScreen() {
   const navigation = useNavigation<any>();
+  const estFocalise = useIsFocused();
   const [s, setS] = useState<Record<string, any> | null>(null);
 
+  // Reprend le dernier état connu à chaque fois qu'on revient sur cet écran
+  // -- pas seulement au premier montage -- pour refléter une éventuelle
+  // synchro faite entre-temps en arrière-plan (voir storage/syncAll.ts) sans
+  // attendre un redémarrage complet de l'app.
   useEffect(() => {
+    if (!estFocalise) return;
     getParametresGlobaux().then(setS).catch(() => {});
-  }, []);
+  }, [estFocalise]);
 
   if (!s) return <View style={styles.conteneur} />;
 

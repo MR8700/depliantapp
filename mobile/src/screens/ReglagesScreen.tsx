@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useNavigation } from "@react-navigation/native";
 import {
   getParametres, sauvegarderParametres, listerMedias, urlImageActive, urlMedia,
   uploaderEtActiverImage, activerImageDuPool, retirerImage, telechargerApercuPdf, ImageSlot, Media,
@@ -15,8 +16,14 @@ import { entrainerModele } from "../api/ml";
 import { supprimerTouteLaBibliotheque, rechercherChants } from "../api/chants";
 import { synchroniserBibliotheque, dernieresSyncLe } from "../storage/sync";
 import { lireOutbox } from "../storage/chantsOutbox";
+import { obtenirMonAbonnement, MonAbonnement } from "../api/licences";
+import { useIdentite } from "../context/IdentiteContext";
 import PdfViewer from "../components/PdfViewer";
 import Bouton from "../components/Bouton";
+
+// Même numéro que le bouton "Payer une licence" de l'écran d'activation
+// (ActivationScreen.tsx) -- wa.me n'accepte pas le "+".
+const NUMERO_WHATSAPP_LICENCE = "22652045008";
 
 const SLOTS: { cle: ImageSlot; label: string }[] = [
   { cle: "logo_gauche", label: "Logo gauche" },
@@ -26,6 +33,9 @@ const SLOTS: { cle: ImageSlot; label: string }[] = [
 
 export default function ReglagesScreen() {
   const insets = useSafeAreaInsets();
+  const navigation = useNavigation<any>();
+  const { estSuperAdmin } = useIdentite();
+  const [abonnement, setAbonnement] = useState<MonAbonnement | null>(null);
   const [chorale, setChorale] = useState("");
   const [paroisse, setParoisse] = useState("");
   const [contact, setContact] = useState("");
@@ -65,6 +75,30 @@ export default function ReglagesScreen() {
     setDerniereSync(await dernieresSyncLe());
     setEnAttenteOutbox((await lireOutbox()).length);
   };
+
+  useEffect(() => {
+    if (!estSuperAdmin) obtenirMonAbonnement().then(setAbonnement).catch(() => {});
+  }, [estSuperAdmin]);
+
+  async function contacterAdminWhatsapp() {
+    const texte = encodeURIComponent("Bonjour, je souhaite gérer mon abonnement DepliantApp.");
+    const urlApp = `whatsapp://send?phone=${NUMERO_WHATSAPP_LICENCE}&text=${texte}`;
+    const urlWeb = `https://wa.me/${NUMERO_WHATSAPP_LICENCE}?text=${texte}`;
+    try {
+      const supporteApp = await Linking.canOpenURL(urlApp);
+      await Linking.openURL(supporteApp ? urlApp : urlWeb);
+    } catch {
+      Alert.alert("WhatsApp indisponible", `Contacte l'administrateur directement au +${NUMERO_WHATSAPP_LICENCE}.`);
+    }
+  }
+
+  function gererMonAbonnement() {
+    Alert.alert("Gérer mon abonnement", "Comment veux-tu contacter l'administrateur ?", [
+      { text: "Annuler", style: "cancel" },
+      { text: "💬 WhatsApp", onPress: contacterAdminWhatsapp },
+      { text: "✉️ Messagerie interne", onPress: () => navigation.navigate("Messages") },
+    ]);
+  }
 
   useEffect(() => {
     jetonAuthorizationHeader().then(setEntetesAuth);
@@ -348,6 +382,37 @@ export default function ReglagesScreen() {
       </View>
       <Bouton titre="👁️ Voir l'aperçu" variante="contour" onPress={voirApercuReel} />
 
+      {!estSuperAdmin && (
+        <>
+          <Text style={styles.section}>💳 Abonnement</Text>
+          {!abonnement ? (
+            <Text style={styles.hint}>Chargement de l'abonnement…</Text>
+          ) : !abonnement.licence ? (
+            <Text style={styles.hint}>Aucune licence active rattachée à ce compte.</Text>
+          ) : (
+            <View style={styles.carteAbonnement}>
+              <View style={styles.ligneAbonnement}>
+                <Text style={styles.labelAbonnement}>Statut</Text>
+                <Text style={[styles.valeurAbonnement, abonnement.statut !== "active" && { color: "#dc2626" }]}>
+                  {abonnement.statut === "active" ? "Active" : "Révoquée"}
+                </Text>
+              </View>
+              <View style={styles.ligneAbonnement}>
+                <Text style={styles.labelAbonnement}>Feuillets produits</Text>
+                <Text style={styles.valeurAbonnement}>
+                  {abonnement.feuillets_produits}{abonnement.quota_feuillets != null ? ` / ${abonnement.quota_feuillets}` : " (illimité)"}
+                </Text>
+              </View>
+              <View style={styles.ligneAbonnement}>
+                <Text style={styles.labelAbonnement}>Expiration</Text>
+                <Text style={styles.valeurAbonnement}>{abonnement.expire_le ?? "Aucune"}</Text>
+              </View>
+            </View>
+          )}
+          <Bouton titre="Gérer mon abonnement" variante="contour" onPress={gererMonAbonnement} />
+        </>
+      )}
+
       <Text style={styles.section}>🔄 Synchronisation hors-ligne</Text>
       <Text style={styles.hint}>
         L'application fonctionne entièrement hors-ligne. Ce réglage contrôle si la bibliothèque partagée de chants (toutes chorales confondues) est
@@ -452,6 +517,10 @@ const styles = StyleSheet.create({
   vide: { textAlign: "center", color: "#94a3b8", marginTop: 40 },
   fermerPicker: { padding: 16, alignItems: "center", borderTopWidth: 1, borderTopColor: "#e2e8f0" },
   texteFermerPicker: { color: "#dc2626", fontWeight: "600" },
+  carteAbonnement: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10 },
+  ligneAbonnement: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
+  labelAbonnement: { fontSize: 12, color: "#64748b" },
+  valeurAbonnement: { fontSize: 13, fontWeight: "700", color: "#1e293b" },
   ligneToggle: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10 },
   labelToggle: { fontSize: 13, fontWeight: "600", color: "#1e293b" },
   sousLabelToggle: { fontSize: 11, color: "#94a3b8", marginTop: 2 },

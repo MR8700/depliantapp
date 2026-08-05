@@ -3,9 +3,10 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import ActivationScreen from "./src/screens/ActivationScreen";
 import LoginScreen from "./src/screens/LoginScreen";
+import ChangerMotDePasseObligatoireScreen from "./src/screens/ChangerMotDePasseObligatoireScreen";
 import HomeTabs from "./src/navigation/HomeTabs";
 import SplashScreen from "./src/components/SplashScreen";
-import { IdentiteProvider } from "./src/context/IdentiteContext";
+import { IdentiteProvider, useIdentite } from "./src/context/IdentiteContext";
 import { ActivationStockee, getActivation, getJetonSession } from "./src/storage/secureStore";
 
 // Durée minimale d'affichage du splash -- comme sur le web (voir
@@ -14,6 +15,19 @@ import { ActivationStockee, getActivation, getJetonSession } from "./src/storage
 const DUREE_MIN_SPLASH_MS = 900;
 
 const Stack = createNativeStackNavigator();
+
+// Garde bloquante équivalente au formulaire forcé de login.html
+// (must_change_password) : tant que l'identité résolue porte ce drapeau,
+// HomeTabs (et donc tout accès aux données/fonctions de l'app) reste
+// injoignable, quelle que soit la façon dont on est arrivé jusqu'ici --
+// même invariant que la garde admin/chorale de PlusStack.tsx.
+function AccueilAuthentifie({ onDeconnecte }: { onDeconnecte: () => void }) {
+  const { identite, rafraichirIdentite } = useIdentite();
+  if (identite?.must_change_password) {
+    return <ChangerMotDePasseObligatoireScreen onChange={rafraichirIdentite} />;
+  }
+  return <HomeTabs onDeconnecte={onDeconnecte} />;
+}
 
 export default function App() {
   // null = pas encore lu depuis SecureStore ; undefined = lu, absent.
@@ -57,7 +71,7 @@ export default function App() {
   const rendreHome = useCallback(
     () => (
       <IdentiteProvider>
-        <HomeTabs onDeconnecte={rafraichirEtat} />
+        <AccueilAuthentifie onDeconnecte={rafraichirEtat} />
       </IdentiteProvider>
     ),
     [rafraichirEtat],

@@ -1,19 +1,23 @@
 import { useEffect, useState } from "react";
 import { FlatList, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { rechercherChants } from "../api/chants";
+import { rechercherChants, getChant } from "../api/chants";
 import { getMeta } from "../api/meta";
 import { Chant } from "../types";
-import { categorieLabel, iconeCategorie } from "../utils/labels";
+import { categorieLabel, iconeCategorie, DEFAULT_MOMENTS } from "../utils/labels";
 import SelectModal from "./SelectModal";
 
 interface Props {
   visible: boolean;
   onFermer: () => void;
   onSelection: (chant: Chant) => void;
+  /** Nom du moment liturgique visé (ex: "Entree") -- si ça correspond à une
+   * catégorie existante, elle est présélectionnée à l'ouverture, comme le
+   * picker web (voir ouvrirPicker() dans app.js). */
+  momentSuggere?: string | null;
 }
 
-export default function SelecteurChant({ visible, onFermer, onSelection }: Props) {
+export default function SelecteurChant({ visible, onFermer, onSelection, momentSuggere }: Props) {
   const insets = useSafeAreaInsets();
   const [recherche, setRecherche] = useState("");
   const [categorie, setCategorie] = useState("");
@@ -21,11 +25,20 @@ export default function SelecteurChant({ visible, onFermer, onSelection }: Props
   const [resultats, setResultats] = useState<Chant[]>([]);
   const [chargement, setChargement] = useState(false);
   const [apercu, setApercu] = useState<Chant | null>(null);
+  const [apercuIncomplet, setApercuIncomplet] = useState(false);
 
   useEffect(() => {
     if (!visible) return;
-    getMeta().then((m) => setCategories(m.categories)).catch(() => {});
+    getMeta()
+      .then((m) => setCategories(m.categories && m.categories.length > 0 ? m.categories : DEFAULT_MOMENTS))
+      .catch(() => setCategories(DEFAULT_MOMENTS));
   }, [visible]);
+
+  useEffect(() => {
+    if (!visible) return;
+    setCategorie(momentSuggere && categories.includes(momentSuggere) ? momentSuggere : "");
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, momentSuggere, categories.length]);
 
   useEffect(() => {
     if (!visible) return;
@@ -45,9 +58,29 @@ export default function SelecteurChant({ visible, onFermer, onSelection }: Props
 
   const optionsCategorie = [{ value: "", label: "Toutes catégories" }, ...categories.map((c) => ({ value: c, label: categorieLabel(c) }))];
 
-  function ajouter(chant: Chant) {
+  // La liste/recherche est chargée en `resume: true` (perf) -- ce mode
+  // TRONQUE `couplets` au premier seulement côté serveur (voir
+  // routers/chants.py::resume). Avant de prévisualiser ou d'ajouter un
+  // chant, on récupère donc toujours sa version complète : sinon l'aperçu
+  // "Couplet 2", "Couplet 3"... n'existerait tout simplement jamais, et
+  // Composer stockerait des paroles tronquées dans sa carte de prévisualisation.
+  async function ouvrirApercu(chant: Chant) {
+    setApercu(chant);
+    setApercuIncomplet(false);
+    try {
+      setApercu(await getChant(chant.id));
+    } catch {
+      setApercuIncomplet(true); // hors-ligne et pas encore en cache -- on garde l'aperçu tronqué plutôt que rien
+    }
+  }
+
+  async function ajouter(chant: Chant) {
     setApercu(null);
-    onSelection(chant);
+    try {
+      onSelection(await getChant(chant.id));
+    } catch {
+      onSelection(chant);
+    }
   }
 
   return (
@@ -81,6 +114,11 @@ export default function SelecteurChant({ visible, onFermer, onSelection }: Props
                   <Text style={styles.texteApercu}>{c}</Text>
                 </View>
               ))}
+              {apercuIncomplet && apercu.couplets.length <= 1 && (
+                <Text style={styles.hintApercuIncomplet}>
+                  ⚠ Hors-ligne : seul le premier couplet est disponible pour l'instant si ce chant en compte plusieurs.
+                </Text>
+              )}
             </ScrollView>
             <View style={[styles.piedApercu, { paddingBottom: insets.bottom + 12 }]}>
               <Pressable style={styles.boutonAjouter} onPress={() => ajouter(apercu)}>
@@ -102,6 +140,11 @@ export default function SelecteurChant({ visible, onFermer, onSelection }: Props
               />
             </View>
             <SelectModal label="Toutes catégories" value={categorie} options={optionsCategorie} onChange={setCategorie} style={styles.selectCategorie} />
+            {!!momentSuggere && categorie === momentSuggere && (
+              <Text style={styles.hintSuggestion}>
+                Suggestions pour « {categorieLabel(momentSuggere)} » — change la catégorie pour voir autre chose.
+              </Text>
+            )}
             <FlatList
               data={resultats}
               keyExtractor={(c) => String(c.id)}
@@ -109,7 +152,7 @@ export default function SelecteurChant({ visible, onFermer, onSelection }: Props
               renderItem={({ item }) => {
                 const apercuTexte = (item.refrain || item.couplets[0] || "").slice(0, 90);
                 return (
-                  <Pressable style={styles.carte} onPress={() => setApercu(item)}>
+                  <Pressable style={styles.carte} onPress={() => ouvrirApercu(item)}>
                     <View style={styles.iconeCercle}>
                       <Text style={styles.iconeTexte}>{iconeCategorie(item.categorie)}</Text>
                     </View>
@@ -152,6 +195,7 @@ const styles = StyleSheet.create({
   iconeRecherche: { fontSize: 14 },
   recherche: { flex: 1, fontSize: 15 },
   selectCategorie: { marginHorizontal: 16, marginTop: 8 },
+  hintSuggestion: { fontSize: 11, color: "#94a3b8", marginHorizontal: 16, marginTop: 6, fontStyle: "italic" },
   carte: { flexDirection: "row", alignItems: "center", gap: 10, backgroundColor: "#fff", borderRadius: 12, padding: 12, marginBottom: 8 },
   iconeCercle: { width: 40, height: 40, borderRadius: 20, backgroundColor: "#eef2f9", alignItems: "center", justifyContent: "center" },
   iconeTexte: { fontSize: 18 },
@@ -170,6 +214,7 @@ const styles = StyleSheet.create({
   titreApercu: { fontSize: 20, fontWeight: "700", color: "#1e293b", marginBottom: 12 },
   labelApercu: { fontSize: 12, fontWeight: "600", color: "#94a3b8", marginTop: 14, marginBottom: 4, textTransform: "uppercase" },
   texteApercu: { fontSize: 15, color: "#334155", lineHeight: 22 },
+  hintApercuIncomplet: { fontSize: 11, color: "#b45309", fontStyle: "italic", marginTop: 16 },
   piedApercu: { padding: 16, borderTopWidth: 1, borderTopColor: "#e2e8f0", backgroundColor: "#fff" },
   boutonAjouter: { backgroundColor: "#2563eb", borderRadius: 12, paddingVertical: 14, alignItems: "center" },
   texteBoutonAjouter: { color: "#fff", fontWeight: "700", fontSize: 15 },

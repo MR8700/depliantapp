@@ -33,6 +33,9 @@ export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, on
   const nomLangue = NOMS_LANGUES[chant.langue] || chant.langue || "Français";
   const tagsVisibles = chant.mots_cles.slice(0, 3);
   const tagsRestants = chant.mots_cles.length - 3;
+  // Créé hors-ligne, pas encore poussé vers la bibliothèque partagée (voir
+  // storage/chantsOutbox.ts -- id négatif = encore dans la file d'attente).
+  const enAttenteEnvoi = chant.id < 0;
 
   return (
     <Pressable onPress={onVoir} style={[styles.carte, modeGrille && styles.carteGrille]}>
@@ -41,6 +44,7 @@ export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, on
         <View style={styles.ligneTitre}>
           <Text style={styles.pillCategorie}>{categorieLabel(chant.categorie)}</Text>
           <Text style={styles.titre} numberOfLines={1}>{chant.titre || "(sans titre)"}</Text>
+          {enAttenteEnvoi && <Text style={styles.pillEnAttente}>⏳ En attente d'envoi</Text>}
         </View>
         {chant.code_reference ? <Text style={styles.reference}>{chant.code_reference}</Text> : null}
         {apercu ? <Text style={styles.apercu} numberOfLines={2}>{apercu}{apercu.length >= 80 ? "..." : ""}</Text> : null}
@@ -96,6 +100,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden",
   },
   titre: { fontSize: 15, fontWeight: "700", color: "#1e293b", flexShrink: 1 },
+  pillEnAttente: {
+    fontSize: 10, fontWeight: "700", color: "#b45309", backgroundColor: "#fef3c7", borderRadius: 999,
+    paddingHorizontal: 8, paddingVertical: 2, overflow: "hidden",
+  },
   reference: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
   apercu: { fontSize: 13, color: "#64748b", marginTop: 6, lineHeight: 18 },
   ligneMeta: { marginTop: 6, gap: 2 },

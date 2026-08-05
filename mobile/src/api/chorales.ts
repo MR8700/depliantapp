@@ -1,6 +1,9 @@
-import { apiFetch } from "./client";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { apiFetch, ApiError } from "./client";
 
 export interface ChoraleResume { id: number; nom: string }
+
+const CLE_CACHE_LISTE = "depliantapp.chorales_liste_cache";
 
 export interface ChoraleDetail {
   id: number;
@@ -15,8 +18,20 @@ export interface ChoraleDetail {
   suppression_revision_raison: string | null;
 }
 
-export function listerChorales(): Promise<ChoraleResume[]> {
-  return apiFetch<ChoraleResume[]>("/chorales");
+// Utilisé par le picker "composé par X" du Composer -- doit rester
+// disponible hors-ligne pour ne pas casser la composition d'un feuillet
+// sans réseau (même repli que le reste de l'app).
+export async function listerChorales(): Promise<ChoraleResume[]> {
+  try {
+    const liste = await apiFetch<ChoraleResume[]>("/chorales");
+    await AsyncStorage.setItem(CLE_CACHE_LISTE, JSON.stringify(liste));
+    return liste;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    const brut = await AsyncStorage.getItem(CLE_CACHE_LISTE);
+    if (brut) return JSON.parse(brut);
+    throw erreur;
+  }
 }
 
 export function listerChoralesDetail(): Promise<ChoraleDetail[]> {

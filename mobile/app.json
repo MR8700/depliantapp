@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.gotechnologie.depliantapp",
-      "versionCode": 4,
+      "versionCode": 5,
       "adaptiveIcon": {
         "backgroundColor": "#1a3c6e",
         "foregroundImage": "./assets/android-icon-foreground.png",

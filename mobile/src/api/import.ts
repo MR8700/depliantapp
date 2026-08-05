@@ -1,4 +1,14 @@
-import { apiFetchForm, apiFetch } from "./client";
+import { apiFetchForm, apiFetch, ApiError } from "./client";
+import { ajouterAImportOutbox } from "../storage/importOutbox";
+
+// Levée quand l'upload échoue faute de réseau (pas une erreur serveur) --
+// le fichier a été mis en file d'attente locale (voir storage/importOutbox.ts)
+// plutôt que de faire échouer l'import pour rien.
+export class ImportMisEnAttente extends Error {
+  constructor() {
+    super("Pas de connexion -- le carnet a été mis en attente d'envoi, il sera analysable dès le retour du réseau.");
+  }
+}
 
 export interface ChantExtrait {
   titre: string;
@@ -20,7 +30,11 @@ export interface ReponseUpload {
   chants: ChantExtrait[];
 }
 
-export async function uploaderCarnet(params: {
+// Variante réseau "brute", sans repli hors-ligne -- réservée à
+// storage/sync.ts (ré-essai d'une entrée de importOutbox : un échec ici doit
+// la laisser en attente telle quelle, jamais recopier le fichier une
+// seconde fois).
+export function uploaderCarnetDistant(params: {
   uri: string; nom: string; mimeType: string;
   categorieDefaut: string; occasions: string; langue: string; auteur: string;
 }): Promise<ReponseUpload> {
@@ -34,6 +48,21 @@ export async function uploaderCarnet(params: {
   // routers/import_.py::upload_carnet).
   form.append("auteur", params.auteur);
   return apiFetchForm<ReponseUpload>("/import/upload", form, { method: "POST" });
+}
+
+export async function uploaderCarnet(params: {
+  uri: string; nom: string; mimeType: string;
+  categorieDefaut: string; occasions: string; langue: string; auteur: string;
+}): Promise<ReponseUpload> {
+  try {
+    return await uploaderCarnetDistant(params);
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    await ajouterAImportOutbox(params, {
+      categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
+    });
+    throw new ImportMisEnAttente();
+  }
 }
 
 export interface ChantAFinaliser {

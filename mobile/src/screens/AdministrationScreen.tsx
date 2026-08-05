@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import {
-  ActivityIndicator, Alert, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
 import {
   listerChoralesDetail, creerChorale, reinitialiserMotDePasse, planifierSuppression, annulerSuppression, ChoraleDetail,
 } from "../api/chorales";
@@ -12,10 +13,23 @@ import {
 } from "../api/moderation";
 import { getParametresGlobaux, sauvegarderParametres } from "../api/parametres";
 import {
-  listerLicences, creerLicence, listerActivationsLicence, revoquerLicence, reactiverLicence,
+  listerLicences, creerLicence, configurerLicence, listerActivationsLicence, revoquerLicence, reactiverLicence,
   regenererCode, revoquerActivationAppareil, Licence, ActivationAppareil,
 } from "../api/licences";
 import Bouton from "../components/Bouton";
+
+function dateIsoVersDate(iso: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
+  if (!m) return new Date();
+  return new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+}
+
+function dateVersIso(d: Date): string {
+  const annee = d.getFullYear();
+  const mois = String(d.getMonth() + 1).padStart(2, "0");
+  const jour = String(d.getDate()).padStart(2, "0");
+  return `${annee}-${mois}-${jour}`;
+}
 
 type OngletAdmin = "chorales" | "apropos";
 
@@ -36,6 +50,12 @@ export default function AdministrationScreen() {
   const [raisonPlanification, setRaisonPlanification] = useState("");
   const [appareilsModal, setAppareilsModal] = useState<Licence | null>(null);
   const [appareils, setAppareils] = useState<ActivationAppareil[]>([]);
+  const [configCible, setConfigCible] = useState<{ choraleId: number; licence: Licence | null } | null>(null);
+  const [configMaxAppareils, setConfigMaxAppareils] = useState("1");
+  const [configQuota, setConfigQuota] = useState("");
+  const [configExpireLe, setConfigExpireLe] = useState<string | null>(null);
+  const [configPickerVisible, setConfigPickerVisible] = useState(false);
+  const [configEnCours, setConfigEnCours] = useState(false);
 
   const charger = useCallback(async () => {
     const [c, d, m, cat, lic] = await Promise.all([
@@ -52,13 +72,31 @@ export default function AdministrationScreen() {
     return licences.find((l) => l.chorale_id === choraleId);
   }
 
-  async function genererLicencePour(choraleId: number) {
+  function ouvrirConfigLicence(choraleId: number, licence: Licence | null) {
+    setConfigCible({ choraleId, licence });
+    setConfigMaxAppareils(String(licence?.max_appareils ?? 1));
+    setConfigQuota(licence?.quota_feuillets != null ? String(licence.quota_feuillets) : "");
+    setConfigExpireLe(licence?.expire_le ?? null);
+  }
+
+  async function validerConfigLicence() {
+    if (!configCible) return;
+    const maxAppareils = Math.max(1, Number(configMaxAppareils) || 1);
+    const quota = configQuota.trim() ? Math.max(0, Number(configQuota)) : null;
+    setConfigEnCours(true);
     try {
-      const licence = await creerLicence(choraleId);
+      if (configCible.licence) {
+        await configurerLicence(configCible.licence.id, maxAppareils, configExpireLe, quota);
+      } else {
+        const licence = await creerLicence(configCible.choraleId, maxAppareils, configExpireLe, quota);
+        Alert.alert("Licence créée", `Code à transmettre à la chorale :\n\n${licence.code}\n\nCe code s'active une seule fois dans l'app mobile (Activation), sur ${licence.max_appareils} appareil(s) au maximum.`);
+      }
+      setConfigCible(null);
       await charger();
-      Alert.alert("Licence créée", `Code à transmettre à la chorale :\n\n${licence.code}\n\nCe code s'active une seule fois dans l'app mobile (Activation), puis reste partagé par tous les appareils de la chorale jusqu'à ${licence.max_appareils}.`);
     } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible de créer la licence");
+      Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer la configuration");
+    } finally {
+      setConfigEnCours(false);
     }
   }
 
@@ -252,9 +290,12 @@ export default function AdministrationScreen() {
                 </Text>
                 <Text style={styles.sousTitreCarte}>
                   {licence.statut === "active" ? "Active" : "Révoquée"} • max {licence.max_appareils} appareil(s)
+                  {" • "}{licence.feuillets_produits} feuillet{licence.feuillets_produits !== 1 ? "s" : ""} produit{licence.feuillets_produits !== 1 ? "s" : ""}
+                  {licence.quota_feuillets != null ? ` / ${licence.quota_feuillets}` : " (illimité)"}
                   {licence.expire_le ? ` • expire le ${licence.expire_le}` : ""}
                 </Text>
                 <View style={styles.actionsCarte}>
+                  <Pressable onPress={() => ouvrirConfigLicence(c.id, licence)}><Text style={styles.lien}>Configurer</Text></Pressable>
                   <Pressable onPress={() => ouvrirAppareils(licence)}><Text style={styles.lien}>Voir les appareils</Text></Pressable>
                   <Pressable onPress={() => regenererCodeLicence(licence)}><Text style={styles.lien}>Régénérer le code</Text></Pressable>
                   <Pressable onPress={() => toggleStatutLicence(licence)}>
@@ -265,7 +306,7 @@ export default function AdministrationScreen() {
                 </View>
               </>
             ) : (
-              <Pressable onPress={() => genererLicencePour(c.id)}>
+              <Pressable onPress={() => ouvrirConfigLicence(c.id, null)}>
                 <Text style={[styles.lien, { fontWeight: "700" }]}>🔑 Générer une licence</Text>
               </Pressable>
             )}
@@ -328,6 +369,54 @@ export default function AdministrationScreen() {
             <View style={styles.actionsCarte}>
               <Pressable onPress={() => setPlanificationId(null)}><Text style={styles.lien}>Annuler</Text></Pressable>
               <Pressable onPress={confirmerPlanification}><Text style={[styles.lien, { color: "#dc2626" }]}>Confirmer</Text></Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!configCible} animationType="fade" transparent onRequestClose={() => setConfigCible(null)}>
+        <View style={styles.fondModal}>
+          <View style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>{configCible?.licence ? "Configurer la licence" : "Générer une licence"}</Text>
+            <Text style={styles.label}>Appareils autorisés</Text>
+            <TextInput
+              style={styles.champ}
+              keyboardType="number-pad"
+              value={configMaxAppareils}
+              onChangeText={setConfigMaxAppareils}
+              placeholder="1"
+            />
+            <Text style={styles.label}>Quota de feuillets (vide = illimité)</Text>
+            <TextInput
+              style={styles.champ}
+              keyboardType="number-pad"
+              value={configQuota}
+              onChangeText={setConfigQuota}
+              placeholder="Ex : 50"
+            />
+            <Text style={styles.label}>Date d'expiration (vide = jamais)</Text>
+            <Pressable style={styles.champ} onPress={() => setConfigPickerVisible(true)}>
+              <Text>{configExpireLe ?? "Aucune expiration"}</Text>
+            </Pressable>
+            {!!configExpireLe && (
+              <Pressable onPress={() => setConfigExpireLe(null)}><Text style={[styles.lien, { color: "#dc2626", marginBottom: 8 }]}>Retirer l'expiration</Text></Pressable>
+            )}
+            {configPickerVisible && (
+              <DateTimePicker
+                value={configExpireLe ? dateIsoVersDate(configExpireLe) : new Date()}
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={(event, selectionne) => {
+                  if (Platform.OS !== "ios") setConfigPickerVisible(false);
+                  if (event.type === "set" && selectionne) setConfigExpireLe(dateVersIso(selectionne));
+                }}
+              />
+            )}
+            <View style={styles.actionsCarte}>
+              <Pressable onPress={() => setConfigCible(null)}><Text style={styles.lien}>Annuler</Text></Pressable>
+              <Pressable onPress={validerConfigLicence}>
+                <Text style={[styles.lien, { fontWeight: "700" }]}>{configEnCours ? "Enregistrement..." : "Enregistrer"}</Text>
+              </Pressable>
             </View>
           </View>
         </View>

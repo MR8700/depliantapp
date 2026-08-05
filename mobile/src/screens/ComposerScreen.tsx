@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Alert, KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, StyleSheet, Switch, Text, TextInput, View,
 } from "react-native";
@@ -6,14 +6,17 @@ import * as Crypto from "expo-crypto";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getMeta } from "../api/meta";
-import { creerFeuillet, mettreAJourFeuillet, telechargerFeuilletPdf, getFeuillet, DepassementPdf } from "../api/feuillets";
+import { creerFeuillet, mettreAJourFeuillet, getFeuillet, DepassementPdf } from "../api/feuillets";
 import { getChant } from "../api/chants";
 import { ApiError } from "../api/client";
 import { Chant, FeuilletCreate, MomentContenu } from "../types";
 import SelecteurChant from "../components/SelecteurChant";
+import SelectModal from "../components/SelectModal";
 import PdfViewer from "../components/PdfViewer";
 import FabToolbox from "../components/FabToolbox";
-import { categorieLabel } from "../utils/labels";
+import MeasurementBridge, { MeasurementBridgeHandle } from "../components/MeasurementBridge";
+import { obtenirPdfAvecRepliLocal, DepassementImpossible, ChantIntrouvableHorsLigne } from "../render/genererPdfLocal";
+import { categorieLabel, DEFAULT_MOMENTS } from "../utils/labels";
 
 const CLE_CELEBRATION_INFO = "depliantapp.composer_celebration_info";
 
@@ -47,6 +50,7 @@ interface LigneMoment {
   chant_reference?: string | null;
   refrain?: string | null;
   couplets?: string[];
+  couplet_limit?: number | null;
   titre_libre?: string;
   texte_libre?: string;
 }
@@ -59,6 +63,7 @@ function ligneVersMomentContenu(l: LigneMoment): MomentContenu | null {
     chant_id: l.type === "chant" ? l.chant_id : undefined,
     titre_libre: l.titre_libre || undefined,
     texte_libre: l.texte_libre || undefined,
+    couplet_limit: l.type === "chant" ? l.couplet_limit ?? null : undefined,
     ordre: l.ordre,
   };
 }
@@ -99,19 +104,32 @@ export default function ComposerScreen({ route, navigation }: Props) {
 
   const [feuilletId, setFeuilletId] = useState<number | null>(null);
   const [ligneCiblee, setLigneCiblee] = useState<string | null>(null);
+  const bridgeMesure = useRef<MeasurementBridgeHandle>(null);
   const [enregistrementEnCours, setEnregistrementEnCours] = useState(false);
   const [apercuVisible, setApercuVisible] = useState(false);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [pdfChargement, setPdfChargement] = useState(false);
   const [pdfErreur, setPdfErreur] = useState<DepassementPdf | null>(null);
+  // null = taille automatique (auto-grow) -- réglage manuel équivalent au
+  // bouton +/- de l'aperçu PDF web, voir PdfViewer.tsx.
+  const [tailleTexteManuelle, setTailleTexteManuelle] = useState<number | null>(null);
 
   useEffect(() => {
-    getMeta().then((meta) => {
-      setMoments(meta.moments);
-      if (!feuilletIdAOuvrir) {
-        setLignes(meta.moments.map((m, i) => ({ cle: m, moment: m, special: false, ordre: i * 10, type: "vide" })));
-      }
-    }).catch(() => {});
+    getMeta()
+      .then((meta) => {
+        const listMoments = meta.moments && meta.moments.length > 0 ? meta.moments : DEFAULT_MOMENTS;
+        setMoments(listMoments);
+        if (!feuilletIdAOuvrir) {
+          setLignes(listMoments.map((m, i) => ({ cle: m, moment: m, special: false, ordre: i * 10, type: "vide" })));
+        }
+      })
+      .catch(() => {
+        // En mode hors-ligne, fallback sur la liste par défaut des moments liturgiques
+        setMoments(DEFAULT_MOMENTS);
+        if (!feuilletIdAOuvrir) {
+          setLignes(DEFAULT_MOMENTS.map((m, i) => ({ cle: m, moment: m, special: false, ordre: i * 10, type: "vide" })));
+        }
+      });
     AsyncStorage.getItem(CLE_CELEBRATION_INFO).then((brut) => {
       if (!brut) return;
       try {
@@ -147,6 +165,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
         setPriereTexte(f.priere_texte ?? "");
         setOnePageMode(f.one_page_mode);
         setBanniereActive(f.banniere_active);
+        setTailleTexteManuelle(f.taille_texte_manuelle ?? null);
 
         const restants = new Map(f.moments.map((m) => [m.moment, m] as const));
         const lignesFixes: LigneMoment[] = moments.map((m, i) => {
@@ -159,6 +178,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
             chant_id: existant.chant_id ?? undefined,
             titre_libre: existant.titre_libre ?? undefined,
             texte_libre: existant.texte_libre ?? undefined,
+            couplet_limit: existant.couplet_limit ?? undefined,
           };
         });
         const lignesSpeciales: LigneMoment[] = Array.from(restants.values()).map((m) => ({
@@ -167,6 +187,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
           chant_id: m.chant_id ?? undefined,
           titre_libre: m.titre_libre ?? undefined,
           texte_libre: m.texte_libre ?? undefined,
+          couplet_limit: m.couplet_limit ?? undefined,
         }));
         const toutesLesLignes = [...lignesFixes, ...lignesSpeciales];
 
@@ -265,7 +286,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
     majLigne(ligneCiblee, {
       type: "chant", chant_id: chant.id, chant_titre: chant.titre,
       chant_categorie: chant.categorie, chant_reference: chant.code_reference,
-      refrain: chant.refrain, couplets: chant.couplets,
+      refrain: chant.refrain, couplets: chant.couplets, couplet_limit: null,
     });
     setLigneCiblee(null);
   }
@@ -283,7 +304,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
       moments: lignes.map(ligneVersMomentContenu).filter((m): m is MomentContenu => m !== null),
       priere_active: priereActive,
       priere_texte: priereTexte || null,
-      taille_texte_manuelle: null,
+      taille_texte_manuelle: tailleTexteManuelle,
       one_page_mode: onePageMode,
       banniere_active: banniereActive,
     };
@@ -312,7 +333,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
       setEnregistrementEnCours(false);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [date, lieu, premiereLecture, psaume, deuxiemeLecture, evangile, lignes, priereActive, priereTexte, onePageMode, banniereActive, feuilletId]);
+  }, [date, lieu, premiereLecture, psaume, deuxiemeLecture, evangile, lignes, priereActive, priereTexte, onePageMode, banniereActive, tailleTexteManuelle, feuilletId]);
 
   // "💾 Brouillon" sauvegarde seule -- le web confirme par un toast
   // ("Brouillon enregistré avec succès !"), sinon un tap sans effet visible
@@ -335,15 +356,48 @@ export default function ComposerScreen({ route, navigation }: Props) {
     setPdfErreur(null);
     setPdfUri(null);
     try {
-      const { uri } = await telechargerFeuilletPdf(id);
+      // Réseau prioritaire ; repli automatique sur le rendu 100% local si le
+      // réseau échoue (voir render/genererPdfLocal.ts::obtenirPdfAvecRepliLocal).
+      const { uri } = await obtenirPdfAvecRepliLocal(id, bridgeMesure.current!);
       setPdfUri(uri);
     } catch (erreur) {
       if (erreur instanceof ApiError && erreur.status === 409) {
         setPdfErreur(erreur.detail as DepassementPdf);
+      } else if (erreur instanceof DepassementImpossible) {
+        setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
+      } else if (erreur instanceof ChantIntrouvableHorsLigne) {
+        Alert.alert(
+          "Chant indisponible hors-ligne",
+          `${erreur.message} Connecte-toi une fois à internet pour synchroniser la bibliothèque avant de composer hors-ligne.`,
+        );
+        setApercuVisible(false);
       } else {
-        Alert.alert("Erreur", "Impossible de générer le PDF");
+        Alert.alert("Erreur", "Impossible de générer le PDF, ni en ligne ni hors-ligne.");
         setApercuVisible(false);
       }
+    } finally {
+      setPdfChargement(false);
+    }
+  }
+
+  // Rejoue enregistrer()+génération avec la nouvelle taille -- le stepper de
+  // PdfViewer appelle directement cette fonction, pas besoin de repasser par
+  // le bouton "Créer".
+  async function changerTailleTexte(taille: number | null) {
+    setTailleTexteManuelle(taille);
+    const id = feuilletId ?? await enregistrer();
+    if (!id) return;
+    setPdfChargement(true);
+    setPdfErreur(null);
+    try {
+      const payload = { ...construirePayload(), taille_texte_manuelle: taille };
+      const maj = await mettreAJourFeuillet(id, payload);
+      if (maj.id !== id) setFeuilletId(maj.id);
+      const { uri } = await obtenirPdfAvecRepliLocal(maj.id, bridgeMesure.current!);
+      setPdfUri(uri);
+    } catch (erreur) {
+      if (erreur instanceof ApiError && erreur.status === 409) setPdfErreur(erreur.detail as DepassementPdf);
+      else if (erreur instanceof DepassementImpossible) setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
     } finally {
       setPdfChargement(false);
     }
@@ -354,6 +408,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
     setDate(""); setLieu("");
     setPremiereLecture(""); setPsaume(""); setDeuxiemeLecture(""); setEvangile("");
     setPriereActive(false); setPriereTexte(""); setOnePageMode(false); setBanniereActive(true);
+    setTailleTexteManuelle(null);
     setWidgetInfoChorale(false); setWidgetRefBibles(false);
     setLignes(moments.map((m, i) => ({ cle: m, moment: m, special: false, ordre: i * 10, type: "vide" })));
     navigation?.setParams({ feuilletId: undefined });
@@ -433,6 +488,23 @@ export default function ComposerScreen({ route, navigation }: Props) {
                   <Text style={styles.apercuChant} numberOfLines={2}>
                     {(ligne.refrain || ligne.couplets?.[0] || "").slice(0, 140)}
                   </Text>
+                )}
+                {(ligne.couplets?.length ?? 0) > 1 && (
+                  <View style={styles.rangeeCoupletLimite}>
+                    <Text style={styles.labelCoupletLimite}>Couplets à inclure</Text>
+                    <SelectModal
+                      label="Couplets à inclure"
+                      value={String(ligne.couplet_limit ?? "tous")}
+                      options={[
+                        { value: "tous", label: "Tous les couplets" },
+                        ...Array.from({ length: ligne.couplets!.length }, (_, i) => ({
+                          value: String(i + 1), label: `${i + 1} premier${i + 1 > 1 ? "s" : ""} couplet${i + 1 > 1 ? "s" : ""}`,
+                        })),
+                      ]}
+                      onChange={(v) => majLigne(ligne.cle, { couplet_limit: v === "tous" ? null : Number(v) })}
+                      style={styles.selectCoupletLimite}
+                    />
+                  </View>
                 )}
                 <View style={styles.piedApercuChant}>
                   {!!ligne.chant_reference && <Text style={styles.referenceApercu}>Réf : {ligne.chant_reference}</Text>}
@@ -599,6 +671,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
         visible={!!ligneCiblee || !!lectureCiblee}
         onFermer={() => { setLigneCiblee(null); setLectureCiblee(null); }}
         onSelection={onChantChoisi}
+        momentSuggere={ligneCiblee ? lignes.find((l) => l.cle === ligneCiblee)?.moment ?? null : null}
       />
 
       <Modal visible={apercuVisible} animationType="slide" onRequestClose={() => setApercuVisible(false)}>
@@ -608,8 +681,12 @@ export default function ComposerScreen({ route, navigation }: Props) {
           erreur={pdfErreur?.message ?? null}
           momentsEnCause={pdfErreur?.moments_en_cause}
           onFermer={() => setApercuVisible(false)}
+          tailleTexteManuelle={tailleTexteManuelle}
+          onChangerTailleTexte={changerTailleTexte}
         />
       </Modal>
+
+      <MeasurementBridge ref={bridgeMesure} />
     </KeyboardAvoidingView>
   );
 }
@@ -658,6 +735,9 @@ const styles = StyleSheet.create({
   boutonChanger: { backgroundColor: "#f1f5f9", borderWidth: 1, borderColor: "#cbd5e1", borderRadius: 6, paddingHorizontal: 10, paddingVertical: 5 },
   texteBoutonChanger: { fontSize: 11, fontWeight: "600", color: "#475569" },
   apercuChant: { fontSize: 12, color: "#64748b", fontStyle: "italic", lineHeight: 17, borderLeftWidth: 2, borderLeftColor: "#cbd5e1", paddingLeft: 8 },
+  rangeeCoupletLimite: { gap: 4, marginTop: 2 },
+  labelCoupletLimite: { fontSize: 10, color: "#94a3b8", fontWeight: "600", textTransform: "uppercase" },
+  selectCoupletLimite: { paddingVertical: 7 },
   piedApercuChant: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 2 },
   referenceApercu: { fontSize: 11, color: "#64748b", fontWeight: "600" },
   champPetit: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 8, padding: 10, fontSize: 13, backgroundColor: "#fafcff" },
