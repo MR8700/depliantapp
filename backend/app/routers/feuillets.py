@@ -58,6 +58,20 @@ def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, identite
     return updated
 
 
+@router.post("/{feuillet_id}/demander-publication", response_model=schemas.Feuillet)
+def demander_publication(feuillet_id: int, identite: auth.Identite = Depends(identite_courante)):
+    """Geste explicite de la chorale propriétaire : place son dépliant privé
+    en file d'attente de publication. Un administrateur doit ensuite le
+    valider (voir routers/moderation.py::valider_publication_feuillet_route)
+    pour qu'il devienne visible de toute la communauté."""
+    if identite.type != "chorale":
+        raise HTTPException(status_code=403, detail="Réservé aux comptes chorale")
+    feuillet = crud.demander_publication_feuillet(feuillet_id, identite.compte_id)
+    if not feuillet:
+        raise HTTPException(status_code=404, detail="Dépliant introuvable, déjà en attente/publié, ou non possédé")
+    return feuillet
+
+
 @router.delete("/{feuillet_id}")
 def delete_feuillet(feuillet_id: int, _identite: auth.Identite = Depends(require_superadmin)):
     """Réservé au super-admin — une chorale passe par POST /moderation/demandes
@@ -68,8 +82,12 @@ def delete_feuillet(feuillet_id: int, _identite: auth.Identite = Depends(require
 
 
 @router.get("/{feuillet_id}/pdf")
-def get_feuillet_pdf(feuillet_id: int):
-    feuillet = crud.get_feuillet(feuillet_id)
+def get_feuillet_pdf(feuillet_id: int, identite: auth.Identite = Depends(identite_courante)):
+    # Même masquage que GET /{feuillet_id} (JSON) -- sans ça, un dépliant
+    # qu'une chorale a masqué (demande de suppression en cours) restait
+    # téléchargeable en PDF par quiconque connaissait/devinait son id.
+    chorale_id_appelant = identite.compte_id if identite.type == "chorale" else 0
+    feuillet = crud.get_feuillet(feuillet_id, chorale_id_appelant=chorale_id_appelant)
     if not feuillet:
         raise HTTPException(status_code=404, detail="Feuillet introuvable")
 

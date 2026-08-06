@@ -4,6 +4,7 @@ import { useNavigation } from "@react-navigation/native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
+import * as Print from "expo-print";
 import { rechercherChants, bulkCategoriser, bulkSupprimer, modifierChant } from "../api/chants";
 import { demanderSuppression } from "../api/moderation";
 import { getMeta } from "../api/meta";
@@ -82,8 +83,12 @@ export default function EditeurScreen() {
   const pageEffective = Math.min(Math.max(1, pageIndex), totalPages);
   const page = filtres.slice((pageEffective - 1) * pageSize, pageEffective * pageSize);
 
-  async function exporterSelection() {
-    const cible = selection.size > 0 ? chants.filter((c) => selection.has(c.id)) : filtres;
+  function cibleExport(): Chant[] {
+    return selection.size > 0 ? chants.filter((c) => selection.has(c.id)) : filtres;
+  }
+
+  async function exporterJson() {
+    const cible = cibleExport();
     if (cible.length === 0) return;
     setExportEnCours(true);
     try {
@@ -95,6 +100,49 @@ export default function EditeurScreen() {
     } finally {
       setExportEnCours(false);
     }
+  }
+
+  // Recueil PDF imprimable de tous les chants exportés (titre, refrain, tous
+  // les couplets) -- distinct de l'export JSON (sauvegarde de données) : ici
+  // le but est un document lisible/imprimable, un chant par page.
+  async function exporterPdf() {
+    const cible = cibleExport();
+    if (cible.length === 0) return;
+    setExportEnCours(true);
+    try {
+      const echap = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      const pages = cible.map((c) => `
+        <div class="chant">
+          <h1>${echap(c.titre)}</h1>
+          <div class="meta">${echap(c.categorie)}${c.code_reference ? ` · Réf : ${echap(c.code_reference)}` : ""}</div>
+          ${c.refrain ? `<div class="refrain"><strong>Refrain :</strong><br>${echap(c.refrain).replace(/\n/g, "<br>")}</div>` : ""}
+          ${c.couplets.map((cp, i) => `<div class="couplet"><span class="num">${i + 1}.</span>${echap(cp).replace(/\n/g, "<br>")}</div>`).join("")}
+        </div>`).join("");
+      const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><style>
+        body { font-family: 'Times New Roman', Times, serif; padding: 0; margin: 0; }
+        .chant { padding: 24px 32px; page-break-after: always; }
+        .chant:last-child { page-break-after: auto; }
+        h1 { font-size: 20pt; border-bottom: 1.5pt solid #1a3c6e; padding-bottom: 8pt; color: #1a3c6e; }
+        .meta { font-size: 10pt; color: #666; margin-bottom: 14pt; }
+        .refrain { font-weight: bold; background: #f0f4fa; padding: 10pt; border-left: 3pt solid #1a3c6e; margin-bottom: 14pt; }
+        .couplet { margin-bottom: 10pt; } .num { font-weight: bold; color: #1a3c6e; margin-right: 4pt; }
+      </style></head><body>${pages}</body></html>`;
+      await Print.printAsync({ html });
+    } catch {
+      // Annulation de la boîte de dialogue -- pas une erreur à signaler.
+    } finally {
+      setExportEnCours(false);
+    }
+  }
+
+  function exporter() {
+    const cible = cibleExport();
+    if (cible.length === 0) return;
+    Alert.alert("Exporter", `${cible.length} chant(s) -- sous quel format ?`, [
+      { text: "Annuler", style: "cancel" },
+      { text: "📄 PDF (imprimable)", onPress: exporterPdf },
+      { text: "🗂️ JSON (sauvegarde)", onPress: exporterJson },
+    ]);
   }
 
   function toggleSelection(id: number) {
@@ -201,7 +249,7 @@ export default function EditeurScreen() {
 
       <View style={styles.rangeeCompteExport}>
         <Text style={styles.hintPagination}>{filtres.length} chant{filtres.length !== 1 ? "s" : ""}</Text>
-        <Pressable onPress={exporterSelection} disabled={exportEnCours}>
+        <Pressable onPress={exporter} disabled={exportEnCours}>
           <Text style={styles.lienExportTout}>
             {exportEnCours ? "Export..." : selection.size > 0 ? `⬇️ Exporter la sélection (${selection.size})` : "⬇️ Exporter tout"}
           </Text>

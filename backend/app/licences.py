@@ -109,6 +109,55 @@ def consommer_quota_feuillet(chorale_id: int) -> None:
         )
 
 
+def _derniere_licence_pour_chorale(chorale_id: int) -> Optional[dict]:
+    """La licence la plus récente d'une chorale, QUEL QUE SOIT son statut --
+    contrairement à get_licence_active_pour_chorale ci-dessus (qui filtre
+    statut='active' et renvoie donc None aussi bien pour "jamais eu de
+    licence" que pour "licence révoquée", deux cas qu'on doit distinguer
+    ici : voir verifier_licence_appareil)."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM licences WHERE chorale_id = ? ORDER BY created_at DESC LIMIT 1", (chorale_id,),
+        ).fetchone()
+        return dict(row) if row else None
+
+
+def verifier_licence_appareil(chorale_id: int, appareil_id: Optional[str]) -> Optional[str]:
+    """Contrôle CONTINU (pas seulement à l'activation) du droit d'accès d'un
+    appareil mobile déjà connecté -- appelé par AuthMiddleware à CHAQUE
+    requête d'un compte chorale portant un en-tête X-Appareil-Id (voir
+    main.py). Sans ce contrôle, le jeton de SESSION classique (30 jours,
+    voir auth.py::create_session_token) restait valide même après que
+    l'admin révoque la licence, la laisse expirer, ou révoque cet appareil
+    précis : le device count/l'expiration n'étaient alors vérifiés qu'une
+    seule fois, au moment de l'activation.
+
+    Renvoie None si l'accès reste autorisé (pas de licence associée à cette
+    chorale -- comptes antérieurs au système de licences -- ou licence
+    valide et cet appareil toujours actif), sinon un message d'erreur clair
+    à afficher à l'utilisateur.
+
+    appareil_id=None (web, ou vieille version de l'app qui n'envoie pas
+    encore l'en-tête) : seul l'état de la licence est vérifié, jamais la
+    liste des appareils -- le web n'a pas de notion d'appareil."""
+    licence = _derniere_licence_pour_chorale(chorale_id)
+    if not licence:
+        return None  # jamais eu de licence -- système pas utilisé pour cette chorale
+    if licence["statut"] != "active":
+        return "Licence révoquée. Contactez l'administrateur pour la réactiver."
+    if _licence_expiree(licence):
+        return "Licence expirée. Contactez l'administrateur pour la renouveler."
+    if appareil_id:
+        with get_connection() as conn:
+            row = conn.execute(
+                "SELECT revoque_le FROM licence_activations WHERE licence_id = ? AND appareil_id = ?",
+                (licence["id"], appareil_id),
+            ).fetchone()
+        if not row or row["revoque_le"]:
+            return "Cet appareil n'est plus autorisé sur cette licence. Contactez l'administrateur."
+    return None
+
+
 def lister_licences(chorale_id: Optional[int] = None) -> list[dict]:
     with get_connection() as conn:
         if chorale_id is not None:

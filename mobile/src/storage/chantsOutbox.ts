@@ -101,10 +101,15 @@ type EntreeCreation = Extract<EntreeOutbox, { type: "creation" }>;
  * mêmes champs par défaut que le placeholder historique de
  * SongDetailModal.tsx::enregistrer(), centralisés ici pour être réutilisés
  * partout où la bibliothèque doit fusionner "serveur + en attente". */
-function versChant(entree: EntreeCreation): Chant {
+export function versChant(entree: EntreeCreation): Chant {
   return {
     ...entree.payload, id: entree.idLocal, source_file: null, confiance: 1,
     valide_manuellement: false, propose_par_chorale_id: null, propose_par_chorale_nom: null,
+    // Le serveur tranche la visibilité réelle à la synchronisation (voir
+    // routers/chants.py::create_chant) -- "chorale" est l'hypothèse la plus
+    // probable pour un chant créé par une chorale (pas encore publié), pour
+    // ne pas afficher à tort un badge "public" avant de savoir.
+    chorale_proprietaire_id: null, chorale_proprietaire_nom: null, visibilite: "chorale",
   };
 }
 

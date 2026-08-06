@@ -15,7 +15,7 @@ import {
 } from "../api/chants";
 import { demanderSuppression } from "../api/moderation";
 import { ApiError } from "../api/client";
-import { ajouterAOutbox } from "../storage/chantsOutbox";
+import { ajouterAOutbox, versChant } from "../storage/chantsOutbox";
 import { useIdentite } from "../context/IdentiteContext";
 import { categorieLabel, NOMS_LANGUES, etatChant, LABEL_ETAT, COULEUR_ETAT } from "../utils/labels";
 import Bouton from "./Bouton";
@@ -98,6 +98,7 @@ export default function SongDetailModal({
   const [codeReference, setCodeReference] = useState("");
   const [occasions, setOccasions] = useState("");
   const [motsCles, setMotsCles] = useState("");
+  const [referencesBibliques, setReferencesBibliques] = useState("");
   const [tonalite, setTonalite] = useState("");
   const [dureeEstimee, setDureeEstimee] = useState("");
   // Un seul champ combiné, comme le web (edit-dyn-auteur) -- écrit la même
@@ -138,6 +139,9 @@ export default function SongDetailModal({
     try {
       const media = await ajouterMediaChant(chant.id, type, asset.uri, asset.name, asset.mimeType ?? `${type}/*`);
       setMedias((prev) => [...prev, media]);
+      if (media.statut === "a_verifier") {
+        Alert.alert("Envoyé", "Ce fichier sera visible des autres chorales une fois validé par l'administrateur.");
+      }
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer ce fichier");
     } finally {
@@ -223,13 +227,14 @@ export default function SongDetailModal({
       setCodeReference(chant.code_reference ?? "");
       setOccasions((chant.occasions ?? []).join(", "));
       setMotsCles((chant.mots_cles ?? []).join(", "));
+      setReferencesBibliques((chant.references_bibliques ?? []).join(", "));
       setTonalite(chant.tonalite ?? "");
       setDureeEstimee(chant.duree_estimee ?? "");
       setModeEdition(!!ouvrirEnEdition);
     } else if (modeCreation) {
       setTitre(VIDE.titre); setCategorie(VIDE.categorie); setRefrain(VIDE.refrain);
       setCouplets(VIDE.couplets); setRemarques(VIDE.remarques); setAuteurCompositeur("");
-      setCodeReference(""); setOccasions(""); setMotsCles(""); setTonalite(""); setDureeEstimee("");
+      setCodeReference(""); setOccasions(""); setMotsCles(""); setReferencesBibliques(""); setTonalite(""); setDureeEstimee("");
       setModeEdition(true);
     }
     setModeDemandeSuppression(false);
@@ -252,6 +257,7 @@ export default function SongDetailModal({
         code_reference: codeReference.trim() || null,
         occasions: listeVirgule(occasions),
         mots_cles: listeVirgule(motsCles),
+        references_bibliques: listeVirgule(referencesBibliques),
         tonalite: tonalite.trim() || null,
         duree_estimee: dureeEstimee.trim() || null,
       };
@@ -266,6 +272,15 @@ export default function SongDetailModal({
         try {
           const cree = await creerChant(payload);
           onCreated?.(cree);
+          // Un chant ajouté par une chorale reste privé (visible seulement
+          // d'elle) tant qu'un administrateur ne l'a pas publié -- sauf si
+          // l'admin a activé la publication automatique (voir Administration).
+          if (!estSuperAdmin && cree.visibilite === "chorale") {
+            Alert.alert(
+              "Chant enregistré",
+              "Il n'est visible que par votre chorale pour l'instant, en attente de publication par l'administrateur.",
+            );
+          }
         } catch (erreurReseau) {
           // Pas d'ApiError = échec réseau (pas d'erreur serveur) -- on met en
           // file d'attente locale, la synchronisation (voir storage/sync.ts)
@@ -276,11 +291,7 @@ export default function SongDetailModal({
           // dans l'outbox rendrait ce chant introuvable par getChant/
           // modifierChant/supprimerChant tant qu'il reste en attente.
           const entree = await ajouterAOutbox(payload);
-          const localPlaceholder: Chant = {
-            ...payload, id: entree.idLocal, source_file: null, confiance: 1,
-            valide_manuellement: false, propose_par_chorale_id: null, propose_par_chorale_nom: null,
-          };
-          onCreated?.(localPlaceholder);
+          onCreated?.(versChant(entree));
           Alert.alert("Enregistré hors-ligne", "Ce chant sera envoyé à la bibliothèque partagée dès que la connexion sera rétablie.");
         }
       } else if (chant) {
@@ -416,6 +427,14 @@ export default function SongDetailModal({
                 <TextInput style={styles.champ} value={occasions} onChangeText={setOccasions} placeholder="Ex: Messe, Mariage" />
                 <Text style={styles.label}>Mots-clés (séparés par une virgule)</Text>
                 <TextInput style={styles.champ} value={motsCles} onChangeText={setMotsCles} />
+                <Text style={styles.label}>Références bibliques (séparées par une virgule)</Text>
+                <TextInput
+                  style={styles.champ} value={referencesBibliques} onChangeText={setReferencesBibliques}
+                  placeholder="Ex: Mt 17, 1-9"
+                />
+                <Text style={styles.aideChamp}>
+                  Sert à faire ressortir ce chant quand ses paroles collent aux lectures d'un jour donné (voir 📖 Lectures du jour).
+                </Text>
                 <Text style={styles.label}>Auteur / Compositeur</Text>
                 <TextInput style={styles.champ} value={auteurCompositeur} onChangeText={setAuteurCompositeur} />
                 <Text style={styles.label}>Refrain</Text>
@@ -456,14 +475,20 @@ export default function SongDetailModal({
                   {chant.duree_estimee ? ` · ${chant.duree_estimee}` : ""}
                   {chant.actif === false ? " · Archivé" : ""}
                 </Text>
+                {chant.visibilite === "chorale" && (
+                  <Text style={styles.notePriveChant}>
+                    🔒 {chant.chorale_proprietaire_nom ? `Ajouté par ${chant.chorale_proprietaire_nom}` : "Chant privé"} — pas encore publié pour toute la communauté.
+                  </Text>
+                )}
                 {(chant.auteur || chant.compositeur) && (
                   <Text style={styles.auteurTexte}>Auteur : {chant.auteur || chant.compositeur}</Text>
                 )}
-                {(!!chant.code_reference || (chant.occasions?.length ?? 0) > 0 || (chant.mots_cles?.length ?? 0) > 0) && (
+                {(!!chant.code_reference || (chant.occasions?.length ?? 0) > 0 || (chant.mots_cles?.length ?? 0) > 0 || (chant.references_bibliques?.length ?? 0) > 0) && (
                   <View style={styles.blocMeta}>
                     {!!chant.code_reference && <Text style={styles.ligneMeta}>Référence : {chant.code_reference}</Text>}
                     {(chant.occasions?.length ?? 0) > 0 && <Text style={styles.ligneMeta}>Occasions : {chant.occasions.join(", ")}</Text>}
                     {(chant.mots_cles?.length ?? 0) > 0 && <Text style={styles.ligneMeta}>Mots-clés : {chant.mots_cles.join(", ")}</Text>}
+                    {(chant.references_bibliques?.length ?? 0) > 0 && <Text style={styles.ligneMeta}>📖 Références bibliques : {chant.references_bibliques.join(", ")}</Text>}
                   </View>
                 )}
                 {chant.refrain ? (
@@ -564,7 +589,11 @@ export default function SongDetailModal({
                         <Text style={styles.iconeMedia}>{m.type === "audio" ? "🎵" : "🎥"}</Text>
                         <View style={{ flex: 1 }}>
                           <Text style={styles.nomMedia} numberOfLines={1}>{m.filename}</Text>
-                          {!!m.chorale_nom && <Text style={styles.sousNomMedia}>{m.chorale_nom}</Text>}
+                          {!!m.chorale_nom && (
+                            <Text style={styles.sousNomMedia}>
+                              {m.chorale_nom}{m.statut === "a_verifier" ? " · ⏳ en attente de validation" : ""}
+                            </Text>
+                          )}
                         </View>
                         <Text style={styles.lienMedia}>▶ Lire</Text>
                       </Pressable>
@@ -636,6 +665,7 @@ const styles = StyleSheet.create({
   titrePrincipal: { fontSize: 22, fontWeight: "700", color: "#1e293b", marginBottom: 4 },
   sousInfo: { fontSize: 13, color: "#64748b", marginBottom: 16 },
   auteurTexte: { fontSize: 13, color: "#64748b", fontStyle: "italic", marginTop: -12, marginBottom: 16 },
+  notePriveChant: { fontSize: 12, color: "#7c3aed", fontWeight: "600", marginBottom: 10 },
   blocMeta: { backgroundColor: "#f8fafc", borderRadius: 10, padding: 10, marginBottom: 16, gap: 3 },
   ligneMeta: { fontSize: 12, color: "#475569" },
   blocTechnique: { backgroundColor: "#fef2f2", borderRadius: 10, padding: 12, marginTop: 16, borderWidth: 1, borderColor: "#fecaca" },
@@ -644,6 +674,7 @@ const styles = StyleSheet.create({
   libelleTechnique: { fontSize: 12, color: "#7f1d1d" },
   valeurTechnique: { fontSize: 12, fontWeight: "700", color: "#1e293b" },
   label: { fontSize: 12, fontWeight: "600", color: "#94a3b8", marginTop: 14, marginBottom: 4, textTransform: "uppercase" },
+  aideChamp: { fontSize: 11, color: "#94a3b8", marginTop: 2 },
   texte: { fontSize: 15, color: "#334155", lineHeight: 22 },
   champ: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, fontSize: 15, backgroundColor: "#fafcff" },
   champMulti: { minHeight: 80, textAlignVertical: "top" },

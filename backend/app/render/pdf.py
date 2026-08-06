@@ -40,6 +40,36 @@ def _dessiner_bordure(c) -> None:
     c.restoreState()
 
 
+MARQUEUR_PREFIXE = "DEPLIANTAPP-CHANTS-V1:"
+
+
+def _dessiner_marqueur_reimport(c, feuillet: schemas.Feuillet) -> None:
+    """Enregistre, dans le dictionnaire Info du PDF (mot-clé "Keywords" --
+    métadonnée de document, jamais dessinée ni présente dans un flux de
+    contenu de page), la liste ordonnée des chant_id de ce feuillet.
+
+    Objectif : reconnaître un PDF DepliantApp réimporté (voir ingestion/
+    parse_pdf.py::detecter_marqueur_reimport) SANS dépendre du feuillet
+    d'origine encore présent en base -- seuls les chant_id comptent, et ils
+    restent valides même si le feuillet qui les a produits a depuis été
+    supprimé. Ne remplace jamais l'analyse structurelle normale du moteur
+    d'import (segment_notre_modele), seulement un rapprochement exact en
+    complément (voir le commentaire dans routers/import_.py).
+
+    Volontairement une métadonnée de document plutôt qu'un texte invisible
+    dessiné sur la page : un premier essai avec du texte en mode de rendu
+    invisible (mais présent dans le flux de contenu) se faisait capter comme
+    un faux paragraphe par segment_notre_modele.py, qui extrait TOUT le texte
+    de chaque zone sans distinguer son mode de rendu -- une métadonnée de
+    document ne peut structurellement pas interférer avec l'extraction du
+    contenu des pages, quel que soit l'endroit où elle est "positionnée"
+    (elle n'a pas de position)."""
+    ids = [str(m.chant_id) for m in feuillet.moments if m.type == "chant" and m.chant_id is not None]
+    if not ids:
+        return
+    c.setKeywords(f"{MARQUEUR_PREFIXE}{','.join(ids)}")
+
+
 def _remplir_zone(c, zone, flowables: list) -> None:
     if not flowables:
         return
@@ -92,6 +122,7 @@ def _dessiner_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, grille
         # ---- Mode 1 page paysage unique : C1/C2 (gauche) et en-tête + D1/D2 (droite) ----
         _dessiner_bordure(c)
         dessiner_entete(c, config, images, feuillet)
+        _dessiner_marqueur_reimport(c, feuillet)
         for nom in ("C1", "C2", "D1", "D2"):
             _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
         c.showPage()
@@ -100,6 +131,7 @@ def _dessiner_pdf(feuillet: schemas.Feuillet, config: dict, images: dict, grille
         _dessiner_bordure(c)
         dessiner_entete(c, config, images, feuillet)
         dessiner_banniere(c, config, images)
+        _dessiner_marqueur_reimport(c, feuillet)
         for nom in ("D1", "D2", "G1", "G2"):
             _remplir_zone(c, grille.toutes[nom], assignation.get(nom, []))
         c.showPage()

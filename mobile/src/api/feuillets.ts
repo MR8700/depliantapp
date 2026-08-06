@@ -6,6 +6,7 @@ import {
   lireFeuilletsLocaux, getFeuilletLocal, fusionnerFeuilletsDistants,
   enregistrerCreationLocale, enregistrerModificationLocale, estFeuilletLocal,
 } from "../storage/feuilletsLocal";
+import { ajouterPublicationEnAttente } from "../storage/moderationOutbox";
 
 // Variantes réseau "brutes", sans repli hors-ligne -- réservées à
 // storage/syncFeuillets.ts (un échec ici doit laisser l'entrée en attente
@@ -85,6 +86,42 @@ export async function mettreAJourFeuillet(id: number, payload: FeuilletCreate): 
 
 export function supprimerFeuillet(id: number): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/feuillets/${id}`, { method: "DELETE" });
+}
+
+// Variante réseau "brute", réservée à storage/syncModeration.ts (voir
+// creerFeuilletDistant plus haut pour la même convention).
+export function demanderPublicationFeuilletDistant(id: number): Promise<Feuillet> {
+  return apiFetch<Feuillet>(`/feuillets/${id}/demander-publication`, { method: "POST" });
+}
+
+// Demande de publication : geste de la chorale propriétaire pour qu'un
+// dépliant privé rejoigne, après validation admin, la bibliothèque publique
+// (voir demarrage de ce fichier + backend routers/feuillets.py). Un
+// dépliant pas encore synchronisé (id local négatif) n'a pas encore
+// d'existence côté serveur -- rien à publier tant qu'il n'est pas envoyé.
+export async function demanderPublicationFeuillet(id: number): Promise<Feuillet> {
+  if (estFeuilletLocal(id)) {
+    throw new Error("Ce dépliant doit d'abord être synchronisé avant de pouvoir demander sa publication.");
+  }
+  try {
+    const maj = await demanderPublicationFeuilletDistant(id);
+    await fusionnerFeuilletsDistants([maj]);
+    return maj;
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    // Pas de connexion : mémorisé pour un envoi différé (voir
+    // storage/syncModeration.ts::synchroniserDemandesPublication), et
+    // reflété optimistiquement dans le cache local pour que l'écran affiche
+    // tout de suite "en attente" plutôt que l'ancien état "privé".
+    await ajouterPublicationEnAttente(id);
+    const local = await getFeuilletLocal(id);
+    if (local) {
+      const optimiste: Feuillet = { ...local, visibilite: "demande_publication" };
+      await fusionnerFeuilletsDistants([optimiste]);
+      return optimiste;
+    }
+    throw erreur;
+  }
 }
 
 export interface DepassementPdf {

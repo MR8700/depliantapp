@@ -16,7 +16,7 @@ export interface ResultatSync {
 // Normalisation utilisée pour la détection de doublons : accents retirés,
 // casse et ponctuation ignorées -- "Ave Maria" / "Avé-Maria" / "AVE  MARIA"
 // se résolvent au même identifiant.
-function normaliserTitre(titre: string): string {
+export function normaliserTitre(titre: string): string {
   return titre
     .normalize("NFD")
     .replace(REGEX_DIACRITIQUES, "")

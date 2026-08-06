@@ -5,7 +5,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sharing from "expo-sharing";
-import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, DepassementPdf } from "../api/feuillets";
+import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, demanderPublicationFeuillet, DepassementPdf } from "../api/feuillets";
 import { demanderSuppression } from "../api/moderation";
 import { ApiError } from "../api/client";
 import { useIdentite } from "../context/IdentiteContext";
@@ -86,6 +86,7 @@ export default function DepliantsScreen() {
   const [nouvelleDate, setNouvelleDate] = useState("");
   const [pickerRenommerVisible, setPickerRenommerVisible] = useState(false);
   const [infosModal, setInfosModal] = useState<Feuillet | null>(null);
+  const [publicationEnCours, setPublicationEnCours] = useState<number | null>(null);
 
   useEffect(() => {
     AsyncStorage.getItem(CLE_FAVORIS).then((v) => setFavoris(v ? JSON.parse(v) : []));
@@ -277,6 +278,23 @@ export default function DepliantsScreen() {
     setInfosModal(feuillet);
   }
 
+  async function onDemanderPublication(feuillet: Feuillet) {
+    setMenuOuvert(null);
+    setPublicationEnCours(feuillet.id);
+    try {
+      const maj = await demanderPublicationFeuillet(feuillet.id);
+      setFeuillets((prev) => prev.map((f) => (f.id === maj.id ? maj : f)));
+      Alert.alert(
+        "Publication demandée",
+        "Un administrateur doit encore valider ce dépliant avant qu'il ne devienne visible de toute la communauté.",
+      );
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "Impossible de demander la publication");
+    } finally {
+      setPublicationEnCours(null);
+    }
+  }
+
   async function envoyerDemande() {
     if (!raisonModal || !raison.trim()) return;
     try {
@@ -386,9 +404,15 @@ export default function DepliantsScreen() {
           const nbChants = item.moments.filter((m) => m.type === "chant").length;
           const format = item.one_page_mode ? "1 page paysage" : "2 pages paysage";
           const estFavori = favoris.includes(item.id);
+          const statutVisibilite = estAMoi
+            ? item.visibilite === "publique" ? "🌐 Public" : item.visibilite === "demande_publication" ? "⏳ En attente de validation" : "🔒 Privé"
+            : "👥 Communauté";
+          const styleStatutVisibilite = estAMoi
+            ? item.visibilite === "publique" ? styles.badgePublic : item.visibilite === "demande_publication" ? styles.badgeAttente : styles.badgePrive
+            : styles.badgePublic;
           return (
             <View style={styles.carte}>
-              <Text style={[styles.badgeType, estAMoi ? styles.badgePrive : styles.badgePublic]}>{estAMoi ? "Privé" : "Communauté"}</Text>
+              <Text style={[styles.badgeType, styleStatutVisibilite]}>{statutVisibilite}</Text>
               <Text style={styles.date}>{formaterDateAffichage(item.date)}{item.lieu ? ` — ${item.lieu}` : ""}</Text>
               {!estAMoi && item.chorale_nom && <Text style={styles.attribution}>Composé par {item.chorale_nom}</Text>}
               <View style={styles.metaLigne}>
@@ -466,6 +490,17 @@ export default function DepliantsScreen() {
                   <Pressable style={styles.itemFeuille} onPress={() => voirInfos(menuOuvert)}>
                     <Text style={styles.texteItemFeuille}>ℹ️ Voir les informations</Text>
                   </Pressable>
+                  {estAMoi && menuOuvert.id > 0 && menuOuvert.visibilite === "chorale" && (
+                    <Pressable
+                      style={styles.itemFeuille}
+                      disabled={publicationEnCours === menuOuvert.id}
+                      onPress={() => onDemanderPublication(menuOuvert)}
+                    >
+                      <Text style={styles.texteItemFeuille}>
+                        {publicationEnCours === menuOuvert.id ? "⏳ Envoi de la demande..." : "🌐 Demander la publication"}
+                      </Text>
+                    </Pressable>
+                  )}
                   <Pressable style={styles.itemFeuille} onPress={() => telechargerPdf(menuOuvert)}>
                     <Text style={styles.texteItemFeuille}>📥 Télécharger le PDF</Text>
                   </Pressable>
@@ -536,7 +571,9 @@ export default function DepliantsScreen() {
                 ["Créé le", dateCreation],
                 ["Format", format],
                 ["Nombre de chants", `${nbChants} chant(s)`],
-                ["Visibilité", estAMoi ? "Privé" : "Public (Communauté)"],
+                ["Visibilité", estAMoi
+                  ? (f.visibilite === "publique" ? "Public (validé par l'admin)" : f.visibilite === "demande_publication" ? "En attente de validation admin" : "Privé (visible de votre chorale seulement)")
+                  : "Public (Communauté)"],
               ];
               return (
                 <View>
@@ -583,6 +620,7 @@ const styles = StyleSheet.create({
   badgeType: { alignSelf: "flex-start", fontSize: 10, fontWeight: "700", borderRadius: 999, paddingHorizontal: 8, paddingVertical: 2, marginBottom: 6 },
   badgePrive: { backgroundColor: "#dbeafe", color: "#2563eb" },
   badgePublic: { backgroundColor: "#dcfce7", color: "#16a34a" },
+  badgeAttente: { backgroundColor: "#fef3c7", color: "#b45309" },
   date: { fontSize: 15, fontWeight: "700", color: "#1e293b" },
   attribution: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
   metaLigne: { flexDirection: "row", gap: 14, marginTop: 6 },

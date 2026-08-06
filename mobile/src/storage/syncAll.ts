@@ -3,7 +3,7 @@ import { rafraichirParametresCache } from "./parametresCache";
 import { synchroniserParametres } from "./syncParametres";
 import { synchroniserBibliotheque } from "./sync";
 import { synchroniserFeuillets } from "./syncFeuillets";
-import { synchroniserDemandesSuppression } from "./syncModeration";
+import { synchroniserDemandesSuppression, synchroniserDemandesPublication } from "./syncModeration";
 
 // Point d'entrée unique de la synchronisation complète (paramètres +
 // bibliothèque de chants, y compris créations/modifications/suppressions en
@@ -29,6 +29,7 @@ export async function synchroniserTout(): Promise<void> {
     }
   }
   await synchroniserFeuillets().catch(() => {});
+  await synchroniserDemandesPublication().catch(() => {});
   await synchroniserDemandesSuppression().catch(() => {});
   // Contenu "À propos" (parametres/global) -- statique mais doit se
   // rafraîchir tout seul dès que le réseau revient, pas seulement quand

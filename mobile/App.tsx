@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
+import { Alert } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import { definirGestionnaireLicenceInvalide } from "./src/api/client";
 import ActivationScreen from "./src/screens/ActivationScreen";
 import LoginScreen from "./src/screens/LoginScreen";
 import ChangerMotDePasseObligatoireScreen from "./src/screens/ChangerMotDePasseObligatoireScreen";
@@ -81,6 +83,20 @@ export default function App() {
     rafraichirEtat();
     const minuteur = setTimeout(() => setSplashMinimumEcoule(true), DUREE_MIN_SPLASH_MS);
     return () => clearTimeout(minuteur);
+  }, [rafraichirEtat]);
+
+  // Déclencheur d'arrêt de service : dès qu'une requête révèle que la
+  // licence de cet appareil n'est plus valide (révoquée, expirée, ou cet
+  // appareil précis retiré), api/client.ts a déjà effacé session ET
+  // activation -- il ne reste qu'à le refléter dans l'état de navigation
+  // (retour à l'écran d'activation) avec un message clair sur la raison,
+  // au lieu de laisser l'appli planter sur des appels qui échoueront tous
+  // en boucle avec la même erreur.
+  useEffect(() => {
+    definirGestionnaireLicenceInvalide((message) => {
+      Alert.alert("Licence non valide", message);
+      rafraichirEtat();
+    });
   }, [rafraichirEtat]);
 
   if (activation === null || connecte === null || !splashMinimumEcoule) {

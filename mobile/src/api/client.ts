@@ -1,5 +1,5 @@
 import { API_BASE_URL } from "../config";
-import { getJetonSession } from "../storage/secureStore";
+import { getJetonSession, getAppareilId, effacerActivation, effacerJetonSession } from "../storage/secureStore";
 
 export class ApiError extends Error {
   /** Détail brut renvoyé par FastAPI -- objet structuré pour certaines
@@ -19,7 +19,30 @@ interface Options {
 async function jeton(authentifie: boolean | undefined): Promise<Record<string, string>> {
   if (authentifie === false) return {};
   const j = await getJetonSession();
-  return j ? { Authorization: `Bearer ${j}` } : {};
+  if (!j) return {};
+  // X-Appareil-Id : permet au backend de vérifier en CONTINU (à chaque
+  // requête, pas seulement à l'activation) que CET appareil précis est
+  // toujours autorisé sur la licence de la chorale -- voir main.py::
+  // AuthMiddleware côté serveur. Absent pour un compte super-admin (pas de
+  // notion d'appareil/licence) ou avant toute activation.
+  const appareilId = await getAppareilId();
+  return {
+    Authorization: `Bearer ${j}`,
+    ...(appareilId ? { "X-Appareil-Id": appareilId } : {}),
+  };
+}
+
+// Enregistré par App.tsx au démarrage : appelé dès qu'une réponse serveur
+// signale que la licence de CET appareil n'est plus valide (révoquée,
+// expirée, ou cet appareil précis retiré par l'admin) -- voir
+// main.py::_refuser_licence côté backend, code "licence_invalide" distinct
+// d'un 401 générique pour ne pas laisser croire qu'un simple nouveau login
+// suffirait. Efface la session ET l'activation locale (pas seulement la
+// session) puisque le problème est la licence elle-même, pas les
+// identifiants -- resoumettre un login échouerait à nouveau immédiatement.
+let gestionnaireLicenceInvalide: ((message: string) => void) | null = null;
+export function definirGestionnaireLicenceInvalide(fn: (message: string) => void): void {
+  gestionnaireLicenceInvalide = fn;
 }
 
 function messageErreur(donnees: any, status: number): string {
@@ -63,6 +86,10 @@ export async function apiFetch<T>(path: string, options: Options = {}): Promise<
   const donnees = texte ? JSON.parse(texte) : null;
 
   if (!reponse.ok) {
+    if (donnees?.code === "licence_invalide") {
+      await Promise.all([effacerActivation(), effacerJetonSession()]);
+      gestionnaireLicenceInvalide?.(messageErreur(donnees, reponse.status));
+    }
     throw new ApiError(reponse.status, messageErreur(donnees, reponse.status), donnees?.detail);
   }
   return donnees as T;
@@ -81,6 +108,10 @@ export async function apiFetchForm<T>(
   const texte = await reponse.text();
   const donnees = texte ? JSON.parse(texte) : null;
   if (!reponse.ok) {
+    if (donnees?.code === "licence_invalide") {
+      await Promise.all([effacerActivation(), effacerJetonSession()]);
+      gestionnaireLicenceInvalide?.(messageErreur(donnees, reponse.status));
+    }
     throw new ApiError(reponse.status, messageErreur(donnees, reponse.status), donnees?.detail);
   }
   return donnees as T;

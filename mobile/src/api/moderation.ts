@@ -88,3 +88,44 @@ export function validerCategorie(id: number) {
 export function rejeterCategorie(id: number, motif: string) {
   return apiFetch<{ ok: boolean }>(`/moderation/categories/${id}/rejeter`, { method: "POST", body: { motif } });
 }
+
+// --- Chants privés en attente de publication --------------------------------
+// Un chant créé par une chorale reste privé (voir api/chants.ts::Chant.visibilite)
+// tant qu'un administrateur ne l'a pas publié ici.
+
+export function listerChantsPrives(): Promise<import("../types").Chant[]> {
+  return apiFetch<import("../types").Chant[]>("/moderation/chants-prives");
+}
+
+export function publierChantPrive(id: number): Promise<import("../types").Chant> {
+  return apiFetch<import("../types").Chant>(`/moderation/chants-prives/${id}/publier`, { method: "POST" });
+}
+
+// --- Dépliants en attente de publication ------------------------------------
+// Même logique que les chants privés ci-dessus, une fois que la chorale
+// propriétaire en a demandé la publication (voir api/feuillets.ts).
+
+export function listerFeuilletsAValider(): Promise<import("../types").Feuillet[]> {
+  return apiFetch<import("../types").Feuillet[]>("/moderation/feuillets-a-valider");
+}
+
+export function validerPublicationFeuillet(id: number): Promise<import("../types").Feuillet> {
+  return apiFetch<import("../types").Feuillet>(`/moderation/feuillets-a-valider/${id}/valider`, { method: "POST" });
+}
+
+// --- Médias audio/vidéo en attente de modération ----------------------------
+// Un média ajouté par une chorale (voir api/chants.ts::ajouterMediaChant)
+// reste invisible des autres chorales jusqu'à validation ici -- SANS jamais
+// affecter la visibilité du chant qui le porte.
+
+export function listerMediasEnAttente(): Promise<import("../types").ChantMedia[]> {
+  return apiFetch<import("../types").ChantMedia[]>("/moderation/medias-a-valider");
+}
+
+export function validerMedia(id: number): Promise<import("../types").ChantMedia> {
+  return apiFetch<import("../types").ChantMedia>(`/moderation/medias-a-valider/${id}/valider`, { method: "POST" });
+}
+
+export function rejeterMedia(id: number): Promise<import("../types").ChantMedia> {
+  return apiFetch<import("../types").ChantMedia>(`/moderation/medias-a-valider/${id}/rejeter`, { method: "POST" });
+}

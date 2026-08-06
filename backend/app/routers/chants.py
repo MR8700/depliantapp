@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, UploadFile
 from fastapi.responses import Response
 
-from .. import auth, crud, schemas
+from .. import auth, config, crud, schemas
 from ..deps import identite_courante, require_chorale, require_superadmin
 from ..ml import classifier, duplicates
 
@@ -42,13 +42,24 @@ def search_chants(
 
 
 @router.post("", response_model=schemas.Chant)
-def create_chant(chant: schemas.ChantCreate):
+def create_chant(chant: schemas.ChantCreate, identite: auth.Identite = Depends(identite_courante)):
+    """Un chant créé par le super-admin est toujours publique. Un chant créé
+    par une chorale reste privé (visible seulement d'elle) tant qu'un
+    administrateur ne l'a pas publié -- sauf si le réglage global
+    chants_publication_auto est activé (voir Administration). Objectif :
+    éviter qu'un contenu inapproprié ou erroné ajouté par une chorale ne
+    devienne immédiatement visible de toute la communauté sans contrôle."""
+    if identite.type == "chorale":
+        publication_auto = bool(config.get_config(0).get("chants_publication_auto"))
+        visibilite = "publique" if publication_auto else "chorale"
+        return crud.create_chant(chant, chorale_proprietaire_id=identite.compte_id, visibilite=visibilite)
     return crud.create_chant(chant)
 
 
 @router.post("/bulk_categorize")
-def bulk_categorize(payload: schemas.BulkCategorize):
-    updated = crud.bulk_update_categorie(payload.ids, payload.categorie)
+def bulk_categorize(payload: schemas.BulkCategorize, identite: auth.Identite = Depends(identite_courante)):
+    chorale_id_appelant = identite.compte_id if identite.type == "chorale" else None
+    updated = crud.bulk_update_categorie(payload.ids, payload.categorie, chorale_id_appelant=chorale_id_appelant)
     return {"updated": updated}
 
 
@@ -66,8 +77,8 @@ def delete_all_chants(confirmation: str, _identite: auth.Identite = Depends(requ
 
 
 @router.get("/slug/{slug}", response_model=schemas.Chant)
-def get_chant_by_slug(slug: str):
-    chant = crud.get_chant_by_slug(slug)
+def get_chant_by_slug(slug: str, identite: auth.Identite = Depends(identite_courante)):
+    chant = crud.get_chant_by_slug(slug, chorale_id_appelant=_chorale_id_pour_masquage(identite))
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return chant
@@ -82,7 +93,27 @@ def get_chant(chant_id: int, identite: auth.Identite = Depends(identite_courante
 
 
 @router.patch("/{chant_id}", response_model=schemas.Chant)
-def update_chant(chant_id: int, patch: schemas.ChantUpdate):
+def update_chant(chant_id: int, patch: schemas.ChantUpdate, identite: auth.Identite = Depends(identite_courante)):
+    # D'abord vérifier que l'appelant peut seulement VOIR ce chant (masquage +
+    # visibilité restreinte) -- 404 plutôt que 403 s'il n'y a même pas accès,
+    # pour ne pas confirmer l'existence d'un chant privé d'une autre chorale.
+    chant = crud.get_chant(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    if identite.type == "chorale":
+        # "favori" est un geste normal sur n'importe quel chant VISIBLE
+        # (public ou privé à soi) -- tout le reste (titre, paroles,
+        # catégorie, actif...) exige d'être propriétaire du chant, sinon
+        # n'importe quelle chorale pourrait modifier le contenu de la
+        # bibliothèque partagée créé par une autre.
+        champs_envoyes = set(patch.model_dump(exclude_unset=True).keys())
+        champs_sensibles = champs_envoyes - {"favori"}
+        est_proprietaire = chant.chorale_proprietaire_id == identite.compte_id
+        if champs_sensibles and not est_proprietaire:
+            raise HTTPException(
+                status_code=403,
+                detail="Vous ne pouvez modifier que les chants ajoutés par votre chorale (le favori reste libre pour tous).",
+            )
     chant = crud.update_chant(chant_id, patch)
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
@@ -132,8 +163,8 @@ def retirer_validation(chant_id: int, _identite: auth.Identite = Depends(require
 
 
 @router.get("/{chant_id}/suggestion", response_model=Optional[schemas.Suggestion])
-def suggestion_categorie(chant_id: int):
-    chant = crud.get_chant(chant_id)
+def suggestion_categorie(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
+    chant = crud.get_chant(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     ranked = classifier.suggest_categorie(chant.titre, chant.refrain, chant.couplets)
@@ -144,8 +175,8 @@ def suggestion_categorie(chant_id: int):
 
 
 @router.get("/{chant_id}/doublons", response_model=list[schemas.Doublon])
-def doublons_possibles(chant_id: int):
-    chant = crud.get_chant(chant_id)
+def doublons_possibles(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
+    chant = crud.get_chant(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return duplicates.find_duplicates(chant.titre, exclude_id=chant_id)
@@ -216,10 +247,10 @@ def telecharger_partition(chant_id: int, _identite: auth.Identite = Depends(iden
 # sur les feuillets PDF -- juste affichés/écoutables dans le détail du chant.
 
 @router.get("/{chant_id}/medias", response_model=list[schemas.ChantMedia])
-def lister_medias_chant(chant_id: int, _identite: auth.Identite = Depends(identite_courante)):
+def lister_medias_chant(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
     if not crud.get_chant(chant_id):
         raise HTTPException(status_code=404, detail="Chant introuvable")
-    return crud.lister_medias_chant(chant_id)
+    return crud.lister_medias_chant(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
 
 
 @router.post("/{chant_id}/medias", response_model=schemas.ChantMedia)
@@ -245,11 +276,17 @@ async def ajouter_media_chant(
 
 
 @router.get("/{chant_id}/medias/{media_id}/fichier")
-def telecharger_media_chant(chant_id: int, media_id: int, _identite: auth.Identite = Depends(identite_courante)):
+def telecharger_media_chant(chant_id: int, media_id: int, identite: auth.Identite = Depends(identite_courante)):
     resultat = crud.get_media_chant_bytes(media_id)
     if not resultat:
         raise HTTPException(status_code=404, detail="Média introuvable")
-    contenu, content_type, _chorale_id = resultat
+    contenu, content_type, chorale_proprietaire_id, statut = resultat
+    # Même règle que le listing (lister_medias_chant) : un média encore en
+    # attente de modération n'est téléchargeable que par son auteur ou le
+    # super-admin -- sinon un id deviné/partagé contournerait la file
+    # d'attente de modération avant même toute décision humaine.
+    if statut != "validee" and identite.type == "chorale" and chorale_proprietaire_id != identite.compte_id:
+        raise HTTPException(status_code=404, detail="Média introuvable")
     return Response(content=contenu, media_type=content_type)
 
 

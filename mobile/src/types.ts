@@ -9,6 +9,9 @@ export interface Chant {
   occasions: string[];
   slug: string | null;
   mots_cles: string[];
+  /** Références bibliques saisies manuellement (ex. "Mt 17, 1-9") -- sert au
+   * rapprochement EXACT avec les lectures du jour AELF, voir aelf/matching.ts. */
+  references_bibliques: string[];
   actif: boolean;
   favori: boolean;
   chant_principal: boolean;
@@ -24,9 +27,17 @@ export interface Chant {
   valide_manuellement: boolean;
   propose_par_chorale_id: number | null;
   propose_par_chorale_nom: string | null;
+  // Jamais réglable côté client -- décidé par le serveur selon qui crée le
+  // chant et le réglage admin chants_publication_auto (voir
+  // routers/chants.py::create_chant). "chorale" = visible seulement de
+  // chorale_proprietaire_id (et du super-admin) tant qu'un administrateur ne
+  // l'a pas publié.
+  chorale_proprietaire_id: number | null;
+  chorale_proprietaire_nom: string | null;
+  visibilite: "publique" | "chorale";
 }
 
-export type ChantCreate = Omit<Chant, "id" | "source_file" | "confiance" | "valide_manuellement" | "propose_par_chorale_id" | "propose_par_chorale_nom">;
+export type ChantCreate = Omit<Chant, "id" | "source_file" | "confiance" | "valide_manuellement" | "propose_par_chorale_id" | "propose_par_chorale_nom" | "chorale_proprietaire_id" | "chorale_proprietaire_nom" | "visibilite">;
 
 export type ChantUpdate = Partial<ChantCreate>;
 
@@ -41,6 +52,8 @@ export interface ChantMedia {
   content_type: string | null;
   chorale_id: number | null;
   chorale_nom: string | null;
+  chant_titre: string | null;
+  statut: "a_verifier" | "validee" | "revoquee";
   created_at: string;
 }
 
@@ -103,5 +116,6 @@ export interface Feuillet extends FeuilletBase {
   chorale_id: number | null;
   clone_de_id: number | null;
   chorale_nom: string | null;
+  visibilite: "chorale" | "demande_publication" | "publique";
   created_at: string | null;
 }

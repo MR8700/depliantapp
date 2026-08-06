@@ -10,8 +10,12 @@ import {
   listerDemandes, validerDemande, annulerDemande, DemandeSuppression,
   listerMasques, restaurerMasque, MasqueChorale,
   listerCategoriesModeration, validerCategorie, rejeterCategorie, CategoriePersonnalisee,
+  listerChantsPrives, publierChantPrive,
+  listerFeuilletsAValider, validerPublicationFeuillet,
+  listerMediasEnAttente, validerMedia, rejeterMedia,
 } from "../api/moderation";
 import { getParametresGlobaux, sauvegarderParametres } from "../api/parametres";
+import { Chant, Feuillet, ChantMedia } from "../types";
 import {
   listerLicences, creerLicence, configurerLicence, listerActivationsLicence, revoquerLicence, reactiverLicence,
   regenererCode, revoquerActivationAppareil, Licence, ActivationAppareil,
@@ -33,6 +37,23 @@ function dateVersIso(d: Date): string {
 
 type OngletAdmin = "chorales" | "apropos";
 
+// Petit lien d'action avec indicateur de chargement intégré -- remplace le
+// texte par un spinner pendant l'appel réseau et désactive le bouton, pour
+// qu'un double-tap n'envoie jamais deux fois la même action (ex : publier un
+// même chant deux fois, régénérer un code licence en double...).
+function LienAction({
+  cle, actionsEnCours, texte, danger, onPress,
+}: { cle: string; actionsEnCours: Set<string>; texte: string; danger?: boolean; onPress: () => void }) {
+  const chargement = actionsEnCours.has(cle);
+  return (
+    <Pressable onPress={onPress} disabled={chargement} style={{ opacity: chargement ? 0.5 : 1 }}>
+      {chargement
+        ? <ActivityIndicator size="small" color={danger ? "#dc2626" : "#2563eb"} />
+        : <Text style={[styles.lien, danger && { color: "#dc2626" }]}>{texte}</Text>}
+    </Pressable>
+  );
+}
+
 export default function AdministrationScreen() {
   const [onglet, setOnglet] = useState<OngletAdmin>("chorales");
   const [gotConfig, setGotConfig] = useState<Record<string, any>>({});
@@ -41,7 +62,11 @@ export default function AdministrationScreen() {
   const [demandes, setDemandes] = useState<DemandeSuppression[]>([]);
   const [masques, setMasques] = useState<MasqueChorale[]>([]);
   const [categoriesEnAttente, setCategoriesEnAttente] = useState<CategoriePersonnalisee[]>([]);
+  const [chantsPrives, setChantsPrives] = useState<Chant[]>([]);
+  const [feuilletsAValider, setFeuilletsAValider] = useState<Feuillet[]>([]);
+  const [mediasAValider, setMediasAValider] = useState<ChantMedia[]>([]);
   const [licences, setLicences] = useState<Licence[]>([]);
+  const [actionsEnCours, setActionsEnCours] = useState<Set<string>>(new Set());
   const [chargement, setChargement] = useState(true);
   const [rafraichissement, setRafraichissement] = useState(false);
   const [nomChorale, setNomChorale] = useState("");
@@ -58,15 +83,75 @@ export default function AdministrationScreen() {
   const [configEnCours, setConfigEnCours] = useState(false);
 
   const charger = useCallback(async () => {
-    const [c, d, m, cat, lic] = await Promise.all([
+    const [c, d, m, cat, lic, cp, fv, mv] = await Promise.all([
       listerChoralesDetail().catch(() => []),
       listerDemandes().catch(() => []),
       listerMasques().catch(() => []),
       listerCategoriesModeration().catch(() => []),
       listerLicences().catch(() => []),
+      listerChantsPrives().catch(() => []),
+      listerFeuilletsAValider().catch(() => []),
+      listerMediasEnAttente().catch(() => []),
     ]);
     setChorales(c); setDemandes(d); setMasques(m); setCategoriesEnAttente(cat); setLicences(lic);
+    setChantsPrives(cp); setFeuilletsAValider(fv); setMediasAValider(mv);
   }, []);
+
+  // Enveloppe générique pour toute action déclenchée par un LienAction :
+  // marque `cle` comme en cours (affiche le spinner, désactive le lien) le
+  // temps de l'appel, quel qu'en soit le résultat.
+  async function executerAction(cle: string, action: () => Promise<void>) {
+    setActionsEnCours((prev) => { const s = new Set(prev); s.add(cle); return s; });
+    try {
+      await action();
+    } finally {
+      setActionsEnCours((prev) => { const s = new Set(prev); s.delete(cle); return s; });
+    }
+  }
+
+  async function onPublierChant(id: number) {
+    await executerAction(`publier-chant-${id}`, async () => {
+      try {
+        await publierChantPrive(id);
+        setChantsPrives((prev) => prev.filter((c) => c.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de publier ce chant");
+      }
+    });
+  }
+
+  async function onValiderFeuillet(id: number) {
+    await executerAction(`valider-feuillet-${id}`, async () => {
+      try {
+        await validerPublicationFeuillet(id);
+        setFeuilletsAValider((prev) => prev.filter((f) => f.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de valider ce dépliant");
+      }
+    });
+  }
+
+  async function onValiderMedia(id: number) {
+    await executerAction(`valider-media-${id}`, async () => {
+      try {
+        await validerMedia(id);
+        setMediasAValider((prev) => prev.filter((m) => m.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de valider ce média");
+      }
+    });
+  }
+
+  async function onRejeterMedia(id: number) {
+    await executerAction(`rejeter-media-${id}`, async () => {
+      try {
+        await rejeterMedia(id);
+        setMediasAValider((prev) => prev.filter((m) => m.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de rejeter ce média");
+      }
+    });
+  }
 
   function licencePourChorale(choraleId: number): Licence | undefined {
     return licences.find((l) => l.chorale_id === choraleId);
@@ -101,23 +186,27 @@ export default function AdministrationScreen() {
   }
 
   async function regenererCodeLicence(licence: Licence) {
-    try {
-      const res = await regenererCode(licence.id);
-      await charger();
-      Alert.alert("Code régénéré", `Nouveau code à transmettre :\n\n${res.code}\n\nL'ancien code ne fonctionne plus, mais les appareils déjà activés restent connectés.`);
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible de régénérer le code");
-    }
+    await executerAction(`regen-licence-${licence.id}`, async () => {
+      try {
+        const res = await regenererCode(licence.id);
+        await charger();
+        Alert.alert("Code régénéré", `Nouveau code à transmettre :\n\n${res.code}\n\nL'ancien code ne fonctionne plus, mais les appareils déjà activés restent connectés.`);
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de régénérer le code");
+      }
+    });
   }
 
   async function toggleStatutLicence(licence: Licence) {
-    try {
-      if (licence.statut === "active") await revoquerLicence(licence.id);
-      else await reactiverLicence(licence.id);
-      await charger();
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Échec de l'opération");
-    }
+    await executerAction(`toggle-licence-${licence.id}`, async () => {
+      try {
+        if (licence.statut === "active") await revoquerLicence(licence.id);
+        else await reactiverLicence(licence.id);
+        await charger();
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Échec de l'opération");
+      }
+    });
   }
 
   async function ouvrirAppareils(licence: Licence) {
@@ -126,12 +215,14 @@ export default function AdministrationScreen() {
   }
 
   async function revoquerAppareil(licence: Licence, appareilId: string) {
-    try {
-      await revoquerActivationAppareil(licence.id, appareilId);
-      setAppareils(await listerActivationsLicence(licence.id));
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible de révoquer cet appareil");
-    }
+    await executerAction(`revoquer-appareil-${appareilId}`, async () => {
+      try {
+        await revoquerActivationAppareil(licence.id, appareilId);
+        setAppareils(await listerActivationsLicence(licence.id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de révoquer cet appareil");
+      }
+    });
   }
 
   useEffect(() => {
@@ -151,6 +242,21 @@ export default function AdministrationScreen() {
     }
   }
 
+  // Même réglage global que le contenu "À propos" (chorale_id=0, voir
+  // routers/parametres.py) -- mais togglé indépendamment du formulaire GOT
+  // pour ne pas dépendre d'un "Enregistrer" qu'on pourrait oublier de cliquer
+  // sur un réglage de sécurité.
+  async function togglePublicationAuto() {
+    const nouvelleValeur = !gotConfig.chants_publication_auto;
+    setGotConfig((prev) => ({ ...prev, chants_publication_auto: nouvelleValeur }));
+    try {
+      await sauvegarderParametres({ chants_publication_auto: nouvelleValeur });
+    } catch (erreur: any) {
+      setGotConfig((prev) => ({ ...prev, chants_publication_auto: !nouvelleValeur }));
+      Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer ce réglage");
+    }
+  }
+
   useEffect(() => { charger().finally(() => setChargement(false)); }, [charger]);
 
   async function onRafraichir() {
@@ -159,25 +265,32 @@ export default function AdministrationScreen() {
     setRafraichissement(false);
   }
 
+  const [creationChoraleEnCours, setCreationChoraleEnCours] = useState(false);
+
   async function onCreerChorale() {
     if (!nomChorale.trim() || !usernameChorale.trim()) return;
+    setCreationChoraleEnCours(true);
     try {
       const res = await creerChorale(nomChorale.trim(), usernameChorale.trim());
       Alert.alert("Chorale créée", `Mot de passe initial : ${res.mot_de_passe_initial}`);
       setNomChorale(""); setUsernameChorale("");
-      charger();
+      await charger();
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible de créer la chorale");
+    } finally {
+      setCreationChoraleEnCours(false);
     }
   }
 
   async function onReset(id: number) {
-    try {
-      const res = await reinitialiserMotDePasse(id);
-      Alert.alert("Mot de passe réinitialisé", res.mot_de_passe_initial);
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Échec de la réinitialisation");
-    }
+    await executerAction(`reset-${id}`, async () => {
+      try {
+        const res = await reinitialiserMotDePasse(id);
+        Alert.alert("Mot de passe réinitialisé", res.mot_de_passe_initial);
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Échec de la réinitialisation");
+      }
+    });
   }
 
   function onPlanifier(id: number) {
@@ -185,37 +298,54 @@ export default function AdministrationScreen() {
     setPlanificationId(id);
   }
 
+  const [planificationEnCours, setPlanificationEnCours] = useState(false);
+
   async function confirmerPlanification() {
     if (!planificationId || !raisonPlanification.trim()) return;
+    setPlanificationEnCours(true);
     try {
       await planifierSuppression(planificationId, raisonPlanification.trim(), 15);
       setPlanificationId(null);
-      charger();
+      await charger();
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Échec de la planification");
+    } finally {
+      setPlanificationEnCours(false);
     }
   }
 
   async function onAnnulerSuppression(id: number) {
-    try { await annulerSuppression(id, "Annulée depuis l'application mobile"); charger(); }
-    catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`annuler-suppr-${id}`, async () => {
+      try { await annulerSuppression(id, "Annulée depuis l'application mobile"); await charger(); }
+      catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
 
   async function onValiderDemande(id: number) {
-    try { await validerDemande(id); charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`valider-demande-${id}`, async () => {
+      try { await validerDemande(id); await charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
   async function onAnnulerDemande(id: number) {
-    try { await annulerDemande(id); charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`annuler-demande-${id}`, async () => {
+      try { await annulerDemande(id); await charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
   async function onRestaurerMasque(id: number) {
-    try { await restaurerMasque(id); charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`restaurer-masque-${id}`, async () => {
+      try { await restaurerMasque(id); await charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
   async function onValiderCategorie(id: number) {
-    try { await validerCategorie(id); charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`valider-categorie-${id}`, async () => {
+      try { await validerCategorie(id); await charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
   async function onRejeterCategorie(id: number) {
-    try { await rejeterCategorie(id, "Rejetée depuis l'application mobile"); charger(); }
-    catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    await executerAction(`rejeter-categorie-${id}`, async () => {
+      try { await rejeterCategorie(id, "Rejetée depuis l'application mobile"); await charger(); }
+      catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
   }
 
   if (chargement) return <ActivityIndicator style={{ flex: 1 }} size="large" />;
@@ -240,7 +370,7 @@ export default function AdministrationScreen() {
       {onglet === "apropos" ? (
         gotChargement ? <ActivityIndicator /> : (
           <>
-            {Object.entries(gotConfig).filter(([cle]) => !["chorale", "paroisse", "contact", "annonce", "priere_defaut", "logo_gauche_media_id", "logo_droit_media_id", "banniere_bas_media_id"].includes(cle)).map(([cle, valeur]) => (
+            {Object.entries(gotConfig).filter(([cle]) => !["chorale", "paroisse", "contact", "annonce", "priere_defaut", "logo_gauche_media_id", "logo_droit_media_id", "banniere_bas_media_id", "chants_publication_auto"].includes(cle)).map(([cle, valeur]) => (
               <View key={cle}>
                 <Text style={styles.label}>{cle}</Text>
                 <TextInput
@@ -256,12 +386,84 @@ export default function AdministrationScreen() {
         )
       ) : (
       <>
+      <Text style={styles.section}>🎵 Publication des chants ajoutés par les chorales</Text>
+      <Text style={styles.hint}>
+        Par défaut, un chant ajouté par une chorale reste visible seulement d'elle jusqu'à ce que vous le publiiez
+        ci-dessous -- évite qu'un contenu erroné ou inapproprié ne devienne immédiatement visible de toute la communauté.
+      </Text>
+      <Pressable style={styles.carte} onPress={togglePublicationAuto}>
+        <View style={styles.actionsCarte}>
+          <Text style={styles.titreCarte}>
+            {gotConfig.chants_publication_auto ? "🔓 Publication automatique activée" : "🔒 Publication manuelle (recommandé)"}
+          </Text>
+        </View>
+        <Text style={styles.sousTitreCarte}>
+          {gotConfig.chants_publication_auto
+            ? "Les chants ajoutés par les chorales sont immédiatement publics. Toucher pour repasser en validation manuelle."
+            : "Chaque chant ajouté par une chorale attend votre publication ci-dessous. Toucher pour activer la publication automatique."}
+        </Text>
+      </Pressable>
+
+      {chantsPrives.length > 0 && (
+        <>
+          <Text style={styles.section}>⏳ Chants en attente de publication ({chantsPrives.length})</Text>
+          {chantsPrives.map((c) => (
+            <View key={c.id} style={styles.carte}>
+              <Text style={styles.titreCarte}>{c.titre}</Text>
+              <Text style={styles.sousTitreCarte}>{c.categorie} · Ajouté par {c.chorale_proprietaire_nom ?? "?"}</Text>
+              <View style={styles.actionsCarte}>
+                <LienAction cle={`publier-chant-${c.id}`} actionsEnCours={actionsEnCours} texte="✅ Publier" onPress={() => onPublierChant(c.id)} />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      {feuilletsAValider.length > 0 && (
+        <>
+          <Text style={styles.section}>📋 Dépliants en attente de publication ({feuilletsAValider.length})</Text>
+          <Text style={styles.hint}>
+            Une chorale a marqué ces dépliants comme publics. Ils restent invisibles pour les autres chorales tant que
+            vous ne les validez pas ici.
+          </Text>
+          {feuilletsAValider.map((f) => (
+            <View key={f.id} style={styles.carte}>
+              <Text style={styles.titreCarte}>{f.date}</Text>
+              <Text style={styles.sousTitreCarte}>{f.lieu ?? "—"} · Composé par {f.chorale_nom ?? "?"}</Text>
+              <View style={styles.actionsCarte}>
+                <LienAction cle={`valider-feuillet-${f.id}`} actionsEnCours={actionsEnCours} texte="✅ Valider" onPress={() => onValiderFeuillet(f.id)} />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
+      {mediasAValider.length > 0 && (
+        <>
+          <Text style={styles.section}>🎵 Médias audio/vidéo en attente ({mediasAValider.length})</Text>
+          <Text style={styles.hint}>
+            Une chorale a ajouté ces fichiers à un chant. Ils restent invisibles pour les autres chorales tant que vous
+            ne les validez pas -- le chant lui-même reste, lui, pleinement visible/complet entre-temps.
+          </Text>
+          {mediasAValider.map((m) => (
+            <View key={m.id} style={styles.carte}>
+              <Text style={styles.titreCarte}>{m.type === "audio" ? "🎵" : "🎥"} {m.filename}</Text>
+              <Text style={styles.sousTitreCarte}>Pour « {m.chant_titre ?? "?"} » · Ajouté par {m.chorale_nom ?? "?"}</Text>
+              <View style={styles.actionsCarte}>
+                <LienAction cle={`valider-media-${m.id}`} actionsEnCours={actionsEnCours} texte="✅ Valider" onPress={() => onValiderMedia(m.id)} />
+                <LienAction cle={`rejeter-media-${m.id}`} actionsEnCours={actionsEnCours} texte="Rejeter" danger onPress={() => onRejeterMedia(m.id)} />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
       <Text style={styles.section}>👥 Créer une chorale</Text>
       <Text style={styles.label}>Nom de la chorale</Text>
       <TextInput style={styles.champ} placeholder="Ex : Chorale Sainte Cécile" value={nomChorale} onChangeText={setNomChorale} />
       <Text style={styles.label}>Identifiant de connexion</Text>
       <TextInput style={styles.champ} placeholder="Ex : chorale-sainte-cecile" value={usernameChorale} onChangeText={setUsernameChorale} autoCapitalize="none" />
-      <Bouton titre="+ Créer la chorale" onPress={onCreerChorale} desactive={!nomChorale.trim() || !usernameChorale.trim()} />
+      <Bouton titre="+ Créer la chorale" onPress={onCreerChorale} enCours={creationChoraleEnCours} desactive={!nomChorale.trim() || !usernameChorale.trim()} />
 
       <Text style={styles.section}>Chorales enregistrées ({chorales.length})</Text>
       {chorales.map((c) => {
@@ -274,9 +476,9 @@ export default function AdministrationScreen() {
             <Text style={styles.avertissement}>Suppression planifiée : {c.suppression_date_butoir}</Text>
           )}
           <View style={styles.actionsCarte}>
-            <Pressable onPress={() => onReset(c.id)}><Text style={styles.lien}>Réinitialiser mdp</Text></Pressable>
+            <LienAction cle={`reset-${c.id}`} actionsEnCours={actionsEnCours} texte="Réinitialiser mdp" onPress={() => onReset(c.id)} />
             {c.suppression_date_butoir ? (
-              <Pressable onPress={() => onAnnulerSuppression(c.id)}><Text style={styles.lien}>Annuler suppression</Text></Pressable>
+              <LienAction cle={`annuler-suppr-${c.id}`} actionsEnCours={actionsEnCours} texte="Annuler suppression" onPress={() => onAnnulerSuppression(c.id)} />
             ) : (
               <Pressable onPress={() => onPlanifier(c.id)}><Text style={[styles.lien, { color: "#dc2626" }]}>Planifier suppression</Text></Pressable>
             )}
@@ -297,12 +499,13 @@ export default function AdministrationScreen() {
                 <View style={styles.actionsCarte}>
                   <Pressable onPress={() => ouvrirConfigLicence(c.id, licence)}><Text style={styles.lien}>Configurer</Text></Pressable>
                   <Pressable onPress={() => ouvrirAppareils(licence)}><Text style={styles.lien}>Voir les appareils</Text></Pressable>
-                  <Pressable onPress={() => regenererCodeLicence(licence)}><Text style={styles.lien}>Régénérer le code</Text></Pressable>
-                  <Pressable onPress={() => toggleStatutLicence(licence)}>
-                    <Text style={[styles.lien, licence.statut === "active" && { color: "#dc2626" }]}>
-                      {licence.statut === "active" ? "Révoquer" : "Réactiver"}
-                    </Text>
-                  </Pressable>
+                  <LienAction cle={`regen-licence-${licence.id}`} actionsEnCours={actionsEnCours} texte="Régénérer le code" onPress={() => regenererCodeLicence(licence)} />
+                  <LienAction
+                    cle={`toggle-licence-${licence.id}`} actionsEnCours={actionsEnCours}
+                    texte={licence.statut === "active" ? "Révoquer" : "Réactiver"}
+                    danger={licence.statut === "active"}
+                    onPress={() => toggleStatutLicence(licence)}
+                  />
                 </View>
               </>
             ) : (
@@ -325,8 +528,8 @@ export default function AdministrationScreen() {
           <Text style={styles.sousTitreCarte}>{d.apercu?.titre ?? d.apercu?.date ?? "Aperçu indisponible"}</Text>
           <Text style={styles.raison}>{d.raison}</Text>
           <View style={styles.actionsCarte}>
-            <Pressable onPress={() => onValiderDemande(d.id)}><Text style={[styles.lien, { color: "#dc2626" }]}>Valider (supprimer)</Text></Pressable>
-            <Pressable onPress={() => onAnnulerDemande(d.id)}><Text style={styles.lien}>Annuler</Text></Pressable>
+            <LienAction cle={`valider-demande-${d.id}`} actionsEnCours={actionsEnCours} texte="Valider (supprimer)" danger onPress={() => onValiderDemande(d.id)} />
+            <LienAction cle={`annuler-demande-${d.id}`} actionsEnCours={actionsEnCours} texte="Annuler" onPress={() => onAnnulerDemande(d.id)} />
           </View>
         </View>
       ))}
@@ -339,8 +542,8 @@ export default function AdministrationScreen() {
           <Text style={styles.titreCarte}>{c.nom}</Text>
           <Text style={styles.sousTitreCarte}>Proposée par {c.chorale_nom ?? "?"}</Text>
           <View style={styles.actionsCarte}>
-            <Pressable onPress={() => onValiderCategorie(c.id)}><Text style={styles.lien}>Valider</Text></Pressable>
-            <Pressable onPress={() => onRejeterCategorie(c.id)}><Text style={[styles.lien, { color: "#dc2626" }]}>Rejeter</Text></Pressable>
+            <LienAction cle={`valider-categorie-${c.id}`} actionsEnCours={actionsEnCours} texte="Valider" onPress={() => onValiderCategorie(c.id)} />
+            <LienAction cle={`rejeter-categorie-${c.id}`} actionsEnCours={actionsEnCours} texte="Rejeter" danger onPress={() => onRejeterCategorie(c.id)} />
           </View>
         </View>
       ))}
@@ -349,7 +552,7 @@ export default function AdministrationScreen() {
       {masques.map((m) => (
         <View key={m.id} style={styles.carte}>
           <Text style={styles.titreCarte}>{m.type_cible} #{m.cible_id}</Text>
-          <Pressable onPress={() => onRestaurerMasque(m.id)}><Text style={styles.lien}>Restaurer pour cette chorale</Text></Pressable>
+          <LienAction cle={`restaurer-masque-${m.id}`} actionsEnCours={actionsEnCours} texte="Restaurer pour cette chorale" onPress={() => onRestaurerMasque(m.id)} />
         </View>
       ))}
       </>
@@ -367,8 +570,12 @@ export default function AdministrationScreen() {
               multiline
             />
             <View style={styles.actionsCarte}>
-              <Pressable onPress={() => setPlanificationId(null)}><Text style={styles.lien}>Annuler</Text></Pressable>
-              <Pressable onPress={confirmerPlanification}><Text style={[styles.lien, { color: "#dc2626" }]}>Confirmer</Text></Pressable>
+              <Pressable onPress={() => setPlanificationId(null)} disabled={planificationEnCours}><Text style={styles.lien}>Annuler</Text></Pressable>
+              <Pressable onPress={confirmerPlanification} disabled={planificationEnCours} style={{ opacity: planificationEnCours ? 0.5 : 1 }}>
+                {planificationEnCours
+                  ? <ActivityIndicator size="small" color="#dc2626" />
+                  : <Text style={[styles.lien, { color: "#dc2626" }]}>Confirmer</Text>}
+              </Pressable>
             </View>
           </View>
         </View>
@@ -435,9 +642,13 @@ export default function AdministrationScreen() {
                   {a.revoque_le ? (
                     <Text style={styles.avertissement}>Révoqué le {a.revoque_le}</Text>
                   ) : (
-                    <Pressable onPress={() => appareilsModal && revoquerAppareil(appareilsModal, a.appareil_id)}>
-                      <Text style={[styles.lien, { color: "#dc2626", marginTop: 6 }]}>Révoquer cet appareil</Text>
-                    </Pressable>
+                    <View style={{ marginTop: 6 }}>
+                      <LienAction
+                        cle={`revoquer-appareil-${a.appareil_id}`} actionsEnCours={actionsEnCours}
+                        texte="Révoquer cet appareil" danger
+                        onPress={() => appareilsModal && revoquerAppareil(appareilsModal, a.appareil_id)}
+                      />
+                    </View>
                   )}
                 </View>
               ))}

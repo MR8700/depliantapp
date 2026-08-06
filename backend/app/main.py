@@ -11,7 +11,7 @@ from .constants import CATEGORIES_CHANTS, MOMENTS_LITURGIQUES
 from .db import init_db
 from .ml import classifier
 from .routers import auth as auth_router
-from .routers import chants, chorales, feuillets, import_, licences, messages, ml, moderation, parametres, statistiques
+from .routers import aelf, chants, chorales, feuillets, import_, licences, messages, ml, moderation, parametres, statistiques
 
 app = FastAPI(title="DepliantApp API", version="0.1.0")
 
@@ -20,6 +20,12 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
+    # Explicite plutôt qu'implicite : la combinaison origines="*" +
+    # credentials=True est ce que les navigateurs bloquent de toute façon
+    # (et ce qui rendrait le cookie de session lisible cross-origin) --
+    # fixé à False ici pour qu'un futur changement ne l'active jamais par
+    # inadvertance en même temps qu'un allow_origins encore large.
+    allow_credentials=False,
 )
 
 # Chemins accessibles sans authentification : uniquement ce qu'il faut pour
@@ -77,6 +83,13 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if compte and compte["must_change_password"]:
             return self._refuser(request)
 
+        if identite.type == "chorale":
+            from . import licences as licences_module
+            appareil_id = request.headers.get("x-appareil-id") or None
+            erreur_licence = licences_module.verifier_licence_appareil(identite.compte_id, appareil_id)
+            if erreur_licence:
+                return self._refuser_licence(request, erreur_licence)
+
         return await call_next(request)
 
     @staticmethod
@@ -86,6 +99,21 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if est_page:
             return RedirectResponse(url="/login.html", status_code=303)
         return JSONResponse(status_code=401, content={"detail": "Authentification requise"})
+
+    @staticmethod
+    def _refuser_licence(request, message: str):
+        """Distinct de _refuser (401 générique) : un code dédié ("licence_
+        invalide") que le client mobile reconnaît spécifiquement pour effacer
+        la session ET l'activation locale, puis renvoyer sur l'écran
+        d'activation avec ce message clair -- pas juste "reconnecte-toi",
+        qui laisserait croire qu'un simple nouveau login suffirait alors que
+        la licence elle-même doit être réglée par l'admin (voir App.tsx /
+        api/client.ts côté mobile)."""
+        path = request.url.path
+        est_page = path == "/" or path.endswith(".html")
+        if est_page:
+            return RedirectResponse(url="/login.html", status_code=303)
+        return JSONResponse(status_code=403, content={"detail": message, "code": "licence_invalide"})
 
 
 class NoCacheStaticMiddleware(BaseHTTPMiddleware):
@@ -109,7 +137,31 @@ class NoCacheStaticMiddleware(BaseHTTPMiddleware):
         return response
 
 
+class EnTetesSecuriteMiddleware(BaseHTTPMiddleware):
+    """En-têtes de sécurité de base, absents jusqu'ici :
+    - X-Frame-Options / frame-ancestors (CSP) : empêche un site tiers
+      d'encapsuler l'application dans une <iframe> invisible pour piéger un
+      utilisateur déjà connecté (clickjacking) -- le cookie de session est
+      SameSite=Lax, ce qui réduit déjà le risque, mais ne l'élimine pas pour
+      les actions déclenchées par un simple clic (GET).
+    - X-Content-Type-Options: nosniff : empêche le navigateur de deviner un
+      type de contenu différent de celui déclaré (ex: interpréter un média
+      uploadé comme du HTML/JS exécutable).
+    - Strict-Transport-Security : sans effet sur une réponse HTTP (les
+      navigateurs l'ignorent hors HTTPS), donc sans risque en local ; agit
+      dès que le service est servi en HTTPS (Render, par défaut)."""
+
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["Content-Security-Policy"] = "frame-ancestors 'none'"
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
+
+
 app.add_middleware(NoCacheStaticMiddleware)
+app.add_middleware(EnTetesSecuriteMiddleware)
 app.add_middleware(AuthMiddleware)
 
 app.include_router(auth_router.router)
@@ -123,6 +175,7 @@ app.include_router(messages.router)
 app.include_router(ml.router)
 app.include_router(import_.router)
 app.include_router(licences.router)
+app.include_router(aelf.router)
 
 
 @app.on_event("startup")

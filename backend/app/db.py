@@ -126,6 +126,11 @@ CREATE TABLE IF NOT EXISTS chants (
     occasions TEXT NOT NULL DEFAULT '[]',
     confiance REAL NOT NULL DEFAULT 1.0,
     mots_cles TEXT NOT NULL DEFAULT '[]',
+    -- Références bibliques associées (ex. "Mt 17, 1-9") -- facultatif,
+    -- saisi manuellement par la chorale (voir aelf_matching.py, qui s'en
+    -- sert pour un rapprochement EXACT avec les lectures du jour ; en son
+    -- absence, seul le rapprochement par contenu textuel s'applique).
+    references_bibliques TEXT NOT NULL DEFAULT '[]',
     actif INTEGER NOT NULL DEFAULT 1,
     favori INTEGER NOT NULL DEFAULT 0,
     chant_principal INTEGER NOT NULL DEFAULT 0,
@@ -138,6 +143,17 @@ CREATE TABLE IF NOT EXISTS chants (
     -- SQLite) exige que la table référencée existe déjà au moment du CREATE
     -- TABLE -- ça casserait une toute première installation sur base vide.
     propose_par_chorale_id INTEGER,
+    -- Chorale qui a réellement CRÉÉ ce chant (ajout manuel ou import) --
+    -- distinct de propose_par_chorale_id (qui ne concerne que la proposition
+    -- de validation d'un chant déjà existant, voir crud.proposer_validation_chant).
+    -- NULL pour un chant créé par le super-admin ou hérité d'avant cette
+    -- colonne -- toujours traité comme publique dans ce cas (voir migration).
+    chorale_proprietaire_id INTEGER,
+    -- 'publique' = visible de toute la communauté ; 'chorale' = visible
+    -- seulement par chorale_proprietaire_id (et le super-admin) tant qu'un
+    -- administrateur ne l'a pas publié -- voir routers/chants.py::create_chant
+    -- et le réglage global chants_publication_auto.
+    visibilite TEXT NOT NULL DEFAULT 'publique',
     auteur TEXT,
     compositeur TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -201,6 +217,7 @@ CREATE TABLE IF NOT EXISTS feuillets (
     priere_texte TEXT,
     chorale_id INTEGER REFERENCES chorales(id),
     clone_de_id INTEGER REFERENCES feuillets(id),
+    visibilite TEXT NOT NULL DEFAULT 'publique',
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
@@ -260,19 +277,25 @@ CREATE INDEX IF NOT EXISTS idx_chant_partitions_statut ON chant_partitions(statu
 
 -- Audio/vidéo facultatifs attachés à un chant -- affichés/écoutables dans
 -- les détails du chant, jamais utilisés sur les feuillets PDF (contrairement
--- aux partitions ci-dessus). Pas de workflow de modération (à_verifier/
--- validee) : contrairement à une partition détectée automatiquement, il n'y
--- a rien à vérifier ici, l'ajout est un geste délibéré. Plusieurs médias
--- peuvent coexister pour un même chant (plusieurs versions/interprétations).
+-- aux partitions ci-dessus). `statut` ('a_verifier'|'validee'|'revoquee') :
+-- un média ajouté par une CHORALE reste invisible des autres tant que
+-- l'admin ne l'a pas validé (contenu potentiellement inapproprié/hors-sujet,
+-- voir routers/moderation.py) ; ajouté par l'admin lui-même, publié direct.
+-- Ce statut ne gate QUE ce média précis, jamais le chant qui le porte : un
+-- chant déjà validé reste visible et complet même avec un média encore en
+-- attente. Plusieurs médias peuvent coexister pour un même chant (plusieurs
+-- versions/interprétations).
 CREATE TABLE IF NOT EXISTS chant_medias (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     chant_id INTEGER NOT NULL REFERENCES chants(id),
     type TEXT NOT NULL,
     media_id INTEGER NOT NULL REFERENCES medias(id),
     chorale_id INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'validee',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
+CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
 
 -- Réglages actifs PAR CHORALE (nom affiché, paroisse, contact, quelles
 -- images du pool `medias` ci-dessus sont utilisées pour chaque
@@ -281,6 +304,21 @@ CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
 CREATE TABLE IF NOT EXISTS parametres (
     chorale_id INTEGER PRIMARY KEY REFERENCES chorales(id),
     donnees TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Cache PARTAGÉ (toutes chorales confondues, jamais par compte) des lectures
+-- liturgiques AELF (voir aelf.py) -- une ligne par (date, zone) déjà
+-- récupérée auprès de l'API AELF, pour ne jamais la re-demander et pour
+-- servir la bibliothèque biblique hors-ligne au mobile (export en masse,
+-- voir routers/aelf.py). `informations`/`messes` : JSON brut de la réponse
+-- AELF, tel quel (voir schemas.py::JourLiturgique pour la forme exacte).
+CREATE TABLE IF NOT EXISTS lectures_liturgiques (
+    date TEXT NOT NULL,
+    zone TEXT NOT NULL,
+    informations TEXT NOT NULL DEFAULT '{}',
+    messes TEXT NOT NULL DEFAULT '[]',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (date, zone)
 );
 
 -- File de modération : une chorale ne supprime jamais directement un chant
@@ -404,6 +442,7 @@ CREATE TABLE IF NOT EXISTS chants (
     occasions TEXT NOT NULL DEFAULT '[]',
     confiance REAL NOT NULL DEFAULT 1.0,
     mots_cles TEXT NOT NULL DEFAULT '[]',
+    references_bibliques TEXT NOT NULL DEFAULT '[]',
     actif INTEGER NOT NULL DEFAULT 1,
     favori INTEGER NOT NULL DEFAULT 0,
     chant_principal INTEGER NOT NULL DEFAULT 0,
@@ -416,6 +455,8 @@ CREATE TABLE IF NOT EXISTS chants (
     -- référencée existe déjà à ce stade (voir commentaire équivalent dans
     -- SCHEMA_SQLITE).
     propose_par_chorale_id INTEGER,
+    chorale_proprietaire_id INTEGER,
+    visibilite TEXT NOT NULL DEFAULT 'publique',
     auteur TEXT,
     compositeur TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
@@ -457,6 +498,7 @@ CREATE TABLE IF NOT EXISTS feuillets (
     banniere_active INTEGER NOT NULL DEFAULT 1,
     chorale_id INTEGER REFERENCES chorales(id),
     clone_de_id INTEGER REFERENCES feuillets(id),
+    visibilite TEXT NOT NULL DEFAULT 'publique',
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
@@ -543,9 +585,11 @@ CREATE TABLE IF NOT EXISTS chant_medias (
     type TEXT NOT NULL,
     media_id INTEGER NOT NULL REFERENCES medias(id),
     chorale_id INTEGER REFERENCES chorales(id),
+    statut TEXT NOT NULL DEFAULT 'validee',
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
+CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
 
 -- Réglages actifs PAR CHORALE — voir le commentaire équivalent dans
 -- SCHEMA_SQLITE. Remplace l'ancienne ligne singleton id=1 partagée par tout
@@ -553,6 +597,16 @@ CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
 CREATE TABLE IF NOT EXISTS parametres (
     chorale_id INTEGER PRIMARY KEY REFERENCES chorales(id),
     donnees TEXT NOT NULL DEFAULT '{}'
+);
+
+-- Cache AELF -- voir le commentaire équivalent dans SCHEMA_SQLITE.
+CREATE TABLE IF NOT EXISTS lectures_liturgiques (
+    date TEXT NOT NULL,
+    zone TEXT NOT NULL,
+    informations TEXT NOT NULL DEFAULT '{}',
+    messes TEXT NOT NULL DEFAULT '[]',
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    PRIMARY KEY (date, zone)
 );
 
 -- File de modération / visibilité par chorale — voir le commentaire
@@ -601,8 +655,11 @@ ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS one_page_mode INTEGER NOT NULL DE
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS banniere_active INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS chorale_id INTEGER REFERENCES chorales(id);
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS clone_de_id INTEGER REFERENCES feuillets(id);
+ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS visibilite TEXT NOT NULL DEFAULT 'publique';
+ALTER TABLE chant_medias ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'validee';
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS slug TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS mots_cles TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS references_bibliques TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS actif INTEGER NOT NULL DEFAULT 1;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS favori INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS chant_principal INTEGER NOT NULL DEFAULT 0;
@@ -645,6 +702,8 @@ def _init_sqlite() -> None:
                 conn.execute("ALTER TABLE chants ADD COLUMN slug TEXT")
             if "mots_cles" not in colonnes:
                 conn.execute("ALTER TABLE chants ADD COLUMN mots_cles TEXT NOT NULL DEFAULT '[]'")
+            if "references_bibliques" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN references_bibliques TEXT NOT NULL DEFAULT '[]'")
             if "actif" not in colonnes:
                 conn.execute("ALTER TABLE chants ADD COLUMN actif INTEGER NOT NULL DEFAULT 1")
             if "favori" not in colonnes:
@@ -665,12 +724,27 @@ def _init_sqlite() -> None:
                 conn.execute("ALTER TABLE chants ADD COLUMN auteur TEXT")
             if "compositeur" not in colonnes:
                 conn.execute("ALTER TABLE chants ADD COLUMN compositeur TEXT")
+            if "chorale_proprietaire_id" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN chorale_proprietaire_id INTEGER")
+            if "visibilite" not in colonnes:
+                # Tous les chants déjà en base restent publics -- seuls les
+                # NOUVEAUX chants créés par une chorale après cette migration
+                # partent en visibilité restreinte (voir routers/chants.py).
+                conn.execute("ALTER TABLE chants ADD COLUMN visibilite TEXT NOT NULL DEFAULT 'publique'")
 
         conn.executescript(SCHEMA_SQLITE)
 
         # migration : ajoute les colonnes ajoutées après la création initiale de
         # la table (le CREATE TABLE IF NOT EXISTS ci-dessus ne touche pas une
         # table déjà créée).
+        colonnes_chant_medias = {row["name"] for row in conn.execute("PRAGMA table_info(chant_medias)").fetchall()}
+        if "statut" not in colonnes_chant_medias:
+            # DEFAULT 'validee' : les médias déjà présents avant l'ajout de la
+            # modération restent visibles (pas de disparition rétroactive de
+            # contenu déjà en place), seuls les NOUVEAUX ajouts par une
+            # chorale démarrent 'a_verifier' (voir crud.ajouter_media_chant).
+            conn.execute("ALTER TABLE chant_medias ADD COLUMN statut TEXT NOT NULL DEFAULT 'validee'")
+
         colonnes_feuillets = {row["name"] for row in conn.execute("PRAGMA table_info(feuillets)").fetchall()}
         if "priere_active" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN priere_active INTEGER NOT NULL DEFAULT 0")
@@ -686,6 +760,12 @@ def _init_sqlite() -> None:
             conn.execute("ALTER TABLE feuillets ADD COLUMN chorale_id INTEGER REFERENCES chorales(id)")
         if "clone_de_id" not in colonnes_feuillets:
             conn.execute("ALTER TABLE feuillets ADD COLUMN clone_de_id INTEGER REFERENCES feuillets(id)")
+        if "visibilite" not in colonnes_feuillets:
+            # DEFAULT 'publique' pour ne pas faire disparaître d'un coup tous
+            # les dépliants déjà existants de l'onglet "Parcourir" — seuls
+            # les NOUVEAUX dépliants créés par une chorale démarrent privés
+            # (voir crud.create_feuillet).
+            conn.execute("ALTER TABLE feuillets ADD COLUMN visibilite TEXT NOT NULL DEFAULT 'publique'")
 
         colonnes_messages = {row["name"] for row in conn.execute("PRAGMA table_info(messages)").fetchall()}
         if "parent_id" not in colonnes_messages:
@@ -831,6 +911,9 @@ def _init_postgres() -> None:
 
         conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS quota_feuillets INTEGER")
         conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS feuillets_produits INTEGER NOT NULL DEFAULT 0")
+
+        conn.execute("ALTER TABLE chants ADD COLUMN IF NOT EXISTS chorale_proprietaire_id INTEGER")
+        conn.execute("ALTER TABLE chants ADD COLUMN IF NOT EXISTS visibilite TEXT NOT NULL DEFAULT 'publique'")
 
         conn.executescript(SCHEMA_POSTGRES)
 

@@ -43,7 +43,13 @@ def _page_taille_ok(doc: fitz.Document) -> bool:
 def _zone_rect(zone) -> fitz.Rect:
     """PyMuPDF utilise une origine en haut à gauche (y croissant vers le bas),
     ReportLab (donc nos zones) une origine en bas à gauche (y croissant vers
-    le haut) — d'où l'inversion."""
+    le haut) — d'où l'inversion.
+
+    (Un rectangle de clip légèrement resserré avait été testé ici pour un
+    symptôme qui ressemblait à un débordement de l'en-tête dans D1/D2, mais
+    la vraie cause était ailleurs -- voir _paragraphes_zone -- et le resserrement
+    faisait disparaître de vraies lignes de couplet en bord de colonne ;
+    abandonné, le rectangle exact suffit une fois la vraie cause corrigée.)"""
     y_top = _PAGE_H - (zone.y + zone.hauteur)
     y_bottom = _PAGE_H - zone.y
     return fitz.Rect(zone.x, y_top, zone.x + zone.largeur, y_bottom)
@@ -86,6 +92,30 @@ def _paragraphes_zone(page: fitz.Page, zone) -> list[tuple[str, str]]:
             else:
                 paragraphes.append({"kind": "titre_section", "lignes": [texte]})
             continue
+        # Le refrain est intégralement mis en gras au rendu (voir
+        # widgets.py::mettre_en_gras_refrain), tout comme un titre de chant
+        # -- le style seul ne les distingue donc PAS. Ce test doit passer
+        # AVANT le "if gras:" ci-dessous, sinon "Réf : ..." se retrouve
+        # fusionné dans le paragraphe titre_chant précédent (refrain perdu,
+        # titre corrompu, et le nombre de sections reconnues chute au point
+        # de faire échouer segment_notre_modele en entier -- silencieux,
+        # puisque parse_and_segment retombe alors sur le parseur PDF
+        # générique, pas pensé pour notre grille et donc sans exclusion pour
+        # l'en-tête/la bannière).
+        if REF_RE.match(texte) or VERSE_RE.match(texte):
+            paragraphes.append({"kind": "marque", "lignes": [texte]})
+            continue
+        if paragraphes and paragraphes[-1]["kind"] == "marque":
+            # Ligne de continuation d'un refrain/couplet qui a débordé sur
+            # plusieurs lignes visuelles (seule la PREMIÈRE porte le marqueur
+            # « Réf : »/numéro, les suivantes n'en ont plus -- mais restent
+            # en gras pour un refrain, cf. mettre_en_gras_refrain) : le
+            # rendu ne dessine jamais un NOUVEAU titre de chant juste après
+            # un refrain/couplet sans repasser par un titre de section ou un
+            # titre codé (qui font tous les deux flush() plus haut), donc
+            # cette ligne appartient forcément au même bloc « marque ».
+            paragraphes[-1]["lignes"].append(texte)
+            continue
         if gras:
             # Ligne entièrement en gras mais pas en capitales : titre de chant
             # (son propre flowable, cf. measure.py) — jamais le prolongement
@@ -95,9 +125,6 @@ def _paragraphes_zone(page: fitz.Page, zone) -> list[tuple[str, str]]:
                 paragraphes[-1]["lignes"].append(texte)
             else:
                 paragraphes.append({"kind": "titre_chant", "lignes": [texte]})
-            continue
-        if REF_RE.match(texte) or VERSE_RE.match(texte):
-            paragraphes.append({"kind": "marque", "lignes": [texte]})
             continue
         if paragraphes:
             paragraphes[-1]["lignes"].append(texte)

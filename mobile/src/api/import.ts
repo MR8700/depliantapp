@@ -1,5 +1,6 @@
 import { apiFetchForm, apiFetch, ApiError } from "./client";
 import { ajouterAImportOutbox } from "../storage/importOutbox";
+import { analyserDocxLocal } from "../import/analyserLocal";
 
 // Levée quand l'upload échoue faute de réseau (pas une erreur serveur) --
 // le fichier a été mis en file d'attente locale (voir storage/importOutbox.ts)
@@ -58,6 +59,18 @@ export async function uploaderCarnet(params: {
     return await uploaderCarnetDistant(params);
   } catch (erreur) {
     if (erreur instanceof ApiError) throw erreur;
+    // Pas de connexion (erreur RÉSEAU, pas serveur) : pour un .docx,
+    // analyse ENTIÈREMENT locale (voir import/analyserLocal.ts -- moteur de
+    // segmentation porté fidèlement depuis le serveur) plutôt que de
+    // simplement mettre en attente -- contrairement au PDF/.doc, dont
+    // l'analyse reste nécessairement côté serveur (comme le web pour le
+    // PDF ; le .doc, lui, exige Word/COM, jamais disponible sur mobile).
+    const extension = params.nom.toLowerCase().slice(params.nom.lastIndexOf("."));
+    if (extension === ".docx") {
+      return analyserDocxLocal(params.uri, params.nom, {
+        categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
+      });
+    }
     await ajouterAImportOutbox(params, {
       categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
     });

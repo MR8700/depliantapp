@@ -46,6 +46,7 @@ def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
         source_file=row["source_file"],
         confiance=row["confiance"],
         mots_cles=json.loads(row["mots_cles"]) if "mots_cles" in list(row.keys()) and row["mots_cles"] else [],
+        references_bibliques=json.loads(row["references_bibliques"]) if "references_bibliques" in list(row.keys()) and row["references_bibliques"] else [],
         actif=bool(row["actif"]) if "actif" in list(row.keys()) and row["actif"] is not None else True,
         favori=bool(row["favori"]) if "favori" in list(row.keys()) and row["favori"] is not None else False,
         chant_principal=bool(row["chant_principal"]) if "chant_principal" in list(row.keys()) and row["chant_principal"] is not None else False,
@@ -55,20 +56,26 @@ def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
         valide_manuellement=bool(row["valide_manuellement"]) if "valide_manuellement" in list(row.keys()) and row["valide_manuellement"] is not None else False,
         propose_par_chorale_id=row["propose_par_chorale_id"] if "propose_par_chorale_id" in list(row.keys()) else None,
         propose_par_chorale_nom=row["propose_par_chorale_nom"] if "propose_par_chorale_nom" in list(row.keys()) else None,
+        chorale_proprietaire_id=row["chorale_proprietaire_id"] if "chorale_proprietaire_id" in list(row.keys()) else None,
+        chorale_proprietaire_nom=row["chorale_proprietaire_nom"] if "chorale_proprietaire_nom" in list(row.keys()) else None,
+        visibilite=row["visibilite"] if "visibilite" in list(row.keys()) and row["visibilite"] else "publique",
         auteur=row["auteur"] if "auteur" in list(row.keys()) else None,
         compositeur=row["compositeur"] if "compositeur" in list(row.keys()) else None,
     )
 
 
-def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, confiance: float = 1.0) -> schemas.Chant:
+def create_chant(
+    chant: schemas.ChantCreate, source_file: Optional[str] = None, confiance: float = 1.0,
+    chorale_proprietaire_id: Optional[int] = None, visibilite: str = "publique",
+) -> schemas.Chant:
     with get_connection() as conn:
         base_slug = chant.slug.strip() if chant.slug and chant.slug.strip() else chant.titre
         slug = unique_slug(base_slug, _existing_slugs(conn))
         new_id = insert_returning_id(
             conn,
             """
-            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, references_bibliques, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur, chorale_proprietaire_id, visibilite)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chant.titre,
@@ -82,6 +89,7 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
                 source_file,
                 confiance,
                 json.dumps(chant.mots_cles, ensure_ascii=False),
+                json.dumps(chant.references_bibliques, ensure_ascii=False),
                 1 if chant.actif else 0,
                 1 if chant.favori else 0,
                 1 if chant.chant_principal else 0,
@@ -90,6 +98,8 @@ def create_chant(chant: schemas.ChantCreate, source_file: Optional[str] = None, 
                 chant.remarques,
                 chant.auteur,
                 chant.compositeur,
+                chorale_proprietaire_id,
+                visibilite,
             ),
         )
         row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
@@ -103,26 +113,56 @@ _MASQUE_CLAUSE = (
 
 
 _CHANT_SELECT = (
-    "SELECT chants.*, pc.nom AS propose_par_chorale_nom FROM chants "
-    "LEFT JOIN chorales pc ON pc.id = chants.propose_par_chorale_id"
+    "SELECT chants.*, pc.nom AS propose_par_chorale_nom, cp.nom AS chorale_proprietaire_nom FROM chants "
+    "LEFT JOIN chorales pc ON pc.id = chants.propose_par_chorale_id "
+    "LEFT JOIN chorales cp ON cp.id = chants.chorale_proprietaire_id"
 )
+
+
+_VISIBILITE_CLAUSE = "(chants.visibilite = 'publique' OR chants.chorale_proprietaire_id = ?)"
 
 
 def get_chant(chant_id: int, chorale_id_appelant: Optional[int] = None) -> Optional[schemas.Chant]:
     """chorale_id_appelant est optionnel et laissé à None par tous les
     appels INTERNES (rendu d'un feuillet déjà composé, détection de
-    doublons...) : le masquage (voir masques_chorale) n'affecte QUE la
+    doublons...) : le masquage ET la visibilité restreinte (voir
+    masques_chorale / chants.visibilite) n'affectent QUE la
     recherche/consultation dans la bibliothèque, jamais un chant déjà
-    référencé par un dépliant existant."""
+    référencé par un dépliant existant -- sinon le PDF d'un feuillet public
+    citant un chant encore privé chez son auteur casserait pour tout le
+    monde sauf lui."""
     with get_connection() as conn:
         if chorale_id_appelant is not None:
             row = conn.execute(
-                _CHANT_SELECT + f" WHERE chants.id = ? AND {_MASQUE_CLAUSE.format(table='chants')}",
-                (chant_id, "chant", chorale_id_appelant),
+                _CHANT_SELECT + f" WHERE chants.id = ? AND {_MASQUE_CLAUSE.format(table='chants')} AND {_VISIBILITE_CLAUSE}",
+                (chant_id, "chant", chorale_id_appelant, chorale_id_appelant),
             ).fetchone()
         else:
             row = conn.execute(_CHANT_SELECT + " WHERE chants.id = ?", (chant_id,)).fetchone()
         return _row_to_chant(row) if row else None
+
+
+def list_chants_prives() -> list[schemas.Chant]:
+    """Chants créés par une chorale, encore privés (visibilite='chorale') --
+    file d'attente de publication pour le super-admin (voir
+    routers/moderation.py). Pas de masquage/visibilité appliqué ici : le
+    super-admin doit tout voir pour pouvoir modérer."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            _CHANT_SELECT + " WHERE chants.visibilite = 'chorale' ORDER BY chants.created_at DESC",
+        ).fetchall()
+        return [_row_to_chant(r) for r in rows]
+
+
+def publier_chant(chant_id: int) -> Optional[schemas.Chant]:
+    """Rend un chant privé (visibilite='chorale') visible de toute la
+    communauté -- décision explicite du super-admin (voir
+    routers/moderation.py::publier_chant_prive)."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chants SET visibilite = 'publique' WHERE id = ?", (chant_id,))
+        if cur.rowcount == 0:
+            return None
+    return get_chant(chant_id)
 
 
 def get_chant_by_reference(code_reference: str) -> Optional[schemas.Chant]:
@@ -278,21 +318,28 @@ def revoquer_partition(partition_id: int) -> Optional[dict]:
         return _row_to_partition(row) if row else None
 
 
-def get_chant_by_slug(slug: str) -> Optional[schemas.Chant]:
+def get_chant_by_slug(slug: str, chorale_id_appelant: Optional[int] = None) -> Optional[schemas.Chant]:
     with get_connection() as conn:
-        row = conn.execute(_CHANT_SELECT + " WHERE chants.slug = ?", (slug,)).fetchone()
+        if chorale_id_appelant is not None:
+            row = conn.execute(
+                _CHANT_SELECT + f" WHERE chants.slug = ? AND {_MASQUE_CLAUSE.format(table='chants')} AND {_VISIBILITE_CLAUSE}",
+                (slug, "chant", chorale_id_appelant, chorale_id_appelant),
+            ).fetchone()
+        else:
+            row = conn.execute(_CHANT_SELECT + " WHERE chants.slug = ?", (slug,)).fetchone()
         return _row_to_chant(row) if row else None
 
 
 # --- Audio/vidéo facultatifs (voir db.py::chant_medias) --------------------
-# Contrairement aux partitions : pas de workflow de modération, pas de
-# déduplication par hash, plusieurs médias peuvent coexister pour un même
-# chant. Jamais utilisés dans le rendu PDF des feuillets.
+# Contrairement aux partitions : pas de déduplication par hash, plusieurs
+# médias peuvent coexister pour un même chant. Jamais utilisés dans le rendu
+# PDF des feuillets. `statut` : voir le commentaire équivalent sur db.py.
 
 _CHANT_MEDIA_SELECT = (
-    "SELECT cm.*, m.filename, m.content_type, ch.nom AS chorale_nom "
+    "SELECT cm.*, m.filename, m.content_type, ch.nom AS chorale_nom, c.titre AS chant_titre "
     "FROM chant_medias cm "
     "JOIN medias m ON m.id = cm.media_id "
+    "JOIN chants c ON c.id = cm.chant_id "
     "LEFT JOIN chorales ch ON ch.id = cm.chorale_id"
 )
 
@@ -302,45 +349,94 @@ def _row_to_chant_media(row) -> schemas.ChantMedia:
         id=row["id"], chant_id=row["chant_id"], type=row["type"],
         filename=row["filename"], content_type=row["content_type"],
         chorale_id=row["chorale_id"], chorale_nom=row["chorale_nom"],
+        chant_titre=row["chant_titre"],
+        statut=row["statut"],
         created_at=str(row["created_at"]),
     )
 
 
-def lister_medias_chant(chant_id: int) -> list[schemas.ChantMedia]:
+def lister_medias_chant(chant_id: int, chorale_id_appelant: Optional[int] = None) -> list[schemas.ChantMedia]:
+    """chorale_id_appelant=None (super-admin, ou appel interne) -> tout,
+    modération comprise. Une chorale ne voit que les médias déjà validés,
+    PLUS les siens propres encore en attente (pour suivre l'état de sa
+    soumission) -- jamais celles en attente d'une AUTRE chorale."""
     with get_connection() as conn:
-        rows = conn.execute(
-            _CHANT_MEDIA_SELECT + " WHERE cm.chant_id = ? ORDER BY cm.created_at ASC", (chant_id,),
-        ).fetchall()
+        if chorale_id_appelant is not None:
+            rows = conn.execute(
+                _CHANT_MEDIA_SELECT + " WHERE cm.chant_id = ? AND (cm.statut = 'validee' OR cm.chorale_id = ?) ORDER BY cm.created_at ASC",
+                (chant_id, chorale_id_appelant),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                _CHANT_MEDIA_SELECT + " WHERE cm.chant_id = ? ORDER BY cm.created_at ASC", (chant_id,),
+            ).fetchall()
         return [_row_to_chant_media(r) for r in rows]
 
 
 def ajouter_media_chant(
     chant_id: int, type_: str, chorale_id: int, contenu: bytes, filename: str, content_type: Optional[str],
 ) -> schemas.ChantMedia:
+    # Même logique de publication que les chants/dépliants : un média ajouté
+    # par une chorale (jamais l'admin lui-même, chorale_id=0) reste invisible
+    # des autres tant qu'il n'a pas été validé (voir moderer_media_chant
+    # ci-dessous) -- gate SEULEMENT ce média, jamais le chant qui le porte.
+    statut = "validee" if chorale_id == 0 else "a_verifier"
     chant = get_chant(chant_id)
     media = config.upload_media(chorale_id, type_, filename, contenu, content_type, nom=chant.titre if chant else None)
     with get_connection() as conn:
         nouvelle_id = insert_returning_id(
             conn,
-            "INSERT INTO chant_medias (chant_id, type, media_id, chorale_id) VALUES (?, ?, ?, ?)",
-            (chant_id, type_, media["id"], chorale_id),
+            "INSERT INTO chant_medias (chant_id, type, media_id, chorale_id, statut) VALUES (?, ?, ?, ?, ?)",
+            (chant_id, type_, media["id"], chorale_id, statut),
         )
         row = conn.execute(_CHANT_MEDIA_SELECT + " WHERE cm.id = ?", (nouvelle_id,)).fetchone()
         return _row_to_chant_media(row)
 
 
-def get_media_chant_bytes(media_chant_id: int) -> Optional[tuple[bytes, str, Optional[int]]]:
-    """(contenu, content_type, chorale_id) -- chorale_id sert au contrôle
-    d'accès lors de la suppression (voir supprimer_media_chant)."""
+def lister_medias_en_attente() -> list[schemas.ChantMedia]:
+    """File d'attente de modération admin (voir routers/moderation.py)."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            _CHANT_MEDIA_SELECT + " WHERE cm.statut = 'a_verifier' ORDER BY cm.created_at ASC",
+        ).fetchall()
+        return [_row_to_chant_media(r) for r in rows]
+
+
+def valider_media_chant(media_chant_id: int) -> Optional[schemas.ChantMedia]:
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chant_medias SET statut = 'validee' WHERE id = ?", (media_chant_id,))
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(_CHANT_MEDIA_SELECT + " WHERE cm.id = ?", (media_chant_id,)).fetchone()
+        return _row_to_chant_media(row)
+
+
+def revoquer_media_chant(media_chant_id: int) -> Optional[schemas.ChantMedia]:
+    """Rejette une soumission en attente, OU retire un média déjà publié --
+    toujours une décision humaine (même principe que revoquer_partition)."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE chant_medias SET statut = 'revoquee' WHERE id = ?", (media_chant_id,))
+        if cur.rowcount == 0:
+            return None
+        row = conn.execute(_CHANT_MEDIA_SELECT + " WHERE cm.id = ?", (media_chant_id,)).fetchone()
+        return _row_to_chant_media(row)
+
+
+def get_media_chant_bytes(media_chant_id: int) -> Optional[tuple[bytes, str, Optional[int], str]]:
+    """(contenu, content_type, chorale_id, statut) -- chorale_id sert au
+    contrôle d'accès lors de la suppression (voir supprimer_media_chant),
+    statut au contrôle de lecture avant validation (voir routers/chants.py::
+    telecharger_media_chant, qui refuse le téléchargement direct d'un média
+    encore en attente à qui n'en est pas l'auteur)."""
     with get_connection() as conn:
         row = conn.execute(
-            "SELECT m.donnees, m.content_type, cm.chorale_id FROM chant_medias cm "
+            "SELECT m.donnees, m.content_type, cm.chorale_id, cm.statut FROM chant_medias cm "
             "JOIN medias m ON m.id = cm.media_id WHERE cm.id = ?",
             (media_chant_id,),
         ).fetchone()
     if not row:
         return None
-    return bytes(row["donnees"]), row["content_type"] or "application/octet-stream", row["chorale_id"]
+    return bytes(row["donnees"]), row["content_type"] or "application/octet-stream", row["chorale_id"], row["statut"]
 
 
 def supprimer_media_chant(media_chant_id: int, chorale_id: Optional[int], est_superadmin: bool) -> bool:
@@ -412,6 +508,8 @@ def list_chants(
     if chorale_id_appelant is not None:
         clauses.append(_MASQUE_CLAUSE.format(table="chants"))
         params.extend(["chant", chorale_id_appelant])
+        clauses.append(_VISIBILITE_CLAUSE)
+        params.append(chorale_id_appelant)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     # Le classement par pertinence FTS5 (`rank`) exige que le MATCH soit dans
     # la requête SELECT principale -- ce n'est plus le cas ici (il vit dans la
@@ -429,15 +527,25 @@ def list_chants(
         return [_row_to_chant(r, resume=resume) for r in rows]
 
 
-def bulk_update_categorie(ids: list[int], categorie: str) -> int:
+def bulk_update_categorie(ids: list[int], categorie: str, chorale_id_appelant: Optional[int] = None) -> int:
+    """chorale_id_appelant restreint la mise à jour aux chants possédés par
+    cette chorale (None = super-admin, aucune restriction) -- sans ça,
+    n'importe quel compte chorale authentifié pouvait recatégoriser
+    n'importe quel chant de n'importe quelle autre chorale."""
     if not ids:
         return 0
     with get_connection() as conn:
         placeholders = ",".join("?" for _ in ids)
-        cur = conn.execute(
-            f"UPDATE chants SET categorie = ? WHERE id IN ({placeholders})",
-            (categorie, *ids),
-        )
+        if chorale_id_appelant is not None:
+            cur = conn.execute(
+                f"UPDATE chants SET categorie = ? WHERE id IN ({placeholders}) AND chorale_proprietaire_id = ?",
+                (categorie, *ids, chorale_id_appelant),
+            )
+        else:
+            cur = conn.execute(
+                f"UPDATE chants SET categorie = ? WHERE id IN ({placeholders})",
+                (categorie, *ids),
+            )
         return cur.rowcount
 
 
@@ -488,7 +596,7 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 slug = unique_slug(data["titre"], _existing_slugs(conn, exclude_id=chant_id))
         conn.execute(
             """
-            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?
+            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, references_bibliques=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?
             WHERE id=?
             """,
             (
@@ -502,6 +610,7 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 json.dumps(data["occasions"], ensure_ascii=False),
                 confiance,
                 json.dumps(data["mots_cles"], ensure_ascii=False),
+                json.dumps(data["references_bibliques"], ensure_ascii=False),
                 1 if data["actif"] else 0,
                 1 if data["favori"] else 0,
                 1 if data["chant_principal"] else 0,
@@ -553,18 +662,35 @@ def retirer_validation_chant(chant_id: int) -> Optional[schemas.Chant]:
     return get_chant(chant_id)
 
 
-def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
+def get_chants_proprietaires(ids: list[int]) -> dict[int, Optional[int]]:
+    """chant_id -> chorale_proprietaire_id, pour vérifier en une seule
+    requête qu'une chorale ne demande un "replace" (voir
+    routers/import_.py::finalize_import) que sur des chants qu'elle possède
+    réellement, avant de lancer le traitement par lots."""
+    if not ids:
+        return {}
+    with get_connection() as conn:
+        placeholders = ",".join("?" for _ in ids)
+        rows = conn.execute(
+            f"SELECT id, chorale_proprietaire_id FROM chants WHERE id IN ({placeholders})", ids,
+        ).fetchall()
+    return {r["id"]: r["chorale_proprietaire_id"] for r in rows}
+
+
+def bulk_import_chants(
+    ops: list[dict], chorale_proprietaire_id: Optional[int] = None, visibilite: str = "publique",
+) -> tuple[int, int, int]:
     saved = 0
     replaced = 0
     ignored = 0
     with get_connection() as conn:
         existing_slugs = set(_existing_slugs(conn))
-        
+
         for op in ops:
             if not op:
                 ignored += 1
                 continue
-                
+
             op_type = op["type"]
             if op_type == "save":
                 chant = op["chant"]
@@ -572,11 +698,11 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                 base_slug = chant.slug.strip() if chant.slug and chant.slug.strip() else chant.titre
                 slug = unique_slug(base_slug, existing_slugs)
                 existing_slugs.add(slug)
-                
+
                 conn.execute(
                     """
-                    INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur, chorale_proprietaire_id, visibilite)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
                         chant.titre,
@@ -598,6 +724,8 @@ def bulk_import_chants(ops: list[dict]) -> tuple[int, int, int]:
                         chant.remarques,
                         chant.auteur,
                         chant.compositeur,
+                        chorale_proprietaire_id,
+                        visibilite,
                     ),
                 )
                 saved += 1
@@ -712,6 +840,7 @@ def _row_to_feuillet(row) -> schemas.Feuillet:
         chorale_id=row["chorale_id"],
         clone_de_id=row["clone_de_id"],
         chorale_nom=row["chorale_nom"],
+        visibilite=row["visibilite"],
         created_at=str(row["created_at"]) if row["created_at"] is not None else None,
     )
 
@@ -723,12 +852,20 @@ def create_feuillet(feuillet: schemas.FeuilletCreate, chorale_id: int, clone_de_
     # échouer après coup. Couvre aussi le clonage implicite (voir
     # update_feuillet, qui appelle cette même fonction).
     licences.consommer_quota_feuillet(chorale_id)
+    # Même logique de publication que les chants (voir chants.visibilite) :
+    # un dépliant composé par une chorale reste privé (visible d'elle seule)
+    # tant qu'elle n'en a pas explicitement demandé la publication ET qu'un
+    # administrateur ne l'a pas validée (voir demander_publication_feuillet/
+    # valider_publication_feuillet ci-dessous). chorale_id=0 désigne
+    # l'admin lui-même (jamais une vraie chorale) -- ce qu'il compose est
+    # public d'emblée, comme pour un chant qu'il ajoute directement.
+    visibilite = "publique" if chorale_id == 0 else "chorale"
     with get_connection() as conn:
         new_id = insert_returning_id(
             conn,
             "INSERT INTO feuillets "
-            "(date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle, one_page_mode, banniere_active, chorale_id, clone_de_id) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            "(date, lieu, lectures, moments, priere_active, priere_texte, taille_texte_manuelle, one_page_mode, banniere_active, chorale_id, clone_de_id, visibilite) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
                 feuillet.date,
                 feuillet.lieu,
@@ -741,25 +878,71 @@ def create_feuillet(feuillet: schemas.FeuilletCreate, chorale_id: int, clone_de_
                 int(feuillet.banniere_active),
                 chorale_id,
                 clone_de_id,
+                visibilite,
             ),
         )
         row = conn.execute(_FEUILLET_SELECT + " WHERE f.id = ?", (new_id,)).fetchone()
         return _row_to_feuillet(row)
 
 
+_VISIBILITE_CLAUSE_FEUILLET = "(f.visibilite = 'publique' OR f.chorale_id = ?)"
+
+
 def get_feuillet(feuillet_id: int, chorale_id_appelant: Optional[int] = None) -> Optional[schemas.Feuillet]:
     """chorale_id_appelant optionnel, laissé à None par les appels INTERNES
-    (ex. vérification de propriété dans update_feuillet) — voir le
-    commentaire équivalent sur get_chant."""
+    (ex. vérification de propriété dans update_feuillet, rendu d'un feuillet
+    déjà composé) — voir le commentaire équivalent sur get_chant. Valeur 0 =
+    admin (via le routeur) : masquage sans effet (aucune chorale n'a l'id 0)
+    et visibilité SANS restriction (l'admin doit tout voir pour modérer) ;
+    seul un chorale_id_appelant réel (>0) applique la restriction de
+    visibilité chorale/demande_publication/publique."""
     with get_connection() as conn:
         if chorale_id_appelant is not None:
-            row = conn.execute(
-                _FEUILLET_SELECT + f" WHERE f.id = ? AND {_MASQUE_CLAUSE.format(table='f')}",
-                (feuillet_id, "feuillet", chorale_id_appelant),
-            ).fetchone()
+            clause = _MASQUE_CLAUSE.format(table="f")
+            params: list = [feuillet_id, "feuillet", chorale_id_appelant]
+            if chorale_id_appelant:
+                clause += f" AND {_VISIBILITE_CLAUSE_FEUILLET}"
+                params.append(chorale_id_appelant)
+            row = conn.execute(_FEUILLET_SELECT + f" WHERE f.id = ? AND {clause}", tuple(params)).fetchone()
         else:
             row = conn.execute(_FEUILLET_SELECT + " WHERE f.id = ?", (feuillet_id,)).fetchone()
         return _row_to_feuillet(row) if row else None
+
+
+def list_feuillets_a_valider() -> list[schemas.Feuillet]:
+    """Dépliants dont la chorale a demandé la publication, en attente de
+    validation par le super-admin (voir routers/moderation.py). Pas de
+    masquage/visibilité appliqué : l'admin doit tout voir pour modérer."""
+    with get_connection() as conn:
+        rows = conn.execute(
+            _FEUILLET_SELECT + " WHERE f.visibilite = 'demande_publication' ORDER BY f.created_at DESC",
+        ).fetchall()
+        return [_row_to_feuillet(r) for r in rows]
+
+
+def demander_publication_feuillet(feuillet_id: int, chorale_id: int) -> Optional[schemas.Feuillet]:
+    """Geste de la chorale PROPRIÉTAIRE : passe son dépliant privé en file
+    d'attente de publication. Sans effet si le dépliant ne lui appartient
+    pas ou n'est pas actuellement à l'état privé (déjà en attente ou déjà
+    publié -- idempotent plutôt qu'une erreur)."""
+    with get_connection() as conn:
+        cur = conn.execute(
+            "UPDATE feuillets SET visibilite = 'demande_publication' WHERE id = ? AND chorale_id = ? AND visibilite = 'chorale'",
+            (feuillet_id, chorale_id),
+        )
+        if cur.rowcount == 0:
+            return None
+    return get_feuillet(feuillet_id)
+
+
+def valider_publication_feuillet(feuillet_id: int) -> Optional[schemas.Feuillet]:
+    """Décision explicite du super-admin : rend un dépliant en attente
+    (ou même directement privé) visible de toute la communauté."""
+    with get_connection() as conn:
+        cur = conn.execute("UPDATE feuillets SET visibilite = 'publique' WHERE id = ?", (feuillet_id,))
+        if cur.rowcount == 0:
+            return None
+    return get_feuillet(feuillet_id)
 
 
 def update_feuillet(feuillet_id: int, feuillet: schemas.FeuilletCreate, chorale_id: int) -> Optional[schemas.Feuillet]:
@@ -822,6 +1005,12 @@ def list_feuillets(
     if chorale_id_appelant is not None:
         clauses.append(_MASQUE_CLAUSE.format(table="f"))
         params.extend(["feuillet", chorale_id_appelant])
+        if chorale_id_appelant:
+            # Restreint aux dépliants publics + ceux de l'appelante elle-même
+            # (visibles pour elle même en attente/privés) -- sans effet pour
+            # l'admin (chorale_id_appelant=0), qui voit tout.
+            clauses.append(_VISIBILITE_CLAUSE_FEUILLET)
+            params.append(chorale_id_appelant)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with get_connection() as conn:
         # tri par date de création (pas par `date`, qui est un texte libre du

@@ -15,6 +15,8 @@ import { jetonAuthorizationHeader } from "../api/client";
 import { entrainerModele } from "../api/ml";
 import { supprimerTouteLaBibliotheque, rechercherChants } from "../api/chants";
 import { synchroniserBibliotheque, dernieresSyncLe } from "../storage/sync";
+import { synchroniserBibliothequeBiblique, ProgresSynchronisation } from "../api/aelf";
+import { derniereSyncLe as derniereSyncBibliqueLe } from "../storage/lecturesCache";
 import { lireOutbox } from "../storage/chantsOutbox";
 import { obtenirMonAbonnement, MonAbonnement } from "../api/licences";
 import { useIdentite } from "../context/IdentiteContext";
@@ -55,6 +57,9 @@ export default function ReglagesScreen() {
   const [syncBibliotheque, setSyncBibliotheque] = useState(true);
   const [syncEnCours, setSyncEnCours] = useState(false);
   const [derniereSync, setDerniereSync] = useState<string | null>(null);
+  const [syncBibliqueEnCours, setSyncBibliqueEnCours] = useState(false);
+  const [derniereSyncBiblique, setDerniereSyncBiblique] = useState<string | null>(null);
+  const [progresBiblique, setProgresBiblique] = useState<ProgresSynchronisation>({ traites: 0, total: null });
   const [enAttenteOutbox, setEnAttenteOutbox] = useState(0);
   // Aperçu local instantané pendant l'envoi -- le web voit son image tout de
   // suite (data URI côté navigateur) ; sans ça, mobile n'affichait le
@@ -62,6 +67,7 @@ export default function ReglagesScreen() {
   // sur une connexion lente.
   const [apercusLocaux, setApercusLocaux] = useState<Partial<Record<ImageSlot, string>>>({});
   const [slotsEnEnvoi, setSlotsEnEnvoi] = useState<Set<ImageSlot>>(new Set());
+  const [reentrainementEnCours, setReentrainementEnCours] = useState(false);
   const timerAuto = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const charger = async () => {
@@ -74,6 +80,7 @@ export default function ReglagesScreen() {
     setSyncBibliotheque(data.sync_bibliotheque_partagee !== false);
     setDerniereSync(await dernieresSyncLe());
     setEnAttenteOutbox((await lireOutbox()).length);
+    setDerniereSyncBiblique(await derniereSyncBibliqueLe());
   };
 
   useEffect(() => {
@@ -213,11 +220,14 @@ export default function ReglagesScreen() {
   }
 
   async function reentrainer() {
+    setReentrainementEnCours(true);
     try {
       const res: any = await entrainerModele();
       Alert.alert("Modèle réentraîné", `Terminé (${res?.echantillons ?? "?"} exemples).`);
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Échec de l'entraînement");
+    } finally {
+      setReentrainementEnCours(false);
     }
   }
 
@@ -282,6 +292,20 @@ export default function ReglagesScreen() {
       Alert.alert("Hors-ligne", "La synchronisation nécessite une connexion internet. Réessaie plus tard.");
     } finally {
       setSyncEnCours(false);
+    }
+  }
+
+  async function lancerSynchronisationBiblique() {
+    setSyncBibliqueEnCours(true);
+    setProgresBiblique({ traites: 0, total: null });
+    try {
+      const resultat = await synchroniserBibliothequeBiblique((p) => setProgresBiblique(p));
+      setDerniereSyncBiblique(await derniereSyncBibliqueLe());
+      Alert.alert("Synchronisation terminée", `${resultat.nbJours} jour(s) de lectures téléchargés (zone AELF : ${resultat.zone}).`);
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "La synchronisation nécessite une connexion internet. Réessaie plus tard.");
+    } finally {
+      setSyncBibliqueEnCours(false);
     }
   }
 
@@ -367,9 +391,13 @@ export default function ReglagesScreen() {
       <Text style={styles.compteurCaracteres}>{priereDefaut.length} caractères</Text>
       <Bouton titre="Enregistrer la prière" onPress={enregistrerPriere} />
 
-      <Text style={styles.section}>🧠 Modèle d'auto-catégorisation</Text>
-      <Text style={styles.hint}>Le modèle apprend à partir des chants validés. Ré-entraîne-le après des corrections pour améliorer les suggestions de catégories.</Text>
-      <Bouton titre="Ré-entraîner le modèle" variante="contour" onPress={reentrainer} />
+      {estSuperAdmin && (
+        <>
+          <Text style={styles.section}>🧠 Modèle d'auto-catégorisation</Text>
+          <Text style={styles.hint}>Le modèle apprend à partir des chants validés, de toutes les chorales -- un réentraînement affecte donc les suggestions pour tout le monde à la fois, réservé à l'administrateur. Ré-entraîne-le après des corrections pour améliorer les suggestions de catégories.</Text>
+          <Bouton titre="Ré-entraîner le modèle" variante="contour" onPress={reentrainer} enCours={reentrainementEnCours} />
+        </>
+      )}
 
       <Text style={styles.section}>📄 Aperçu réel du feuillet</Text>
       <View style={styles.rangeeOption}>
@@ -389,27 +417,64 @@ export default function ReglagesScreen() {
             <Text style={styles.hint}>Chargement de l'abonnement…</Text>
           ) : !abonnement.licence ? (
             <Text style={styles.hint}>Aucune licence active rattachée à ce compte.</Text>
-          ) : (
-            <View style={styles.carteAbonnement}>
-              <View style={styles.ligneAbonnement}>
-                <Text style={styles.labelAbonnement}>Statut</Text>
-                <Text style={[styles.valeurAbonnement, abonnement.statut !== "active" && { color: "#dc2626" }]}>
-                  {abonnement.statut === "active" ? "Active" : "Révoquée"}
-                </Text>
-              </View>
-              <View style={styles.ligneAbonnement}>
-                <Text style={styles.labelAbonnement}>Feuillets produits</Text>
-                <Text style={styles.valeurAbonnement}>
-                  {abonnement.feuillets_produits}{abonnement.quota_feuillets != null ? ` / ${abonnement.quota_feuillets}` : " (illimité)"}
-                </Text>
-              </View>
-              <View style={styles.ligneAbonnement}>
-                <Text style={styles.labelAbonnement}>Expiration</Text>
-                <Text style={styles.valeurAbonnement}>{abonnement.expire_le ?? "Aucune"}</Text>
-              </View>
-            </View>
-          )}
-          <Bouton titre="Gérer mon abonnement" variante="contour" onPress={gererMonAbonnement} />
+          ) : (() => {
+            const quotaAtteint = abonnement.quota_feuillets != null && abonnement.feuillets_produits >= abonnement.quota_feuillets;
+            const joursAvantExpiration = abonnement.expire_le
+              ? Math.ceil((new Date(abonnement.expire_le).getTime() - Date.now()) / (24 * 3600 * 1000))
+              : null;
+            const expiree = joursAvantExpiration != null && joursAvantExpiration < 0;
+            const expireBientot = joursAvantExpiration != null && joursAvantExpiration >= 0 && joursAvantExpiration <= 14;
+            const revoquee = abonnement.statut !== "active";
+            return (
+              <>
+                <View style={styles.carteAbonnement}>
+                  <View style={styles.ligneAbonnement}>
+                    <Text style={styles.labelAbonnement}>Statut</Text>
+                    <Text style={[styles.valeurAbonnement, revoquee && { color: "#dc2626" }]}>
+                      {abonnement.statut === "active" ? "Active" : "Révoquée"}
+                    </Text>
+                  </View>
+                  <View style={styles.ligneAbonnement}>
+                    <Text style={styles.labelAbonnement}>Feuillets produits</Text>
+                    <Text style={[styles.valeurAbonnement, quotaAtteint && { color: "#dc2626" }]}>
+                      {abonnement.feuillets_produits}{abonnement.quota_feuillets != null ? ` / ${abonnement.quota_feuillets}` : " (illimité)"}
+                    </Text>
+                  </View>
+                  <View style={styles.ligneAbonnement}>
+                    <Text style={styles.labelAbonnement}>Expiration</Text>
+                    <Text style={[styles.valeurAbonnement, (expiree || expireBientot) && { color: expiree ? "#dc2626" : "#d97706" }]}>
+                      {abonnement.expire_le ?? "Aucune"}
+                    </Text>
+                  </View>
+                </View>
+                {revoquee && (
+                  <Text style={styles.avertissementAbonnement}>
+                    ⛔ Votre licence a été révoquée -- l'application ne fonctionnera plus sur cet appareil tant qu'elle n'est pas réactivée par
+                    l'administrateur. Contactez-le ci-dessous.
+                  </Text>
+                )}
+                {!revoquee && expiree && (
+                  <Text style={styles.avertissementAbonnement}>
+                    ⛔ Votre licence a expiré -- l'application ne fonctionnera plus sur cet appareil tant qu'elle n'est pas renouvelée. Contactez
+                    l'administrateur ci-dessous.
+                  </Text>
+                )}
+                {!revoquee && !expiree && expireBientot && (
+                  <Text style={styles.avertissementAbonnementAttention}>
+                    ⏳ Votre licence expire dans {joursAvantExpiration} jour{joursAvantExpiration !== 1 ? "s" : ""} -- pensez à la renouveler pour ne
+                    pas perdre l'accès.
+                  </Text>
+                )}
+                {quotaAtteint && (
+                  <Text style={styles.avertissementAbonnement}>
+                    ⛔ Quota de feuillets atteint -- vous ne pouvez plus générer de nouveaux feuillets avec cette licence. Contactez
+                    l'administrateur pour l'augmenter.
+                  </Text>
+                )}
+              </>
+            );
+          })()}
+          <Bouton titre="💬 Gérer mon abonnement" onPress={gererMonAbonnement} />
         </>
       )}
 
@@ -441,21 +506,50 @@ export default function ReglagesScreen() {
         desactive={syncEnCours || !syncBibliotheque}
       />
 
-      <Text style={[styles.section, { color: "#dc2626" }]}>⚠️ Zone dangereuse</Text>
+      <Text style={styles.section}>📖 Bibliothèque biblique</Text>
       <Text style={styles.hint}>
-        Supprime définitivement TOUS les chants de la bibliothèque -- utile pour repartir d'une base propre avant un nouvel import. Les feuillets déjà générés ne sont pas affectés.
+        Télécharge les lectures liturgiques (AELF) de l'année en cours pour pouvoir les consulter -- et faire ressortir les chants qui leur
+        correspondent -- entièrement hors-ligne, depuis Plus → Lectures du jour. Le téléchargement peut prendre une minute ou deux la première fois.
       </Text>
-      <TextInput
-        style={styles.champ}
-        placeholder="Tape SUPPRIMER pour confirmer"
-        value={confirmationSuppression}
-        onChangeText={setConfirmationSuppression}
-        autoCapitalize="characters"
-      />
+      {syncBibliqueEnCours && (
+        <Text style={styles.hint}>
+          Synchronisation en cours... {progresBiblique.traites}{progresBiblique.total ? ` / ${progresBiblique.total}` : ""} jour(s)
+        </Text>
+      )}
+      <Text style={styles.hint}>
+        {derniereSyncBiblique ? `Dernière synchronisation : ${new Date(derniereSyncBiblique).toLocaleString("fr-FR")}` : "Jamais synchronisée."}
+      </Text>
       <Bouton
-        titre="Vider la bibliothèque" variante="contour" onPress={viderLaBibliotheque}
-        enCours={suppressionEnCours} desactive={confirmationSuppression !== "SUPPRIMER"}
+        titre={syncBibliqueEnCours ? "Synchronisation..." : "📖 Synchroniser la bibliothèque biblique"}
+        variante="contour"
+        onPress={lancerSynchronisationBiblique}
+        enCours={syncBibliqueEnCours}
       />
+
+      {estSuperAdmin && (
+        <>
+          {/* Supprime la bibliothèque PARTAGÉE entière (toutes chorales
+              confondues) -- le backend (DELETE /chants/all) l'exige déjà
+              côté serveur, cachée ici en plus pour qu'une chorale ne tombe
+              jamais sur ce bouton qui échouerait de toute façon avec une
+              erreur confuse. */}
+          <Text style={[styles.section, { color: "#dc2626" }]}>⚠️ Zone dangereuse</Text>
+          <Text style={styles.hint}>
+            Supprime définitivement TOUS les chants de la bibliothèque, de toutes les chorales -- utile pour repartir d'une base propre avant un nouvel import. Les feuillets déjà générés ne sont pas affectés.
+          </Text>
+          <TextInput
+            style={styles.champ}
+            placeholder="Tape SUPPRIMER pour confirmer"
+            value={confirmationSuppression}
+            onChangeText={setConfirmationSuppression}
+            autoCapitalize="characters"
+          />
+          <Bouton
+            titre="Vider la bibliothèque" variante="contour" onPress={viderLaBibliotheque}
+            enCours={suppressionEnCours} desactive={confirmationSuppression !== "SUPPRIMER"}
+          />
+        </>
+      )}
 
       <Modal visible={!!pickerSlot} animationType="slide" onRequestClose={() => setPickerSlot(null)}>
         <View style={styles.conteneurPicker}>
@@ -521,6 +615,8 @@ const styles = StyleSheet.create({
   ligneAbonnement: { flexDirection: "row", justifyContent: "space-between", paddingVertical: 6, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
   labelAbonnement: { fontSize: 12, color: "#64748b" },
   valeurAbonnement: { fontSize: 13, fontWeight: "700", color: "#1e293b" },
+  avertissementAbonnement: { fontSize: 12, color: "#dc2626", fontWeight: "600", backgroundColor: "#fee2e2", borderRadius: 10, padding: 10, marginBottom: 10 },
+  avertissementAbonnementAttention: { fontSize: 12, color: "#b45309", fontWeight: "600", backgroundColor: "#fef3c7", borderRadius: 10, padding: 10, marginBottom: 10 },
   ligneToggle: { flexDirection: "row", alignItems: "center", gap: 12, backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 10 },
   labelToggle: { fontSize: 13, fontWeight: "600", color: "#1e293b" },
   sousLabelToggle: { fontSize: 11, color: "#94a3b8", marginTop: 2 },

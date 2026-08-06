@@ -296,6 +296,44 @@ def detect_pdf_strategy(path: Path) -> str:
         return "generic"
     except Exception:
         return "generic"
+
+
+_MARQUEUR_PREFIXE = "DEPLIANTAPP-CHANTS-V1:"
+
+
+def detecter_marqueur_reimport(path) -> list[int]:
+    """Cherche le marqueur de réimport embarqué dans les métadonnées du
+    document (mot-clé "Keywords") par render/pdf.py::_dessiner_marqueur_
+    reimport -- jamais dans le contenu d'une page, pour ne structurellement
+    jamais pouvoir interférer avec l'extraction de texte (segment_notre_
+    modele en dépend pour reconstruire les chants).
+
+    Renvoie la liste ordonnée des chant_id du feuillet d'ORIGINE si trouvé,
+    sinon []. Ne remplace JAMAIS l'analyse structurelle de segment_notre_
+    modele (qui reconstruit le contenu depuis le PDF lui-même et fonctionne
+    même si ces chant_id ne référencent plus rien) -- sert seulement à
+    transformer une correspondance de titre FLOUE (find_duplicates,
+    similarité texte) en correspondance EXACTE quand elle est disponible
+    (voir routers/import_.py::upload_carnet). Si le chant d'origine a depuis
+    été supprimé de la base, l'id ne matchera simplement plus rien lors de la
+    résolution -- pas d'erreur, juste un repli silencieux sur le
+    rapprochement flou habituel."""
+    try:
+        doc = fitz.open(path)
+    except Exception:
+        return []
+    try:
+        mots_cles = (doc.metadata or {}).get("keywords") or ""
+        idx = mots_cles.find(_MARQUEUR_PREFIXE)
+        if idx == -1:
+            return []
+        brut = mots_cles[idx + len(_MARQUEUR_PREFIXE):]
+        ids = []
+        for morceau in brut.split(","):
+            morceau = morceau.strip()
+            if morceau.isdigit():
+                ids.append(int(morceau))
+        return ids
     finally:
         doc.close()
 

@@ -171,3 +171,66 @@ def revoquer_partition(id: int, _identite: auth.Identite = Depends(require_super
     if not resultat:
         raise HTTPException(status_code=404, detail="Partition introuvable")
     return resultat
+
+
+# --- Chants privés en attente de publication --------------------------------
+# Un chant créé par une chorale reste visible seulement d'elle (voir
+# routers/chants.py::create_chant) tant qu'un administrateur ne l'a pas
+# publié ici -- sauf si le réglage global chants_publication_auto est actif.
+
+@router.get("/chants-prives")
+def list_chants_prives(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.list_chants_prives()
+
+
+@router.post("/chants-prives/{id}/publier")
+def publier_chant_prive(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    chant = crud.publier_chant(id)
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return chant
+
+
+# --- Dépliants en attente de publication ------------------------------------
+# Même logique que les chants privés ci-dessus : un dépliant composé par une
+# chorale reste visible seulement d'elle (voir routers/feuillets.py::create_
+# feuillet) jusqu'à ce qu'elle en demande la publication (POST /feuillets/
+# {id}/demander-publication) ET qu'un administrateur la valide ici.
+
+@router.get("/feuillets-a-valider")
+def list_feuillets_a_valider(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.list_feuillets_a_valider()
+
+
+@router.post("/feuillets-a-valider/{id}/valider")
+def valider_publication_feuillet_route(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    feuillet = crud.valider_publication_feuillet(id)
+    if not feuillet:
+        raise HTTPException(status_code=404, detail="Dépliant introuvable")
+    return feuillet
+
+
+# --- Médias audio/vidéo en attente de modération ----------------------------
+# Un média ajouté par une chorale (voir routers/chants.py::ajouter_media_chant)
+# reste invisible des autres chorales jusqu'à validation ici -- SANS jamais
+# affecter la visibilité du chant qui le porte (déjà validé ou non).
+
+@router.get("/medias-a-valider")
+def list_medias_en_attente(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.lister_medias_en_attente()
+
+
+@router.post("/medias-a-valider/{id}/valider")
+def valider_media(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    media = crud.valider_media_chant(id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Média introuvable")
+    return media
+
+
+@router.post("/medias-a-valider/{id}/rejeter")
+def rejeter_media(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    media = crud.revoquer_media_chant(id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Média introuvable")
+    return media

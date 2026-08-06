@@ -52,7 +52,7 @@ export async function enregistrerCreationLocale(payload: FeuilletCreate): Promis
   const idLocal = -Date.now();
   const feuillet: Feuillet = {
     ...payload, id: idLocal, chorale_id: null, clone_de_id: null, chorale_nom: null,
-    created_at: new Date().toISOString(),
+    visibilite: "chorale", created_at: new Date().toISOString(),
   };
   tout[idLocal] = { feuillet, enAttenteSync: true, payloadEnAttente: payload, idServeurCible: null };
   await ecrireTout(tout);
@@ -68,7 +68,7 @@ export async function enregistrerModificationLocale(id: number, payload: Feuille
   const existante = tout[id];
   const feuillet: Feuillet = existante
     ? { ...existante.feuillet, ...payload, id }
-    : { ...payload, id, chorale_id: null, clone_de_id: null, chorale_nom: null, created_at: new Date().toISOString() };
+    : { ...payload, id, chorale_id: null, clone_de_id: null, chorale_nom: null, visibilite: "chorale", created_at: new Date().toISOString() };
   tout[id] = { feuillet, enAttenteSync: true, payloadEnAttente: payload, idServeurCible: id < 0 ? null : id };
   await ecrireTout(tout);
   return feuillet;

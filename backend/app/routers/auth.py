@@ -1,9 +1,39 @@
+import time
+from collections import defaultdict
+
 from fastapi import APIRouter, HTTPException, Request, Response
 from pydantic import BaseModel
 
 from .. import auth
 
 router = APIRouter(prefix="/auth", tags=["auth"])
+
+# --- Throttling anti brute-force sur /login ---------------------------------
+# Même mécanisme que routers/licences.py::_throttle (en mémoire, suffisant
+# pour l'instance unique de ce service, voir render.yaml) -- /auth/login
+# n'avait jusqu'ici AUCUNE limite, contrairement à l'activation de licence :
+# un attaquant pouvait tenter un nombre illimité de mots de passe contre
+# n'importe quel compte chorale (identifiants souvent peu secrets, proches du
+# nom de la chorale) sans aucun ralentissement.
+_TENTATIVES_MAX = 10
+_FENETRE_SECONDES = 900
+_echecs_par_cle: dict[str, list[float]] = defaultdict(list)
+
+
+def _verifier_throttle(cle: str) -> None:
+    """Ne compte que les ÉCHECS (voir _enregistrer_echec) -- un utilisateur
+    légitime qui retape son mot de passe correct plusieurs fois (autre
+    appareil, etc.) ne doit jamais être bloqué, seul un enchaînement
+    d'échecs le doit."""
+    maintenant = time.time()
+    echecs = _echecs_par_cle[cle]
+    echecs[:] = [t for t in echecs if maintenant - t < _FENETRE_SECONDES]
+    if len(echecs) >= _TENTATIVES_MAX:
+        raise HTTPException(status_code=429, detail="Trop de tentatives de connexion, réessaie plus tard")
+
+
+def _enregistrer_echec(cle: str) -> None:
+    _echecs_par_cle[cle].append(time.time())
 
 
 class Identifiants(BaseModel):
@@ -17,9 +47,13 @@ class ChangementMotDePasse(BaseModel):
 
 
 @router.post("/login")
-def login(identifiants: Identifiants, response: Response):
+def login(identifiants: Identifiants, request: Request, response: Response):
+    ip = request.client.host if request.client else "inconnu"
+    cle = f"{ip}:{identifiants.username.strip().lower()}"
+    _verifier_throttle(cle)
     identite = auth.verify_credentials_toute_source(identifiants.username, identifiants.password)
     if not identite:
+        _enregistrer_echec(cle)
         raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect")
     token = auth.create_session_token(identite)
     response.set_cookie(

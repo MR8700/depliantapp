@@ -17,6 +17,11 @@ class ChantBase(BaseModel):
     # ici (non vide), il prime sur la dérivation automatique.
     slug: Optional[str] = None
     mots_cles: list[str] = Field(default_factory=list)
+    references_bibliques: list[str] = Field(default_factory=list)
+    """Références bibliques saisies manuellement (ex. "Mt 17, 1-9") --
+    facultatif, sert au rapprochement EXACT avec les lectures du jour AELF
+    (voir aelf_matching.py) ; en leur absence, seul le rapprochement par
+    contenu textuel s'applique pour ce chant."""
     actif: bool = True
     favori: bool = False
     chant_principal: bool = False
@@ -41,6 +46,7 @@ class ChantUpdate(BaseModel):
     occasions: Optional[list[str]] = None
     slug: Optional[str] = None
     mots_cles: Optional[list[str]] = None
+    references_bibliques: Optional[list[str]] = None
     actif: Optional[bool] = None
     favori: Optional[bool] = None
     chant_principal: Optional[bool] = None
@@ -62,6 +68,12 @@ class Chant(ChantBase):
     valide_manuellement: bool = False
     propose_par_chorale_id: Optional[int] = None
     propose_par_chorale_nom: Optional[str] = None
+    # Jamais réglable via ChantCreate/ChantUpdate -- décidé côté serveur
+    # (voir routers/chants.py::create_chant) selon qui crée le chant et le
+    # réglage global chants_publication_auto.
+    chorale_proprietaire_id: Optional[int] = None
+    chorale_proprietaire_nom: Optional[str] = None
+    visibilite: str = "publique"
 
 
 class BulkCategorize(BaseModel):
@@ -105,6 +117,12 @@ class ChantMedia(BaseModel):
     content_type: Optional[str] = None
     chorale_id: Optional[int] = None
     chorale_nom: Optional[str] = None
+    chant_titre: Optional[str] = None
+    statut: str = "validee"
+    """'a_verifier' (ajouté par une chorale, en attente de modération admin --
+    invisible des autres chorales jusque-là), 'validee' (visible de tous) ou
+    'revoquee' (retiré par l'admin après publication). Ne concerne QUE ce
+    média : le chant qui le porte reste pleinement visible/complet."""
     created_at: str
 
 
@@ -187,4 +205,8 @@ class Feuillet(FeuilletBase):
     chorale_nom: Optional[str] = None
     """Nom de la chorale propriétaire — jointure en lecture seule, pour
     l'affichage "composé par X" ; jamais stocké tel quel en base."""
+    visibilite: str = "publique"
+    """'chorale' (privé, visible seulement de la chorale propriétaire),
+    'demande_publication' (publication demandée, en attente de validation
+    admin) ou 'publique' (visible de toute la communauté)."""
     created_at: Optional[str] = None

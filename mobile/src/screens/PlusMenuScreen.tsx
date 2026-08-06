@@ -13,6 +13,7 @@ const ENTREES: Entree[] = [
   { cle: "Profil", titre: "Mon profil", icone: "👤" },
   { cle: "Reglages", titre: "Réglages", icone: "⚙️" },
   { cle: "Editeur", titre: "Éditeur de chants", icone: "🎵" },
+  { cle: "LecturesJour", titre: "Lectures du jour", icone: "📖" },
   { cle: "Import", titre: "Importer un carnet", icone: "📥" },
   { cle: "Statistiques", titre: "Statistiques", icone: "📊", superAdminUniquement: true },
   { cle: "Administration", titre: "Administration", icone: "🔑", superAdminUniquement: true },

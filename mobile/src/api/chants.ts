@@ -176,6 +176,7 @@ export async function dupliquerChant(chant: Chant): Promise<Chant> {
     langue: chant.langue,
     occasions: chant.occasions,
     mots_cles: chant.mots_cles,
+    references_bibliques: chant.references_bibliques,
     actif: chant.actif,
     favori: chant.favori,
     chant_principal: chant.chant_principal,
