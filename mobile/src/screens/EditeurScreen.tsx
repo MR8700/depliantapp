@@ -6,41 +6,43 @@ import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import * as Print from "expo-print";
 import { rechercherChants, bulkCategoriser, bulkSupprimer, modifierChant } from "../api/chants";
-import { demanderSuppression } from "../api/moderation";
 import { getMeta } from "../api/meta";
 import { useIdentite } from "../context/IdentiteContext";
-import { Chant } from "../types";
+import { Chant, Meta } from "../types";
 import { niveauConfiance, LABEL_CONFIANCE, COULEUR_CONFIANCE } from "../utils/confiance";
-import { LANGUES_OPTIONS } from "../utils/labels";
+import { LANGUES_OPTIONS, categorieLabel, NOMS_LANGUES } from "../utils/labels";
 import SongDetailModal from "../components/SongDetailModal";
 import SelectModal from "../components/SelectModal";
 import Bouton from "../components/Bouton";
 
 type FiltreStat = "importes" | "a-verifier" | "echecs" | "tous";
-type Tri = "recent" | "creation" | "titre" | "confiance";
+type Tri = "recent" | "creation" | "titre" | "confiance" | "auteur";
 
 export default function EditeurScreen() {
   const navigation = useNavigation<any>();
   const insets = useSafeAreaInsets();
   const { estSuperAdmin } = useIdentite();
   const [chants, setChants] = useState<Chant[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
+  const [meta, setMeta] = useState<Meta | null>(null);
+  const categories = meta?.categories ?? [];
   const [recherche, setRecherche] = useState("");
   const [filtreStat, setFiltreStat] = useState<FiltreStat>("tous");
   const [filtreCategorie, setFiltreCategorie] = useState("");
   const [filtreLangue, setFiltreLangue] = useState("");
   const [filtreOrigine, setFiltreOrigine] = useState<"" | "manuel" | "importe">("");
+  const [filtreVisibilite, setFiltreVisibilite] = useState<"" | "chorale" | "publique">("");
   const [tri, setTri] = useState<Tri>("recent");
   const [drawerOuvert, setDrawerOuvert] = useState(false);
   const [selection, setSelection] = useState<Set<number>>(new Set());
   const [chantOuvert, setChantOuvert] = useState<Chant | null>(null);
+  const [detailsChant, setDetailsChant] = useState<Chant | null>(null);
   const [modeCreation, setModeCreation] = useState(false);
   const [pageIndex, setPageIndex] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [exportEnCours, setExportEnCours] = useState(false);
 
   useEffect(() => {
-    getMeta().then((m) => setCategories(m.categories)).catch(() => {});
+    getMeta().then(setMeta).catch(() => {});
     rechercherChants({ limit: 500 }).then(setChants).catch(() => {});
   }, []);
 
@@ -66,18 +68,20 @@ export default function EditeurScreen() {
       // qui porte réellement cette distinction.
       if (filtreOrigine === "manuel" && c.source_file) return false;
       if (filtreOrigine === "importe" && !c.source_file) return false;
+      if (filtreVisibilite && c.visibilite !== filtreVisibilite) return false;
       if (q && !c.titre.toLowerCase().includes(q)) return false;
       return true;
     });
     liste = [...liste].sort((a, b) => {
       if (tri === "titre") return a.titre.localeCompare(b.titre);
       if (tri === "confiance") return b.confiance - a.confiance;
+      if (tri === "auteur") return (a.auteur || a.compositeur || "").localeCompare(b.auteur || b.compositeur || "");
       return 0; // recent/creation : created_at non exposé par l'API, comparaison neutre
     });
     return liste;
-  }, [chants, recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, tri]);
+  }, [chants, recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, filtreVisibilite, tri]);
 
-  useEffect(() => { setPageIndex(1); }, [recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, tri]);
+  useEffect(() => { setPageIndex(1); }, [recherche, filtreStat, filtreCategorie, filtreLangue, filtreOrigine, filtreVisibilite, tri]);
 
   const totalPages = Math.max(1, Math.ceil(filtres.length / pageSize));
   const pageEffective = Math.min(Math.max(1, pageIndex), totalPages);
@@ -178,34 +182,25 @@ export default function EditeurScreen() {
     if (echecs > 0) Alert.alert("Erreur", `${echecs} chant(s) n'ont pas pu être mis à jour.`);
   }
 
+  // bulkSupprimer (api/chants.ts) branche déjà lui-même sur la licence locale
+  // (compte chorale : suppression directe en local ; compte super-admin :
+  // suppression réseau) -- plus de "demande de suppression" à envoyer, une
+  // chorale 100% locale est seule propriétaire de sa bibliothèque.
   function supprimerSelection() {
     const ids = Array.from(selection);
     if (ids.length === 0) return;
-    if (estSuperAdmin) {
-      Alert.alert("Supprimer ces chants ?", `${ids.length} chant(s) seront supprimés définitivement.`, [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer", style: "destructive", onPress: async () => {
-            try {
-              await bulkSupprimer(ids);
-              setChants((prev) => prev.filter((c) => !selection.has(c.id)));
-              setSelection(new Set());
-            } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec de la suppression"); }
-          },
-        },
-      ]);
-    } else {
-      Alert.alert("Demander la suppression", `Envoyer une demande de suppression pour ${ids.length} chant(s) ?`, [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Envoyer", onPress: async () => {
-            await Promise.all(ids.map((id) => demanderSuppression("chant", id, "Suppression groupée demandée depuis l'éditeur").catch(() => {})));
+    Alert.alert("Supprimer ces chants ?", `${ids.length} chant(s) seront supprimés définitivement.`, [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer", style: "destructive", onPress: async () => {
+          try {
+            await bulkSupprimer(ids);
+            setChants((prev) => prev.filter((c) => !selection.has(c.id)));
             setSelection(new Set());
-            Alert.alert("Demandes envoyées");
-          },
+          } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec de la suppression"); }
         },
-      ]);
-    }
+      },
+    ]);
   }
 
   return (
@@ -271,6 +266,11 @@ export default function EditeurScreen() {
                 <Text style={styles.titreLigne}>{item.titre}</Text>
                 <Text style={styles.sousLigne}>{item.categorie} · {item.langue} · confiance {(item.confiance * 100).toFixed(0)}%</Text>
               </View>
+              {!!item.source_file && (
+                <Pressable onPress={() => setDetailsChant(item)} hitSlop={8} style={styles.boutonDetails}>
+                  <Text style={styles.texteBoutonDetails}>🔍</Text>
+                </Pressable>
+              )}
             </Pressable>
           );
         }}
@@ -334,12 +334,23 @@ export default function EditeurScreen() {
               ]}
               onChange={(v) => setFiltreOrigine(v as "" | "manuel" | "importe")}
             />
+            <Text style={styles.labelFiltre}>Visibilité</Text>
+            <SelectModal
+              label="Visibilité" value={filtreVisibilite}
+              options={[
+                { value: "", label: "Toutes" },
+                { value: "publique", label: "Public" },
+                { value: "chorale", label: "Privé" },
+              ]}
+              onChange={(v) => setFiltreVisibilite(v as "" | "chorale" | "publique")}
+            />
             <Text style={styles.labelFiltre}>Trier par</Text>
             <SelectModal
               label="Trier par" value={tri}
               options={[
                 { value: "recent", label: "Date de modification" }, { value: "creation", label: "Date de création" },
                 { value: "titre", label: "Titre (A-Z)" }, { value: "confiance", label: "Score de confiance" },
+                { value: "auteur", label: "Auteur" },
               ]}
               onChange={(v) => setTri(v as Tri)}
             />
@@ -348,10 +359,50 @@ export default function EditeurScreen() {
         </Pressable>
       </Modal>
 
+      {/* Détails d'import (🔍) -- équivalent de ouvrirImportDetails (app.js
+          ~5530) : score de confiance, structure détectée, catégorie/langue.
+          Le web affiche aussi une liste "avertissements", mais ce champ
+          n'existe nulle part côté backend (schemas.py) -- toujours vide en
+          pratique -- on ne reproduit donc pas cette section morte. */}
+      <Modal visible={!!detailsChant} animationType="fade" transparent onRequestClose={() => setDetailsChant(null)}>
+        <Pressable style={styles.fondDrawer} onPress={() => setDetailsChant(null)}>
+          <Pressable style={[styles.drawer, { paddingBottom: 20 + insets.bottom }]} onPress={(e) => e.stopPropagation()}>
+            {detailsChant && (
+              <>
+                <Text style={styles.titreDrawer}>🔍 Détails de l'import -- {detailsChant.titre}</Text>
+                <View style={styles.grilleDetails}>
+                  <View style={styles.carteDetail}>
+                    <Text style={styles.labelDetail}>Score de confiance</Text>
+                    <Text style={styles.valeurDetail}>{Math.round(detailsChant.confiance * 100)}%</Text>
+                  </View>
+                  <View style={styles.carteDetail}>
+                    <Text style={styles.labelDetail}>Couplets détectés</Text>
+                    <Text style={styles.valeurDetail}>{detailsChant.couplets.length}</Text>
+                  </View>
+                  <View style={styles.carteDetail}>
+                    <Text style={styles.labelDetail}>Refrain détecté</Text>
+                    <Text style={styles.valeurDetail}>{detailsChant.refrain ? "Oui" : "Non"}</Text>
+                  </View>
+                  <View style={styles.carteDetail}>
+                    <Text style={styles.labelDetail}>Catégorie</Text>
+                    <Text style={styles.valeurDetail}>{categorieLabel(detailsChant.categorie)}</Text>
+                  </View>
+                  <View style={styles.carteDetail}>
+                    <Text style={styles.labelDetail}>Langue</Text>
+                    <Text style={styles.valeurDetail}>{NOMS_LANGUES[detailsChant.langue] || detailsChant.langue}</Text>
+                  </View>
+                </View>
+                <View style={{ marginTop: 20 }}><Bouton titre="Fermer" onPress={() => setDetailsChant(null)} /></View>
+              </>
+            )}
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       <SongDetailModal
         visible={!!chantOuvert || modeCreation}
         chant={chantOuvert}
-        meta={null}
+        meta={meta}
         estSuperAdmin={estSuperAdmin}
         onClose={() => { setChantOuvert(null); setModeCreation(false); }}
         onChange={(maj) => { setChants((prev) => prev.map((c) => (c.id === maj.id ? maj : c))); setChantOuvert(maj); }}
@@ -403,4 +454,10 @@ const styles = StyleSheet.create({
   drawer: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: "80%" },
   titreDrawer: { fontSize: 16, fontWeight: "700", marginBottom: 14, color: "#1e293b" },
   labelFiltre: { fontSize: 11, color: "#94a3b8", fontWeight: "600", marginTop: 10, marginBottom: 4 },
+  boutonDetails: { padding: 6, marginLeft: 4 },
+  texteBoutonDetails: { fontSize: 16 },
+  grilleDetails: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginTop: 10 },
+  carteDetail: { flexBasis: "47%", backgroundColor: "#f8fafc", borderWidth: 1, borderColor: "#e2e8f0", borderRadius: 8, padding: 12 },
+  labelDetail: { fontSize: 11, color: "#64748b" },
+  valeurDetail: { fontSize: 15, fontWeight: "700", color: "#0f172a", marginTop: 2 },
 });

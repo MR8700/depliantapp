@@ -3,24 +3,34 @@ import {
   ActivityIndicator, Alert, Modal, Platform, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import DateTimePicker from "@react-native-community/datetimepicker";
+import * as Clipboard from "expo-clipboard";
+import * as Print from "expo-print";
+import * as Sharing from "expo-sharing";
+import QRCode from "react-native-qrcode-svg";
+import { cleAdminExiste, genererCleAdmin, exporterSauvegardeCle, restaurerCleAdmin, signerLicence, reSignerLicence } from "../licence/adminSignature";
+import { verifierLicenceBlob } from "../licence/verification";
+import { getCleAdminSauvegardee, setCleAdminSauvegardee } from "../storage/secureStore";
 import {
   listerChoralesDetail, creerChorale, reinitialiserMotDePasse, planifierSuppression, annulerSuppression, ChoraleDetail,
 } from "../api/chorales";
 import {
-  listerDemandes, validerDemande, annulerDemande, DemandeSuppression,
+  listerDemandes, validerDemande, annulerDemande, remettreEnAttente, DemandeSuppression,
   listerMasques, restaurerMasque, MasqueChorale,
   listerCategoriesModeration, validerCategorie, rejeterCategorie, CategoriePersonnalisee,
   listerChantsPrives, publierChantPrive,
   listerFeuilletsAValider, validerPublicationFeuillet,
   listerMediasEnAttente, validerMedia, rejeterMedia,
+  listerPartitionsAValider, validerPartition, rejeterPartition, telechargerApercuPartitionModeration,
 } from "../api/moderation";
 import { getParametresGlobaux, sauvegarderParametres } from "../api/parametres";
 import { Chant, Feuillet, ChantMedia } from "../types";
+import { Partition } from "../api/chants";
 import {
   listerLicences, creerLicence, configurerLicence, listerActivationsLicence, revoquerLicence, reactiverLicence,
   regenererCode, revoquerActivationAppareil, Licence, ActivationAppareil,
 } from "../api/licences";
 import Bouton from "../components/Bouton";
+import SelectModal from "../components/SelectModal";
 
 function dateIsoVersDate(iso: string): Date {
   const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso);
@@ -36,6 +46,30 @@ function dateVersIso(d: Date): string {
 }
 
 type OngletAdmin = "chorales" | "apropos";
+
+// Mêmes intitulés/valeurs que le web (index.html ~2237-2241 et ~2285-2288) --
+// des modèles de motif prêts à l'emploi, avec une saisie libre en repli.
+const RAISONS_PLANIFICATION = [
+  { value: "Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.", label: "💤 Inactivité prolongée (> 6 mois)" },
+  { value: "Non-respect des conditions d'utilisation : Utilisation inappropriée de l'espace de stockage ou diffusion de contenus non conformes.", label: "🚫 Non-respect des conditions d'utilisation" },
+  { value: "Fermeture de la chorale : Signalement de la dissolution ou de l'arrêt des activités de la chorale.", label: "🏛️ Fermeture de la chorale" },
+  { value: "Doublon ou compte de test : Compte créé par erreur ou utilisé temporairement pour des tests de mise en route.", label: "📋 Doublon ou compte de test" },
+  { value: "autre", label: "Saisie personnalisée..." },
+];
+
+const RAISONS_ANNULATION = [
+  { value: "Confirmation d'activité : Suite à vos explications, nous confirmons le maintien de votre compte actif sur la plateforme.", label: "✓ Confirmation d'activité (Révision approuvée)" },
+  { value: "Assistance technique apportée : Les problèmes techniques ou d'accès ayant été résolus, le compte est rétabli.", label: "🛠️ Assistance technique apportée" },
+  { value: "Malentendu clarifié : Le malentendu a été résolu, la planification de la suppression est annulée.", label: "🤝 Malentendu clarifié" },
+  { value: "autre", label: "Saisie personnalisée..." },
+];
+
+const DELAIS_PLANIFICATION = [
+  { value: "7", label: "7 jours" },
+  { value: "15", label: "15 jours" },
+  { value: "30", label: "30 jours" },
+  { value: "custom", label: "Choisir une date sur le calendrier..." },
+];
 
 // Petit lien d'action avec indicateur de chargement intégré -- remplace le
 // texte par un spinner pendant l'appel réseau et désactive le bouton, pour
@@ -73,6 +107,16 @@ export default function AdministrationScreen() {
   const [usernameChorale, setUsernameChorale] = useState("");
   const [planificationId, setPlanificationId] = useState<number | null>(null);
   const [raisonPlanification, setRaisonPlanification] = useState("");
+  const [raisonPlanificationPreset, setRaisonPlanificationPreset] = useState(RAISONS_PLANIFICATION[0].value);
+  const [delaiPlanification, setDelaiPlanification] = useState<"7" | "15" | "30" | "custom">("15");
+  const [datePlanificationCustom, setDatePlanificationCustom] = useState<string | null>(null);
+  const [datePlanificationPickerVisible, setDatePlanificationPickerVisible] = useState(false);
+  const [annulationId, setAnnulationId] = useState<number | null>(null);
+  const [raisonAnnulationPreset, setRaisonAnnulationPreset] = useState(RAISONS_ANNULATION[0].value);
+  const [raisonAnnulationCustom, setRaisonAnnulationCustom] = useState("");
+  const [motDePasseReinitialise, setMotDePasseReinitialise] = useState<string | null>(null);
+  const [demandesArchivees, setDemandesArchivees] = useState<DemandeSuppression[]>([]);
+  const [partitionsAValider, setPartitionsAValider] = useState<Partition[]>([]);
   const [appareilsModal, setAppareilsModal] = useState<Licence | null>(null);
   const [appareils, setAppareils] = useState<ActivationAppareil[]>([]);
   const [configCible, setConfigCible] = useState<{ choraleId: number; licence: Licence | null } | null>(null);
@@ -81,9 +125,80 @@ export default function AdministrationScreen() {
   const [configExpireLe, setConfigExpireLe] = useState<string | null>(null);
   const [configPickerVisible, setConfigPickerVisible] = useState(false);
   const [configEnCours, setConfigEnCours] = useState(false);
+  const [licenceEmise, setLicenceEmise] = useState<string | null>(null);
+  const [banniereSauvegardeCle, setBanniereSauvegardeCle] = useState(false);
+  const [restaurerVisible, setRestaurerVisible] = useState(false);
+  const [cleARestaurer, setCleARestaurer] = useState("");
+  const [restaurationEnCours, setRestaurationEnCours] = useState(false);
+
+  // Clé Ed25519 de signature des licences : générée une seule fois sur CET
+  // appareil admin, jamais transmise au serveur (voir licence/adminSignature.ts).
+  // Bannière de rappel PERSISTÉE (voir storage/secureStore.ts::
+  // getCleAdminSauvegardee) -- réaffichée à CHAQUE lancement tant que
+  // l'admin n'a pas confirmé une sauvegarde, pas seulement à l'instant de la
+  // génération : sans sauvegarde, perdre cet appareil rend impossible toute
+  // nouvelle licence/modification (les licences déjà émises restent valides
+  // côté chorale, la clé publique embarquée dans l'app ne bouge pas).
+  const verifierBanniereCle = useCallback(async () => {
+    const existe = await cleAdminExiste();
+    if (!existe) {
+      await genererCleAdmin();
+      setBanniereSauvegardeCle(true);
+      return;
+    }
+    setBanniereSauvegardeCle(!(await getCleAdminSauvegardee()));
+  }, []);
+
+  useEffect(() => {
+    verifierBanniereCle();
+  }, [verifierBanniereCle]);
+
+  async function onSauvegarderCle() {
+    try {
+      await exporterSauvegardeCle();
+      await setCleAdminSauvegardee();
+      setBanniereSauvegardeCle(false);
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "Impossible d'exporter la sauvegarde");
+    }
+  }
+
+  async function onRestaurerCle() {
+    const valeur = cleARestaurer.trim();
+    if (!valeur) return;
+    setRestaurationEnCours(true);
+    try {
+      await restaurerCleAdmin(valeur);
+      await setCleAdminSauvegardee();
+      setRestaurerVisible(false);
+      setCleARestaurer("");
+      setBanniereSauvegardeCle(false);
+      Alert.alert("Clé restaurée", "Cet appareil peut à nouveau signer/modifier des licences avec cette clé.");
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "Format de clé invalide");
+    } finally {
+      setRestaurationEnCours(false);
+    }
+  }
+
+  async function onCopierLicence() {
+    if (!licenceEmise) return;
+    await Clipboard.setStringAsync(licenceEmise);
+    Alert.alert("Copié", "Le code de licence a été copié dans le presse-papiers.");
+  }
+
+  async function onImprimerLicence() {
+    if (!licenceEmise) return;
+    await Print.printAsync({
+      html: `<html><body style="font-family: monospace; padding: 40px; word-break: break-all; font-size: 14px;">
+        <h2>DepliantApp -- Code de licence</h2>
+        <p>${licenceEmise}</p>
+      </body></html>`,
+    });
+  }
 
   const charger = useCallback(async () => {
-    const [c, d, m, cat, lic, cp, fv, mv] = await Promise.all([
+    const [c, d, m, cat, lic, cp, fv, mv, da, pv] = await Promise.all([
       listerChoralesDetail().catch(() => []),
       listerDemandes().catch(() => []),
       listerMasques().catch(() => []),
@@ -92,9 +207,12 @@ export default function AdministrationScreen() {
       listerChantsPrives().catch(() => []),
       listerFeuilletsAValider().catch(() => []),
       listerMediasEnAttente().catch(() => []),
+      listerDemandes("annulee").catch(() => []),
+      listerPartitionsAValider().catch(() => []),
     ]);
     setChorales(c); setDemandes(d); setMasques(m); setCategoriesEnAttente(cat); setLicences(lic);
     setChantsPrives(cp); setFeuilletsAValider(fv); setMediasAValider(mv);
+    setDemandesArchivees(da); setPartitionsAValider(pv);
   }, []);
 
   // Enveloppe générique pour toute action déclenchée par un LienAction :
@@ -164,22 +282,45 @@ export default function AdministrationScreen() {
     setConfigExpireLe(licence?.expire_le ?? null);
   }
 
+  // Signe TOUJOURS localement d'abord (aucun réseau requis -- l'admin peut
+  // créer/modifier une licence même hors-ligne, voir licence/adminSignature.ts).
+  // L'enregistrement de bookkeeping côté serveur (POST/PUT /licences) est
+  // ensuite tenté en best-effort : la licence est déjà valide et prête à
+  // être transmise à la chorale que cet appel réussisse ou non -- un échec
+  // ne fait qu'empêcher son affichage/suivi dans cet écran tant que
+  // l'action n'est pas relancée une fois en ligne.
   async function validerConfigLicence() {
     if (!configCible) return;
-    const maxAppareils = Math.max(1, Number(configMaxAppareils) || 1);
+    const devMax = Math.max(1, Number(configMaxAppareils) || 1);
     const quota = configQuota.trim() ? Math.max(0, Number(configQuota)) : null;
     setConfigEnCours(true);
     try {
+      let blob: string;
       if (configCible.licence) {
-        await configurerLicence(configCible.licence.id, maxAppareils, configExpireLe, quota);
+        const ancien = verifierLicenceBlob(configCible.licence.code);
+        if (!ancien) throw new Error("Impossible de relire la licence existante (signature invalide)");
+        blob = (await reSignerLicence(ancien, { devMax, quotaFeuillets: quota, expireLe: configExpireLe })).blob;
       } else {
-        const licence = await creerLicence(configCible.choraleId, maxAppareils, configExpireLe, quota);
-        Alert.alert("Licence créée", `Code à transmettre à la chorale :\n\n${licence.code}\n\nCe code s'active une seule fois dans l'app mobile (Activation), sur ${licence.max_appareils} appareil(s) au maximum.`);
+        const chorale = chorales.find((c) => c.id === configCible.choraleId);
+        blob = (await signerLicence({
+          choraleId: configCible.choraleId, choraleNom: chorale?.nom ?? "", devMax, quotaFeuillets: quota, expireLe: configExpireLe,
+        })).blob;
       }
+      const creation = !configCible.licence;
       setConfigCible(null);
-      await charger();
+      setLicenceEmise(blob);
+      try {
+        if (creation) await creerLicence(blob);
+        else await configurerLicence(configCible.licence!.id, blob);
+        await charger();
+      } catch {
+        Alert.alert(
+          "Enregistré localement seulement",
+          "La licence est valide et prête à être transmise, mais son suivi côté serveur a échoué (pas de connexion). Relance l'action une fois en ligne pour qu'elle apparaisse dans cette liste.",
+        );
+      }
     } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer la configuration");
+      Alert.alert("Erreur", erreur?.message ?? "Impossible de générer la licence");
     } finally {
       setConfigEnCours(false);
     }
@@ -188,9 +329,16 @@ export default function AdministrationScreen() {
   async function regenererCodeLicence(licence: Licence) {
     await executerAction(`regen-licence-${licence.id}`, async () => {
       try {
-        const res = await regenererCode(licence.id);
-        await charger();
-        Alert.alert("Code régénéré", `Nouveau code à transmettre :\n\n${res.code}\n\nL'ancien code ne fonctionne plus, mais les appareils déjà activés restent connectés.`);
+        const ancien = verifierLicenceBlob(licence.code);
+        if (!ancien) throw new Error("Signature de licence existante invalide");
+        const { blob } = await reSignerLicence(ancien, { devMax: ancien.devMax, quotaFeuillets: ancien.quotaFeuillets, expireLe: ancien.expireLe });
+        setLicenceEmise(blob);
+        try {
+          await regenererCode(licence.id, blob);
+          await charger();
+        } catch {
+          Alert.alert("Enregistré localement seulement", "Le nouveau code est valide, mais son suivi côté serveur a échoué. Relance une fois en ligne.");
+        }
       } catch (erreur: any) {
         Alert.alert("Erreur", erreur?.message ?? "Impossible de régénérer le code");
       }
@@ -286,25 +434,41 @@ export default function AdministrationScreen() {
     await executerAction(`reset-${id}`, async () => {
       try {
         const res = await reinitialiserMotDePasse(id);
-        Alert.alert("Mot de passe réinitialisé", res.mot_de_passe_initial);
+        setMotDePasseReinitialise(res.mot_de_passe_initial);
       } catch (erreur: any) {
         Alert.alert("Erreur", erreur?.message ?? "Échec de la réinitialisation");
       }
     });
   }
 
+  async function onCopierMotDePasse() {
+    if (!motDePasseReinitialise) return;
+    await Clipboard.setStringAsync(motDePasseReinitialise);
+    Alert.alert("Copié", "Le mot de passe a été copié dans le presse-papiers.");
+  }
+
   function onPlanifier(id: number) {
     setRaisonPlanification("");
+    setRaisonPlanificationPreset(RAISONS_PLANIFICATION[0].value);
+    setDelaiPlanification("15");
+    setDatePlanificationCustom(null);
     setPlanificationId(id);
   }
 
   const [planificationEnCours, setPlanificationEnCours] = useState(false);
 
   async function confirmerPlanification() {
-    if (!planificationId || !raisonPlanification.trim()) return;
+    if (!planificationId) return;
+    const raison = raisonPlanificationPreset === "autre" ? raisonPlanification.trim() : raisonPlanificationPreset;
+    if (!raison) return;
+    if (delaiPlanification === "custom" && !datePlanificationCustom) return;
     setPlanificationEnCours(true);
     try {
-      await planifierSuppression(planificationId, raisonPlanification.trim(), 15);
+      if (delaiPlanification === "custom") {
+        await planifierSuppression(planificationId, raison, undefined, datePlanificationCustom!);
+      } else {
+        await planifierSuppression(planificationId, raison, Number(delaiPlanification));
+      }
       setPlanificationId(null);
       await charger();
     } catch (erreur: any) {
@@ -314,10 +478,66 @@ export default function AdministrationScreen() {
     }
   }
 
-  async function onAnnulerSuppression(id: number) {
-    await executerAction(`annuler-suppr-${id}`, async () => {
-      try { await annulerSuppression(id, "Annulée depuis l'application mobile"); await charger(); }
-      catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+  function onAnnulerSuppression(id: number) {
+    setRaisonAnnulationPreset(RAISONS_ANNULATION[0].value);
+    setRaisonAnnulationCustom("");
+    setAnnulationId(id);
+  }
+
+  const [annulationEnCours, setAnnulationEnCours] = useState(false);
+
+  async function confirmerAnnulation() {
+    if (!annulationId) return;
+    const raison = raisonAnnulationPreset === "autre" ? raisonAnnulationCustom.trim() : raisonAnnulationPreset;
+    if (!raison) return;
+    setAnnulationEnCours(true);
+    try {
+      await annulerSuppression(annulationId, raison);
+      setAnnulationId(null);
+      await charger();
+    } catch (erreur: any) {
+      Alert.alert("Erreur", erreur?.message ?? "Échec de l'annulation");
+    } finally {
+      setAnnulationEnCours(false);
+    }
+  }
+
+  async function onRestaurerDemandeArchivee(id: number) {
+    await executerAction(`restaurer-demande-${id}`, async () => {
+      try { await remettreEnAttente(id); await charger(); } catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Échec"); }
+    });
+  }
+
+  async function ouvrirApercuPartition(id: number) {
+    await executerAction(`apercu-partition-${id}`, async () => {
+      try {
+        const uri = await telechargerApercuPartitionModeration(id);
+        if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(uri, { mimeType: "application/pdf" });
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible d'ouvrir cette partition");
+      }
+    });
+  }
+
+  async function onValiderPartition(id: number) {
+    await executerAction(`valider-partition-${id}`, async () => {
+      try {
+        await validerPartition(id);
+        setPartitionsAValider((prev) => prev.filter((p) => p.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de valider cette partition");
+      }
+    });
+  }
+
+  async function onRejeterPartition(id: number) {
+    await executerAction(`rejeter-partition-${id}`, async () => {
+      try {
+        await rejeterPartition(id);
+        setPartitionsAValider((prev) => prev.filter((p) => p.id !== id));
+      } catch (erreur: any) {
+        Alert.alert("Erreur", erreur?.message ?? "Impossible de rejeter cette partition");
+      }
     });
   }
 
@@ -386,6 +606,19 @@ export default function AdministrationScreen() {
         )
       ) : (
       <>
+      {banniereSauvegardeCle && (
+        <View style={[styles.carte, styles.carteAvertissement]}>
+          <Text style={styles.titreCarte}>🔑 Sauvegarder la clé d'administration</Text>
+          <Text style={styles.sousTitreCarte}>
+            Cet appareil détient une clé de signature qui n'a pas encore été sauvegardée. Sans sauvegarde, la perte de cet appareil rendrait
+            impossible toute nouvelle licence ou modification (les licences déjà émises resteraient valides côté chorale).
+          </Text>
+          <View style={styles.actionsCarte}>
+            <Bouton titre="Sauvegarder maintenant" onPress={onSauvegarderCle} />
+            <Pressable onPress={() => setRestaurerVisible(true)}><Text style={styles.lien}>Restaurer une clé existante</Text></Pressable>
+          </View>
+        </View>
+      )}
       <Text style={styles.section}>🎵 Publication des chants ajoutés par les chorales</Text>
       <Text style={styles.hint}>
         Par défaut, un chant ajouté par une chorale reste visible seulement d'elle jusqu'à ce que vous le publiiez
@@ -458,6 +691,34 @@ export default function AdministrationScreen() {
         </>
       )}
 
+      {partitionsAValider.length > 0 && (
+        <>
+          <Text style={styles.section}>🎼 Partitions à vérifier ({partitionsAValider.length})</Text>
+          <Text style={styles.hint}>
+            Une chorale a soumis une copie notée pour ce chant. Une seule partition reste publiée par chant -- la valider
+            remplace automatiquement celle éventuellement déjà publiée.
+          </Text>
+          {partitionsAValider.map((p) => (
+            <View key={p.id} style={styles.carte}>
+              <Text style={styles.titreCarte}>Chant : {p.chant_titre ?? "?"}</Text>
+              <Text style={styles.sousTitreCarte}>
+                Proposée par {p.chorale_nom ?? "Système"} · score {p.score_pertinence != null ? `${p.score_pertinence}%` : "analyse impossible"}
+              </Text>
+              {Object.keys(p.signaux ?? {}).length > 0 && (
+                <Text style={styles.sousTitreCarte}>
+                  {Object.entries(p.signaux).map(([cle, valeur]) => `${cle} : ${valeur == null ? "n/a" : `${valeur}%`}`).join(" · ")}
+                </Text>
+              )}
+              <View style={styles.actionsCarte}>
+                <LienAction cle={`apercu-partition-${p.id}`} actionsEnCours={actionsEnCours} texte="👁 Voir le PDF" onPress={() => ouvrirApercuPartition(p.id)} />
+                <LienAction cle={`valider-partition-${p.id}`} actionsEnCours={actionsEnCours} texte="Valider" onPress={() => onValiderPartition(p.id)} />
+                <LienAction cle={`rejeter-partition-${p.id}`} actionsEnCours={actionsEnCours} texte="Rejeter" danger onPress={() => onRejeterPartition(p.id)} />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
       <Text style={styles.section}>👥 Créer une chorale</Text>
       <Text style={styles.label}>Nom de la chorale</Text>
       <TextInput style={styles.champ} placeholder="Ex : Chorale Sainte Cécile" value={nomChorale} onChangeText={setNomChorale} />
@@ -472,13 +733,21 @@ export default function AdministrationScreen() {
         <View key={c.id} style={styles.carte}>
           <Text style={styles.titreCarte}>{c.nom}</Text>
           <Text style={styles.sousTitreCarte}>@{c.username}</Text>
+          {!!c.must_change_password && (
+            <Text style={styles.avertissement}>⚠ Mot de passe pas encore défini</Text>
+          )}
           {c.suppression_date_butoir && (
             <Text style={styles.avertissement}>Suppression planifiée : {c.suppression_date_butoir}</Text>
+          )}
+          {!!c.suppression_demande_revision && (
+            <Text style={styles.avertissement}>
+              ⌛ Révision demandée{c.suppression_revision_raison ? ` : ${c.suppression_revision_raison}` : ""}
+            </Text>
           )}
           <View style={styles.actionsCarte}>
             <LienAction cle={`reset-${c.id}`} actionsEnCours={actionsEnCours} texte="Réinitialiser mdp" onPress={() => onReset(c.id)} />
             {c.suppression_date_butoir ? (
-              <LienAction cle={`annuler-suppr-${c.id}`} actionsEnCours={actionsEnCours} texte="Annuler suppression" onPress={() => onAnnulerSuppression(c.id)} />
+              <Pressable onPress={() => onAnnulerSuppression(c.id)}><Text style={styles.lien}>Annuler suppression</Text></Pressable>
             ) : (
               <Pressable onPress={() => onPlanifier(c.id)}><Text style={[styles.lien, { color: "#dc2626" }]}>Planifier suppression</Text></Pressable>
             )}
@@ -487,9 +756,11 @@ export default function AdministrationScreen() {
           <View style={styles.licenceBloc}>
             {licence ? (
               <>
-                <Text style={styles.labelLicence}>
-                  🔑 Licence : <Text style={styles.codeLicence}>{licence.code}</Text>
-                </Text>
+                <Pressable onPress={() => setLicenceEmise(licence.code)}>
+                  <Text style={styles.labelLicence}>
+                    🔑 Licence : <Text style={styles.codeLicence}>{licence.code.slice(0, 18)}…</Text> <Text style={styles.lien}>Voir / QR</Text>
+                  </Text>
+                </Pressable>
                 <Text style={styles.sousTitreCarte}>
                   {licence.statut === "active" ? "Active" : "Révoquée"} • max {licence.max_appareils} appareil(s)
                   {" • "}{licence.feuillets_produits} feuillet{licence.feuillets_produits !== 1 ? "s" : ""} produit{licence.feuillets_produits !== 1 ? "s" : ""}
@@ -535,6 +806,25 @@ export default function AdministrationScreen() {
       ))}
       {demandes.length === 0 && <Text style={styles.vide}>Aucune demande en attente.</Text>}
 
+      {demandesArchivees.length > 0 && (
+        <>
+          <Text style={styles.section}>🗄️ Demandes ignorées / archivées ({demandesArchivees.length})</Text>
+          <Text style={styles.hint}>Ces demandes ont été annulées sans supprimer la ressource. Restaurer les remet en attente de décision.</Text>
+          {demandesArchivees.map((d) => (
+            <View key={d.id} style={styles.carte}>
+              <Text style={styles.titreCarte}>{d.type_cible} #{d.cible_id}</Text>
+              <Text style={styles.sousTitreCarte}>{d.apercu?.titre ?? d.apercu?.date ?? "Aperçu indisponible"}</Text>
+              <View style={styles.actionsCarte}>
+                <LienAction
+                  cle={`restaurer-demande-${d.id}`} actionsEnCours={actionsEnCours}
+                  texte="Restaurer l'état" onPress={() => onRestaurerDemandeArchivee(d.id)}
+                />
+              </View>
+            </View>
+          ))}
+        </>
+      )}
+
       <Text style={styles.section}>🏷️ Validation des catégories personnalisées ({categoriesEnAttente.length})</Text>
       <Text style={styles.hint}>Validez pour rendre la catégorie utilisable par tout le monde. Rejetez avec un motif pour envoyer une notification au créateur.</Text>
       {categoriesEnAttente.map((c) => (
@@ -560,15 +850,43 @@ export default function AdministrationScreen() {
 
       <Modal visible={!!planificationId} animationType="fade" transparent onRequestClose={() => setPlanificationId(null)}>
         <View style={styles.fondModal}>
-          <View style={styles.boiteModal}>
-            <Text style={styles.titreCarte}>Planifier la suppression (15 jours)</Text>
-            <TextInput
-              style={[styles.champ, { minHeight: 70, textAlignVertical: "top", marginTop: 10 }]}
-              placeholder="Raison..."
-              value={raisonPlanification}
-              onChangeText={setRaisonPlanification}
-              multiline
+          <ScrollView style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>⚠️ Planifier la suppression</Text>
+            <Text style={styles.label}>Raison de la suppression (modèles rapides)</Text>
+            <SelectModal label="Raison" value={raisonPlanificationPreset} options={RAISONS_PLANIFICATION} onChange={setRaisonPlanificationPreset} />
+            {raisonPlanificationPreset === "autre" && (
+              <TextInput
+                style={[styles.champ, { minHeight: 70, textAlignVertical: "top", marginTop: 10 }]}
+                placeholder="Raison détaillée..."
+                value={raisonPlanification}
+                onChangeText={setRaisonPlanification}
+                multiline
+              />
+            )}
+            <Text style={[styles.label, { marginTop: 10 }]}>Délai avant suppression définitive</Text>
+            <SelectModal
+              label="Délai" value={delaiPlanification}
+              options={DELAIS_PLANIFICATION}
+              onChange={(v) => setDelaiPlanification(v as "7" | "15" | "30" | "custom")}
             />
+            {delaiPlanification === "custom" && (
+              <>
+                <Pressable style={[styles.champ, { marginTop: 10 }]} onPress={() => setDatePlanificationPickerVisible(true)}>
+                  <Text>{datePlanificationCustom ?? "Choisir une date"}</Text>
+                </Pressable>
+                {datePlanificationPickerVisible && (
+                  <DateTimePicker
+                    value={datePlanificationCustom ? dateIsoVersDate(datePlanificationCustom) : new Date()}
+                    mode="date"
+                    display={Platform.OS === "ios" ? "inline" : "default"}
+                    onChange={(event, selectionne) => {
+                      if (Platform.OS !== "ios") setDatePlanificationPickerVisible(false);
+                      if (event.type === "set" && selectionne) setDatePlanificationCustom(dateVersIso(selectionne));
+                    }}
+                  />
+                )}
+              </>
+            )}
             <View style={styles.actionsCarte}>
               <Pressable onPress={() => setPlanificationId(null)} disabled={planificationEnCours}><Text style={styles.lien}>Annuler</Text></Pressable>
               <Pressable onPress={confirmerPlanification} disabled={planificationEnCours} style={{ opacity: planificationEnCours ? 0.5 : 1 }}>
@@ -576,6 +894,50 @@ export default function AdministrationScreen() {
                   ? <ActivityIndicator size="small" color="#dc2626" />
                   : <Text style={[styles.lien, { color: "#dc2626" }]}>Confirmer</Text>}
               </Pressable>
+            </View>
+          </ScrollView>
+        </View>
+      </Modal>
+
+      <Modal visible={!!annulationId} animationType="fade" transparent onRequestClose={() => setAnnulationId(null)}>
+        <View style={styles.fondModal}>
+          <View style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>🔄 Annuler la suppression</Text>
+            <Text style={styles.hint}>Un message d'explication sera envoyé automatiquement à la chorale.</Text>
+            <Text style={[styles.label, { marginTop: 10 }]}>Motif de l'annulation (modèles rapides)</Text>
+            <SelectModal label="Motif" value={raisonAnnulationPreset} options={RAISONS_ANNULATION} onChange={setRaisonAnnulationPreset} />
+            {raisonAnnulationPreset === "autre" && (
+              <TextInput
+                style={[styles.champ, { minHeight: 70, textAlignVertical: "top", marginTop: 10 }]}
+                placeholder="Motif détaillé..."
+                value={raisonAnnulationCustom}
+                onChangeText={setRaisonAnnulationCustom}
+                multiline
+              />
+            )}
+            <View style={styles.actionsCarte}>
+              <Pressable onPress={() => setAnnulationId(null)} disabled={annulationEnCours}><Text style={styles.lien}>Fermer</Text></Pressable>
+              <Pressable onPress={confirmerAnnulation} disabled={annulationEnCours} style={{ opacity: annulationEnCours ? 0.5 : 1 }}>
+                {annulationEnCours
+                  ? <ActivityIndicator size="small" color="#2563eb" />
+                  : <Text style={[styles.lien, { fontWeight: "700" }]}>Confirmer</Text>}
+              </Pressable>
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!motDePasseReinitialise} animationType="fade" transparent onRequestClose={() => setMotDePasseReinitialise(null)}>
+        <View style={styles.fondModal}>
+          <View style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>Mot de passe réinitialisé</Text>
+            <Text style={[styles.hint, { marginTop: 6 }]}>Transmets ce mot de passe temporaire à la chorale -- un changement lui sera demandé à sa prochaine connexion.</Text>
+            <Text style={[styles.codeLicence, { marginTop: 10, textAlign: "center" }]}>{motDePasseReinitialise}</Text>
+            <View style={styles.actionsCarte}>
+              <Pressable onPress={onCopierMotDePasse}><Text style={styles.lien}>📋 Copier</Text></Pressable>
+            </View>
+            <View style={{ marginTop: 14 }}>
+              <Bouton titre="Fermer" onPress={() => setMotDePasseReinitialise(null)} />
             </View>
           </View>
         </View>
@@ -632,7 +994,7 @@ export default function AdministrationScreen() {
       <Modal visible={!!appareilsModal} animationType="fade" transparent onRequestClose={() => setAppareilsModal(null)}>
         <View style={styles.fondModal}>
           <View style={styles.boiteModal}>
-            <Text style={styles.titreCarte}>Appareils activés -- {appareilsModal?.code}</Text>
+            <Text style={styles.titreCarte}>Appareils activés -- {appareilsModal?.code.slice(0, 14)}…</Text>
             <ScrollView style={{ maxHeight: 320 }}>
               {appareils.length === 0 && <Text style={styles.vide}>Aucun appareil actif.</Text>}
               {appareils.map((a) => (
@@ -655,6 +1017,52 @@ export default function AdministrationScreen() {
             </ScrollView>
             <View style={{ marginTop: 14 }}>
               <Bouton titre="Fermer" onPress={() => setAppareilsModal(null)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={!!licenceEmise} animationType="fade" transparent onRequestClose={() => setLicenceEmise(null)}>
+        <View style={styles.fondModal}>
+          <View style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>Licence à transmettre</Text>
+            <View style={styles.conteneurQrLicence}>
+              {licenceEmise && <QRCode value={licenceEmise} size={220} />}
+            </View>
+            <Text style={styles.hint} numberOfLines={3}>{licenceEmise}</Text>
+            <View style={styles.actionsCarte}>
+              <Pressable onPress={onCopierLicence}><Text style={styles.lien}>📋 Copier</Text></Pressable>
+              <Pressable onPress={onImprimerLicence}><Text style={styles.lien}>🖨️ Imprimer</Text></Pressable>
+            </View>
+            <View style={{ marginTop: 14 }}>
+              <Bouton titre="Fermer" onPress={() => setLicenceEmise(null)} />
+            </View>
+          </View>
+        </View>
+      </Modal>
+
+      <Modal visible={restaurerVisible} animationType="fade" transparent onRequestClose={() => setRestaurerVisible(false)}>
+        <View style={styles.fondModal}>
+          <View style={styles.boiteModal}>
+            <Text style={styles.titreCarte}>Restaurer une clé existante</Text>
+            <Text style={styles.hint}>
+              Colle ci-dessous le contenu du fichier de sauvegarde exporté précédemment. Cela remplacera la clé de cet appareil.
+            </Text>
+            <TextInput
+              style={[styles.champ, { minHeight: 80, textAlignVertical: "top", marginTop: 10 }]}
+              placeholder="Clé de sauvegarde (base64)"
+              value={cleARestaurer}
+              onChangeText={setCleARestaurer}
+              multiline
+              autoCapitalize="none"
+            />
+            <View style={styles.actionsCarte}>
+              <Pressable onPress={() => setRestaurerVisible(false)} disabled={restaurationEnCours}><Text style={styles.lien}>Annuler</Text></Pressable>
+              <Pressable onPress={onRestaurerCle} disabled={restaurationEnCours || !cleARestaurer.trim()}>
+                {restaurationEnCours
+                  ? <ActivityIndicator size="small" color="#2563eb" />
+                  : <Text style={[styles.lien, { fontWeight: "700" }]}>Restaurer</Text>}
+              </Pressable>
             </View>
           </View>
         </View>
@@ -690,4 +1098,6 @@ const styles = StyleSheet.create({
   licenceBloc: { marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#f1f5f9" },
   labelLicence: { fontSize: 13, color: "#334155", fontWeight: "600" },
   codeLicence: { fontFamily: "monospace", color: "#1F4A7C", fontWeight: "800" },
+  carteAvertissement: { borderWidth: 1, borderColor: "#f59e0b", backgroundColor: "#fffbeb" },
+  conteneurQrLicence: { alignItems: "center", marginVertical: 16 },
 });

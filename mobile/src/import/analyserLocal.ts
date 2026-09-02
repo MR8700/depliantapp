@@ -1,7 +1,9 @@
 import { lireParagraphesDocx } from "./parseDocx";
 import { segmenterParagraphesDocx } from "./segmentation";
 import { lireCache } from "../storage/chantsCache";
-import { normaliserTitre } from "../storage/sync";
+import { listerChantsLocaux } from "../storage/chantsLocal";
+import { getLicenceLocale } from "../storage/secureStore";
+import { normaliserTitre } from "../utils/normaliserTitre";
 import { ChantExtrait, ReponseUpload } from "../api/import";
 
 /** Analyse un .docx ENTIÈREMENT en local (dézippage + segmentation portés
@@ -22,9 +24,13 @@ export async function analyserDocxLocal(
   const chantsBruts = segmenterParagraphesDocx(paragraphes);
 
   const occasionsListe = params.occasions.split(",").map((o) => o.trim()).filter(Boolean);
-  const cache = await lireCache();
+  // Compte chorale (licence locale) : dédoublonnage contre la bibliothèque
+  // locale (voir storage/chantsLocal.ts). Compte super-admin : contre le
+  // cache réseau (storage/chantsCache.ts), comme avant.
+  const licence = await getLicenceLocale();
+  const bibliotheque = licence ? await listerChantsLocaux() : await lireCache();
   const indexParTitre = new Map<string, { id: number; titre: string }>();
-  for (const c of cache) indexParTitre.set(normaliserTitre(c.titre), { id: c.id, titre: c.titre });
+  for (const c of bibliotheque) indexParTitre.set(normaliserTitre(c.titre), { id: c.id, titre: c.titre });
 
   const chants: ChantExtrait[] = chantsBruts.map((raw) => {
     const doublon = indexParTitre.get(normaliserTitre(raw.titre));

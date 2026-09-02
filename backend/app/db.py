@@ -295,7 +295,13 @@ CREATE TABLE IF NOT EXISTS chant_medias (
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
-CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
+-- PAS d'index sur `statut` ici : colonne ajoutée après coup -- sur une base
+-- déjà existante mais pas encore migrée, CREATE TABLE IF NOT EXISTS est un
+-- no-op et cet index échouerait avant que l'ALTER TABLE conditionnel
+-- n'ait ajouté la colonne. Recréé juste après cet ALTER (SQLite : bloc
+-- colonnes_chant_medias plus bas ; Postgres : juste après l'ALTER TABLE
+-- correspondant), une fois la colonne garantie présente (même raison que
+-- idx_licences_uid plus haut).
 
 -- Réglages actifs PAR CHORALE (nom affiché, paroisse, contact, quelles
 -- images du pool `medias` ci-dessus sont utilisées pour chaque
@@ -373,6 +379,15 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
 
+-- Nonces des preuves HMAC de messagerie. Un nonce n'est accepté qu'une fois
+-- pendant la courte fenêtre de validité de la preuve : une requête réseau
+-- capturée ne peut donc pas être rejouée.
+CREATE TABLE IF NOT EXISTS message_proof_nonces (
+    nonce_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_proof_nonces_expiry ON message_proof_nonces(expires_at);
+
 -- Catégories de chants ajoutées par les utilisateurs (via "Autre" -> saisie
 -- libre) en plus de la liste fixe CATEGORIES_CHANTS (constants.py) — pour
 -- qu'une nouvelle catégorie devienne utilisable partout et persiste, comme
@@ -403,10 +418,31 @@ CREATE TABLE IF NOT EXISTS licences (
     -- par le super-admin à la création/reconfiguration de la licence.
     quota_feuillets INTEGER,
     feuillets_produits INTEGER NOT NULL DEFAULT 0,
+    -- Secret symétrique par licence (32 octets, hex), extrait du blob signé
+    -- Ed25519 reçu de l'appli admin à la création -- sert uniquement à
+    -- authentifier les appels Messagerie d'un appareil chorale (voir
+    -- app/messages_auth.py), jamais à signer/dériver la licence elle-même
+    -- (ça, c'est la clé privée de l'admin, jamais détenue par ce serveur).
+    seed TEXT,
+    -- Identifiant généré localement par l'appli admin au moment de la
+    -- signature (avant tout INSERT en base -- l'admin peut créer une licence
+    -- 100% hors-ligne, donc `id` ci-dessus, auto-incrémenté par ce serveur,
+    -- n'existe pas encore à cet instant). Fait partie du payload signé,
+    -- immuable, sert de clé de recherche pour la Messagerie et le handshake
+    -- QR maître/enfant -- jamais `id`, qui reste un détail interne de ce
+    -- serveur.
+    licence_uid TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_code ON licences(code);
+-- PAS d'index sur licence_uid ici : contrairement à `code` (présent depuis
+-- toujours), cette colonne est nouvelle -- sur une base SQLite déjà
+-- existante (CREATE TABLE IF NOT EXISTS ci-dessus est alors un no-op), la
+-- créer à cet endroit échouerait avant que la migration conditionnelle
+-- plus bas (colonnes_licences) n'ait eu la chance d'ajouter la colonne.
+-- Voir cet index créé APRÈS coup, une fois la colonne garantie présente
+-- (fraîche ou migrée).
 
 -- Un appareil ayant activé une licence donnée. Permet de compter les
 -- activations actives (contre max_appareils) et de révoquer un appareil
@@ -530,10 +566,18 @@ CREATE TABLE IF NOT EXISTS licences (
     expire_le TEXT,
     quota_feuillets INTEGER,
     feuillets_produits INTEGER NOT NULL DEFAULT 0,
+    seed TEXT,
+    licence_uid TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now(),
     updated_at TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_code ON licences(code);
+-- PAS d'index sur licence_uid ici -- même raison que SCHEMA_SQLITE plus
+-- haut : sur une base Postgres déjà existante (CREATE TABLE IF NOT EXISTS
+-- ci-dessus est alors un no-op), le créer à cet endroit échouerait avant
+-- l'ALTER TABLE ... ADD COLUMN IF NOT EXISTS plus bas dans ce même script.
+-- Voir cet index recréé juste après cet ALTER, une fois la colonne
+-- garantie présente.
 
 CREATE TABLE IF NOT EXISTS licence_activations (
     id SERIAL PRIMARY KEY,
@@ -589,7 +633,13 @@ CREATE TABLE IF NOT EXISTS chant_medias (
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 CREATE INDEX IF NOT EXISTS idx_chant_medias_chant ON chant_medias(chant_id);
-CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
+-- PAS d'index sur `statut` ici : colonne ajoutée après coup -- sur une base
+-- déjà existante mais pas encore migrée, CREATE TABLE IF NOT EXISTS est un
+-- no-op et cet index échouerait avant que l'ALTER TABLE conditionnel
+-- n'ait ajouté la colonne. Recréé juste après cet ALTER (SQLite : bloc
+-- colonnes_chant_medias plus bas ; Postgres : juste après l'ALTER TABLE
+-- correspondant), une fois la colonne garantie présente (même raison que
+-- idx_licences_uid plus haut).
 
 -- Réglages actifs PAR CHORALE — voir le commentaire équivalent dans
 -- SCHEMA_SQLITE. Remplace l'ancienne ligne singleton id=1 partagée par tout
@@ -648,6 +698,12 @@ CREATE TABLE IF NOT EXISTS messages (
 );
 CREATE INDEX IF NOT EXISTS idx_messages_chorale ON messages(chorale_id, created_at);
 
+CREATE TABLE IF NOT EXISTS message_proof_nonces (
+    nonce_hash TEXT PRIMARY KEY,
+    expires_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_message_proof_nonces_expiry ON message_proof_nonces(expires_at);
+
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_active INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS priere_texte TEXT;
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS taille_texte_manuelle REAL;
@@ -657,6 +713,7 @@ ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS chorale_id INTEGER REFERENCES cho
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS clone_de_id INTEGER REFERENCES feuillets(id);
 ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS visibilite TEXT NOT NULL DEFAULT 'publique';
 ALTER TABLE chant_medias ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'validee';
+CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS slug TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS mots_cles TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS references_bibliques TEXT NOT NULL DEFAULT '[]';
@@ -674,6 +731,9 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES messa
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS modifie INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS supprime INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE licences ADD COLUMN IF NOT EXISTS seed TEXT;
+ALTER TABLE licences ADD COLUMN IF NOT EXISTS licence_uid TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_uid ON licences(licence_uid);
 """
 
 
@@ -744,6 +804,7 @@ def _init_sqlite() -> None:
             # contenu déjà en place), seuls les NOUVEAUX ajouts par une
             # chorale démarrent 'a_verifier' (voir crud.ajouter_media_chant).
             conn.execute("ALTER TABLE chant_medias ADD COLUMN statut TEXT NOT NULL DEFAULT 'validee'")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut)")
 
         colonnes_feuillets = {row["name"] for row in conn.execute("PRAGMA table_info(feuillets)").fetchall()}
         if "priere_active" not in colonnes_feuillets:
@@ -796,6 +857,15 @@ def _init_sqlite() -> None:
                 conn.execute("ALTER TABLE licences ADD COLUMN quota_feuillets INTEGER")
             if "feuillets_produits" not in colonnes_licences:
                 conn.execute("ALTER TABLE licences ADD COLUMN feuillets_produits INTEGER NOT NULL DEFAULT 0")
+            if "seed" not in colonnes_licences:
+                conn.execute("ALTER TABLE licences ADD COLUMN seed TEXT")
+            if "licence_uid" not in colonnes_licences:
+                conn.execute("ALTER TABLE licences ADD COLUMN licence_uid TEXT")
+            # Toujours tenté ici (jamais dans SCHEMA_SQLITE plus haut) : la
+            # colonne est désormais garantie présente, fraîche (CREATE TABLE)
+            # ou tout juste migrée (ALTER TABLE ci-dessus) -- voir le
+            # commentaire sur idx_licences_code dans SCHEMA_SQLITE.
+            conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_uid ON licences(licence_uid)")
 
         colonnes_chorales = {row["name"] for row in conn.execute("PRAGMA table_info(chorales)").fetchall()}
         if colonnes_chorales:
@@ -896,7 +966,13 @@ def _migrer_vers_multi_chorale(conn) -> None:
 def _init_postgres() -> None:
     with get_connection() as conn:
         _renommer_tables_legacy_postgres(conn)
-        
+
+        # Le schéma doit précéder toutes les migrations. Sur une base Render
+        # neuve, `categories_personnalisees` (et les autres tables migrées
+        # ci-dessous) n'existent pas encore : ALTER TABLE échouait donc avant
+        # même que CREATE TABLE IF NOT EXISTS puisse les créer.
+        conn.executescript(SCHEMA_POSTGRES)
+
         # Postgres category moderation columns migration
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS cree_par INTEGER REFERENCES chorales(id)")
         conn.execute("ALTER TABLE categories_personnalisees ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'en_attente'")
@@ -911,11 +987,11 @@ def _init_postgres() -> None:
 
         conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS quota_feuillets INTEGER")
         conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS feuillets_produits INTEGER NOT NULL DEFAULT 0")
+        conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS seed TEXT")
+        conn.execute("ALTER TABLE licences ADD COLUMN IF NOT EXISTS licence_uid TEXT")
 
         conn.execute("ALTER TABLE chants ADD COLUMN IF NOT EXISTS chorale_proprietaire_id INTEGER")
         conn.execute("ALTER TABLE chants ADD COLUMN IF NOT EXISTS visibilite TEXT NOT NULL DEFAULT 'publique'")
-
-        conn.executescript(SCHEMA_POSTGRES)
 
         sans_slug = conn.execute("SELECT id, titre FROM chants WHERE slug IS NULL").fetchall()
         if sans_slug:

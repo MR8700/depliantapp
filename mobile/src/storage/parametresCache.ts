@@ -1,22 +1,20 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as FileSystem from "expo-file-system/legacy";
-import { jetonAuthorizationHeader } from "../api/client";
-import { urlImageActive, ImageSlot } from "../api/parametres";
+import { ImageSlot } from "../api/parametres";
 
 // Cache local des réglages (paroisse/chorale/contact/annonce/prière par
 // défaut, + configuration "À propos" admin) + des 3 images actives
 // (logos/bannière) -- nécessaire pour que le rendu PDF hors-ligne
-// (render/widgets.ts) puisse composer l'en-tête et la bannière sans réseau,
-// ET pour que Réglages/Administration restent utilisables hors-ligne en
-// LECTURE. Rafraîchi best-effort dès qu'une identité est résolue (voir
-// context/IdentiteContext.tsx), jamais bloquant.
-//
-// `donneesEnAttente` : modifications faites hors-ligne (sauvegarderParametres
-// en échec réseau, voir api/parametres.ts) pas encore poussées au serveur --
-// fusionnées par-dessus `donnees` à la lecture pour un affichage optimiste
-// immédiat, et rejouées par storage/syncAll.ts dès le retour du réseau.
+// (render/genererPdfLocal.ts) puisse composer l'en-tête et la bannière sans
+// réseau. Compte super-admin : `donnees`/`images` reflètent le dernier état
+// serveur connu (voir api/parametres.ts, plus de rafraîchissement réseau
+// dédié depuis la suppression de la synchronisation -- alimenté au fil des
+// lectures/écritures normales). Compte chorale (licence locale) : ce même
+// stockage sert de source PERMANENTE et AUTHORITATIVE (jamais un cache d'un
+// serveur qui n'existe pas pour elle), voir ecrireParametresLocaux/
+// definirImageLocaleActive plus bas -- images copiées dans
+// documentDirectory (jamais purgé par l'OS), jamais uploadées.
 const CLE_PARAMETRES = "depliantapp.parametres_cache";
-const SLOTS: ImageSlot[] = ["logo_gauche", "logo_droit", "banniere_bas"];
 
 export interface ParametresCache {
   donnees: Record<string, any>;
@@ -32,27 +30,6 @@ export async function lireParametresCache(): Promise<ParametresCache | null> {
 
 async function ecrire(cache: ParametresCache): Promise<void> {
   await AsyncStorage.setItem(CLE_PARAMETRES, JSON.stringify(cache));
-}
-
-// Dernier état connu du serveur -- ne touche JAMAIS donneesEnAttente : un
-// rafraîchissement (ex: retour d'un autre écran) ne doit pas effacer des
-// modifications locales pas encore synchronisées.
-export async function rafraichirParametresCache(donnees: Record<string, any>): Promise<void> {
-  const existant = await lireParametresCache();
-  const images: Partial<Record<ImageSlot, string>> = { ...existant?.images };
-  const headers = await jetonAuthorizationHeader();
-  for (const slot of SLOTS) {
-    try {
-      const dest = `${FileSystem.cacheDirectory}parametres_${slot}.img`;
-      const resultat = await FileSystem.downloadAsync(urlImageActive(slot), dest, { headers });
-      if (resultat.status === 200) images[slot] = resultat.uri;
-      else if (resultat.status === 404) delete images[slot]; // aucune image active pour ce slot
-    } catch {
-      // Hors-ligne ou erreur ponctuelle -- on garde la dernière image connue
-      // plutôt que d'effacer le cache existant.
-    }
-  }
-  await ecrire({ donnees, images, donneesEnAttente: existant?.donneesEnAttente ?? null });
 }
 
 /** Vue effective à afficher : dernier état serveur connu + modifications pas
@@ -73,14 +50,35 @@ export async function fusionnerPatchEnAttente(patch: Record<string, any>): Promi
   return { ...(existant?.donnees ?? {}), ...donneesEnAttente };
 }
 
-export async function lirePatchEnAttente(): Promise<Record<string, any> | null> {
-  const cache = await lireParametresCache();
-  return cache?.donneesEnAttente && Object.keys(cache.donneesEnAttente).length > 0 ? cache.donneesEnAttente : null;
+// --- Compte chorale (licence locale) -- pas de serveur, cet état EST la
+// vérité tout de suite, jamais un brouillon "en attente" (voir
+// api/parametres.ts). Les images sont copiées dans le stockage PERMANENT de
+// l'app (documentDirectory, jamais purgé par l'OS -- contrairement à
+// cacheDirectory, utilisé ci-dessus uniquement comme cache re-téléchargeable
+// du compte super-admin) puisqu'il n'existe plus de serveur d'où les
+// re-télécharger si elles disparaissaient.
+
+export async function ecrireParametresLocaux(patch: Record<string, any>): Promise<Record<string, any>> {
+  const existant = await lireParametresCache();
+  const donnees = { ...(existant?.donnees ?? {}), ...patch };
+  await ecrire({ donnees, images: existant?.images ?? {}, donneesEnAttente: null });
+  return donnees;
 }
 
-/** Le patch en attente vient d'être poussé avec succès -- adopte l'état
- * serveur résultant comme nouvelle vérité et vide la file. */
-export async function marquerParametresSynchronises(donneesServeur: Record<string, any>): Promise<void> {
+export async function definirImageLocaleActive(slot: ImageSlot, uriSource: string): Promise<string> {
+  const dest = `${FileSystem.documentDirectory}parametres_locaux_${slot}.img`;
+  await FileSystem.copyAsync({ from: uriSource, to: dest });
   const existant = await lireParametresCache();
-  await ecrire({ donnees: donneesServeur, images: existant?.images ?? {}, donneesEnAttente: null });
+  const images = { ...existant?.images, [slot]: dest };
+  await ecrire({ donnees: existant?.donnees ?? {}, images, donneesEnAttente: null });
+  return dest;
+}
+
+export async function retirerImageLocaleActive(slot: ImageSlot): Promise<void> {
+  const existant = await lireParametresCache();
+  const images = { ...existant?.images };
+  const chemin = images[slot];
+  delete images[slot];
+  await ecrire({ donnees: existant?.donnees ?? {}, images, donneesEnAttente: null });
+  if (chemin) await FileSystem.deleteAsync(chemin, { idempotent: true }).catch(() => {});
 }

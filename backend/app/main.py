@@ -45,7 +45,13 @@ _CHEMINS_PUBLICS = {
 }
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
 # doit encore être changé (sinon impossible de le changer...).
-_CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password"}
+_CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password", "/acces-refuse-chorale.html"}
+# Seuls chemins qu'une chorale garde sur le web (voir le blocage plus bas) :
+# la page qui explique la situation, la déconnexion pour repartir sur
+# login.html, et les quelques fichiers statiques dont cette page a besoin --
+# sans /auth/logout ici, une chorale bloquée resterait bloquée pour toujours,
+# incapable même de se déconnecter.
+_CHEMINS_ACCES_REFUSE_CHORALE = {"/acces-refuse-chorale.html", "/auth/logout", "/favicon.ico"}
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -66,10 +72,40 @@ class AuthMiddleware(BaseHTTPMiddleware):
         from . import db
         db.nettoyer_chorales_supprimees()
 
+        # Carve-out Messagerie : un appareil chorale (licence 100% hors-ligne,
+        # voir app/licence_signature.py) n'a plus jamais de session/Bearer
+        # classique -- il prouve son identité par possession du `seed` de sa
+        # licence (voir app/messages_auth.py). Volontairement restreint à
+        # /messages/* hors /messages/chorales (boîte de réception admin, qui
+        # garde le chemin session/cookie normal ci-dessous, inchangé) et
+        # déclenché UNIQUEMENT par la présence de l'en-tête dédié -- toute
+        # requête sans cet en-tête (web, ou mobile super-admin) retombe sur
+        # la résolution identite_depuis_requete normale, sans aucun impact.
+        if path.startswith("/messages") and path != "/messages/chorales" and "x-chorale-proof" in request.headers:
+            from . import messages_auth
+            identite_chorale = messages_auth.identite_depuis_preuve_chorale(request)
+            if not identite_chorale:
+                return self._refuser(request)
+            request.state.identite = identite_chorale
+            return await call_next(request)
+
         identite = auth.identite_depuis_requete(request)
         if not identite:
             return self._refuser(request)
         request.state.identite = identite
+
+        # Le site web est désormais réservé au super-admin -- une chorale
+        # gère tout depuis l'app mobile. On distingue une session NAVIGATEUR
+        # (cookie) d'une session MOBILE (Bearer, voir api/client.ts::jeton())
+        # par la présence de l'en-tête Authorization : app.js n'en envoie
+        # jamais (repose entièrement sur le cookie), donc son absence
+        # signale de façon fiable un accès web, jamais l'app mobile -- même
+        # si un cookie traînait par accident côté mobile, la présence de son
+        # en-tête Bearer sur CETTE requête suffit à l'exempter. Une chorale
+        # authentifiée par cookie ne perd donc RIEN côté mobile (API
+        # inchangée), seul l'accès au site web lui est fermé.
+        if identite.type == "chorale" and "authorization" not in request.headers and path not in _CHEMINS_ACCES_REFUSE_CHORALE:
+            return self._refuser_web_chorale(request)
 
         if path in _CHEMINS_CHANGEMENT_MDP:
             return await call_next(request)
@@ -99,6 +135,22 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if est_page:
             return RedirectResponse(url="/login.html", status_code=303)
         return JSONResponse(status_code=401, content={"detail": "Authentification requise"})
+
+    @staticmethod
+    def _refuser_web_chorale(request):
+        """Le site web est réservé au super-admin -- une chorale connectée
+        par cookie (voir le commentaire au point d'appel) est renvoyée vers
+        une page dédiée qui explique la situation plutôt qu'un 401 muet ou
+        une redirection vers login.html (qui la ramènerait juste ici en
+        boucle après une nouvelle connexion)."""
+        path = request.url.path
+        est_page = path == "/" or path.endswith(".html")
+        if est_page:
+            return RedirectResponse(url="/acces-refuse-chorale.html", status_code=303)
+        return JSONResponse(
+            status_code=403,
+            content={"detail": "Le site web est réservé aux administrateurs -- utilisez l'application mobile DepliantApp."},
+        )
 
     @staticmethod
     def _refuser_licence(request, message: str):

@@ -1,5 +1,6 @@
 import { API_BASE_URL } from "../config";
-import { getJetonSession, getAppareilId, effacerActivation, effacerJetonSession } from "../storage/secureStore";
+import { getJetonSession, getAppareilId, getLicenceLocale, effacerLicenceLocale, effacerJetonSession } from "../storage/secureStore";
+import { calculerPreuveMessagerie } from "../licence/preuveMessagerie";
 
 export class ApiError extends Error {
   /** Détail brut renvoyé par FastAPI -- objet structuré pour certaines
@@ -16,8 +17,32 @@ interface Options {
   authentifie?: boolean;
 }
 
-async function jeton(authentifie: boolean | undefined): Promise<Record<string, string>> {
+/**
+ * Une licence chorale active désigne un poste autonome : ses données et son
+ * authentification sont locales. Le seul échange autorisé est la
+ * messagerie, authentifiée par sa preuve dédiée. Ce garde-fou central évite
+ * qu'un nouvel écran (ou un appel oublié) ne réintroduise silencieusement
+ * une dépendance au serveur.
+ */
+export async function verifierAccesReseau(path: string): Promise<void> {
+  const licence = await getLicenceLocale();
+  if (licence && !path.startsWith("/messages")) {
+    throw new ApiError(0, "Cette fonction est disponible localement pour la chorale et ne contacte pas le serveur.");
+  }
+}
+
+// Compte chorale (licence locale) : plus aucune notion de session/Bearer --
+// seule la Messagerie appelle encore le réseau, prouvée par possession du
+// `seed` de la licence (voir licence/preuveMessagerie.ts et
+// backend/app/messages_auth.py). Compte super-admin : Bearer + X-Appareil-Id
+// classiques, inchangés.
+async function jeton(authentifie: boolean | undefined, chemin = "/messages", methode = "GET"): Promise<Record<string, string>> {
   if (authentifie === false) return {};
+  const licence = await getLicenceLocale();
+  if (licence) {
+    const horodatage = Math.floor(Date.now() / 1000);
+    return calculerPreuveMessagerie(licence.payload.seed, licence.payload.choraleId, licence.payload.licenceUid, horodatage, methode, chemin.split("?")[0]);
+  }
   const j = await getJetonSession();
   if (!j) return {};
   // X-Appareil-Id : permet au backend de vérifier en CONTINU (à chaque
@@ -58,10 +83,13 @@ function messageErreur(donnees: any, status: number): string {
 // simple nouvel essai ne fonctionne -- même logique que fetchAvecRetry côté
 // web (app.js). Sans ça, un tap sur "Créer"/"PDF" pouvait rejeter tout de
 // suite sur ce premier essai raté et laisser le bouton sans retour clair.
-async function fetchAvecRetry(url: string, init: RequestInit, tentatives = 2, delaiMs = 1500): Promise<Response> {
+async function fetchAvecRetry(url: string, creerInit: () => Promise<RequestInit>, tentatives = 2, delaiMs = 1500): Promise<Response> {
   for (let i = 0; i < tentatives; i++) {
     try {
-      return await fetch(url, init);
+      // Une tentative reçoit de nouveaux en-têtes, donc un nouveau nonce
+      // HMAC lorsqu'il s'agit de Messagerie. Réutiliser le même init ferait
+      // rejeter une reprise légitime par la protection anti-rejeu.
+      return await fetch(url, await creerInit());
     } catch (erreur) {
       if (i === tentatives - 1) throw erreur;
       await new Promise((resolve) => setTimeout(resolve, delaiMs));
@@ -74,20 +102,23 @@ async function fetchAvecRetry(url: string, init: RequestInit, tentatives = 2, de
 // persistant pas les cookies entre deux lancements, c'est le seul mécanisme
 // de session côté mobile (voir routers/auth.py::login côté backend).
 export async function apiFetch<T>(path: string, options: Options = {}): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json", ...(await jeton(options.authentifie)) };
-
-  const reponse = await fetchAvecRetry(`${API_BASE_URL}${path}`, {
-    method: options.method ?? "GET",
-    headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
-  });
+  await verifierAccesReseau(path);
+  const methode = options.method ?? "GET";
+  const reponse = await fetchAvecRetry(
+    `${API_BASE_URL}${path}`,
+    async () => ({
+      method: methode,
+      headers: { "Content-Type": "application/json", ...(await jeton(options.authentifie, path, methode)) },
+      body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    }),
+  );
 
   const texte = await reponse.text();
   const donnees = texte ? JSON.parse(texte) : null;
 
   if (!reponse.ok) {
     if (donnees?.code === "licence_invalide") {
-      await Promise.all([effacerActivation(), effacerJetonSession()]);
+      await Promise.all([effacerLicenceLocale(), effacerJetonSession()]);
       gestionnaireLicenceInvalide?.(messageErreur(donnees, reponse.status));
     }
     throw new ApiError(reponse.status, messageErreur(donnees, reponse.status), donnees?.detail);
@@ -103,13 +134,17 @@ export async function apiFetchForm<T>(
   form: FormData,
   options: { method?: "POST" | "PUT"; authentifie?: boolean } = {},
 ): Promise<T> {
-  const headers: Record<string, string> = await jeton(options.authentifie);
-  const reponse = await fetchAvecRetry(`${API_BASE_URL}${path}`, { method: options.method ?? "POST", headers, body: form as any });
+  await verifierAccesReseau(path);
+  const methode = options.method ?? "POST";
+  const reponse = await fetchAvecRetry(
+    `${API_BASE_URL}${path}`,
+    async () => ({ method: methode, headers: await jeton(options.authentifie, path, methode), body: form as any }),
+  );
   const texte = await reponse.text();
   const donnees = texte ? JSON.parse(texte) : null;
   if (!reponse.ok) {
     if (donnees?.code === "licence_invalide") {
-      await Promise.all([effacerActivation(), effacerJetonSession()]);
+      await Promise.all([effacerLicenceLocale(), effacerJetonSession()]);
       gestionnaireLicenceInvalide?.(messageErreur(donnees, reponse.status));
     }
     throw new ApiError(reponse.status, messageErreur(donnees, reponse.status), donnees?.detail);
@@ -117,6 +152,6 @@ export async function apiFetchForm<T>(
   return donnees as T;
 }
 
-export async function jetonAuthorizationHeader(): Promise<Record<string, string>> {
-  return jeton(true);
+export async function jetonAuthorizationHeader(chemin = "/messages", methode = "GET"): Promise<Record<string, string>> {
+  return jeton(true, chemin, methode);
 }

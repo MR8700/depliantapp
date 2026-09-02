@@ -4,16 +4,22 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
-import { uploaderCarnet, uploaderCarnetDistant, finaliserImport, ChantExtrait, ImportMisEnAttente } from "../api/import";
+import { uploaderCarnet, finaliserImport, ChantExtrait, ImportIndisponibleHorsLigne } from "../api/import";
 import { getMeta } from "../api/meta";
 import { niveauConfiance, LABEL_CONFIANCE, COULEUR_CONFIANCE } from "../utils/confiance";
-import { lireImportOutbox, retirerDImportOutbox, EntreeImportOutbox } from "../storage/importOutbox";
-import { ApiError } from "../api/client";
 import SelectModal from "../components/SelectModal";
 import Bouton from "../components/Bouton";
 
 interface LigneImport extends ChantExtrait {
   inclus: boolean;
+  // Résolution des doublons explicite -- contrairement au web (radio +
+  // select dans la modale d'édition), remplacer était auparavant choisi
+  // automatiquement et silencieusement dès qu'un doublon était détecté
+  // (toujours le premier candidat), avec un risque réel d'écraser le mauvais
+  // chant sans que l'utilisateur s'en rende compte. Par défaut on n'écrase
+  // jamais : l'utilisateur doit choisir "Remplacer" explicitement.
+  action: "save" | "replace";
+  remplaceId?: number;
 }
 
 const LANGUES_IMPORT = [
@@ -42,50 +48,20 @@ export default function ImportScreen() {
   const [lignes, setLignes] = useState<LigneImport[] | null>(null);
   const [categories, setCategories] = useState<string[]>([]);
   const [indexEnEdition, setIndexEnEdition] = useState<number | null>(null);
+  const [indexDetails, setIndexDetails] = useState<number | null>(null);
   const [brouillonEdition, setBrouillonEdition] = useState<{ titre: string; categorie: string; langue: string; refrain: string; couplets: string } | null>(null);
-  const [enAttente, setEnAttente] = useState<EntreeImportOutbox[]>([]);
-  const [reessaiEnCours, setReessaiEnCours] = useState<string | null>(null);
-
-  const chargerEnAttente = () => { lireImportOutbox().then(setEnAttente).catch(() => {}); };
-
   useEffect(() => {
     getMeta().then((m) => setCategories(m.categories)).catch(() => {});
-    chargerEnAttente();
   }, []);
 
-  async function reessayerImportEnAttente(entree: EntreeImportOutbox) {
-    setReessaiEnCours(entree.cle);
-    try {
-      const reponse = await uploaderCarnetDistant({
-        uri: entree.uriLocal, nom: entree.nom, mimeType: entree.mimeType,
-        categorieDefaut: entree.categorieDefaut, occasions: entree.occasions, langue: entree.langue, auteur: entree.auteur,
-      });
-      await retirerDImportOutbox(entree.cle);
-      chargerEnAttente();
-      setLignes(reponse.chants.map((c) => ({ ...c, inclus: true })));
-    } catch (erreur) {
-      if (erreur instanceof ApiError) {
-        Alert.alert("Erreur", erreur.message);
-        await retirerDImportOutbox(entree.cle);
-        chargerEnAttente();
-      } else {
-        Alert.alert("Toujours hors-ligne", "Ce carnet reste en attente -- réessaie une fois la connexion revenue.");
-      }
-    } finally {
-      setReessaiEnCours(null);
-    }
-  }
-
-  function abandonnerImportEnAttente(entree: EntreeImportOutbox) {
-    Alert.alert("Retirer ce carnet en attente ?", entree.nom, [
-      { text: "Annuler", style: "cancel" },
-      { text: "Retirer", style: "destructive", onPress: async () => { await retirerDImportOutbox(entree.cle); chargerEnAttente(); } },
-    ]);
-  }
-
+  // .doc retiré du sélecteur : aucun équivalent d'analyse possible sur
+  // mobile (nécessite Word/COM, même côté serveur). PDF reste accepté --
+  // analysé côté serveur pour un compte super-admin, indisponible hors-ligne
+  // pour un compte chorale (voir api/import.ts::ImportIndisponibleHorsLigne),
+  // seul le .docx s'analysant entièrement en local.
   async function choisirFichier() {
     const resultat = await DocumentPicker.getDocumentAsync({
-      type: ["application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
+      type: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
     });
     if (resultat.canceled || !resultat.assets[0]) return;
     const a = resultat.assets[0];
@@ -97,12 +73,10 @@ export default function ImportScreen() {
     setEnCours(true);
     try {
       const reponse = await uploaderCarnet({ ...fichier, categorieDefaut, occasions, langue, auteur });
-      setLignes(reponse.chants.map((c) => ({ ...c, inclus: true })));
+      setLignes(reponse.chants.map((c) => ({ ...c, inclus: true, action: "save", remplaceId: c.doublons[0]?.id })));
     } catch (erreur) {
-      if (erreur instanceof ImportMisEnAttente) {
-        setFichier(null);
-        chargerEnAttente();
-        Alert.alert("Mis en attente", erreur.message);
+      if (erreur instanceof ImportIndisponibleHorsLigne) {
+        Alert.alert("Connexion requise", erreur.message);
       } else {
         Alert.alert("Erreur", (erreur as any)?.message ?? "Échec de l'analyse du fichier");
       }
@@ -150,8 +124,8 @@ export default function ImportScreen() {
     setEnCours(true);
     try {
       const payload = lignes.filter((l) => l.inclus).map((l) => ({
-        action: (l.doublons.length > 0 ? "replace" : "save") as "replace" | "save",
-        replace_id: l.doublons[0]?.id,
+        action: l.action,
+        replace_id: l.action === "replace" ? l.remplaceId : undefined,
         titre: l.titre, refrain: l.refrain, couplets: l.couplets, code_reference: l.code_reference ?? undefined,
         categorie: l.categorie, occasions: l.occasions, confiance: l.confiance, langue: l.langue,
         auteur: l.auteur ?? undefined, compositeur: l.compositeur ?? undefined,
@@ -209,6 +183,7 @@ export default function ImportScreen() {
                     value={item.titre}
                     onChangeText={(v) => majLigne(index, { titre: v })}
                   />
+                  <Pressable onPress={() => setIndexDetails(index)} hitSlop={8}><Text style={styles.iconeActionLigne}>🔍</Text></Pressable>
                   <Pressable onPress={() => ouvrirEdition(index)} hitSlop={8}><Text style={styles.iconeActionLigne}>✏️</Text></Pressable>
                   <Pressable onPress={() => retirerLigne(index)} hitSlop={8}><Text style={styles.iconeActionLigne}>🗑️</Text></Pressable>
                 </View>
@@ -220,7 +195,32 @@ export default function ImportScreen() {
                   {LABEL_CONFIANCE[niveau]} ({Math.round(item.confiance * 100)}%)
                 </Text>
                 {item.doublons.length > 0 && (
-                  <Text style={styles.doublon}>⚠ Doublon possible : {item.doublons[0].titre}</Text>
+                  <View style={styles.blocDoublon}>
+                    <Text style={styles.doublon}>⚠ Doublon possible : {item.doublons.find((d) => d.id === item.remplaceId)?.titre ?? item.doublons[0].titre}</Text>
+                    {item.doublons.length > 1 && item.action === "replace" && (
+                      <SelectModal
+                        label="Chant à remplacer"
+                        value={String(item.remplaceId ?? item.doublons[0].id)}
+                        options={item.doublons.map((d) => ({ value: String(d.id), label: `${d.titre} (${Math.round(d.similarite * 100)}% similaire)` }))}
+                        onChange={(v) => majLigne(index, { remplaceId: Number(v) })}
+                        style={{ marginTop: 6 }}
+                      />
+                    )}
+                    <View style={styles.rangeeChoixDoublon}>
+                      <Pressable
+                        style={[styles.choixDoublon, item.action === "save" && styles.choixDoublonActif]}
+                        onPress={() => majLigne(index, { action: "save" })}
+                      >
+                        <Text style={[styles.texteChoixDoublon, item.action === "save" && styles.texteChoixDoublonActif]}>Enregistrer comme nouveau</Text>
+                      </Pressable>
+                      <Pressable
+                        style={[styles.choixDoublon, item.action === "replace" && styles.choixDoublonActif]}
+                        onPress={() => majLigne(index, { action: "replace", remplaceId: item.remplaceId ?? item.doublons[0].id })}
+                      >
+                        <Text style={[styles.texteChoixDoublon, item.action === "replace" && styles.texteChoixDoublonActif]}>Remplacer l'existant</Text>
+                      </Pressable>
+                    </View>
+                  </View>
                 )}
               </View>
             );
@@ -230,6 +230,44 @@ export default function ImportScreen() {
           <View style={{ flex: 1 }}><Bouton titre="Annuler" variante="contour" onPress={() => setLignes(null)} /></View>
           <View style={{ flex: 1 }}><Bouton titre="Valider l'import" onPress={validerImport} enCours={enCours} /></View>
         </View>
+
+        {/* Détails (🔍) -- lecture seule de ce que le moteur d'extraction a
+            détecté, équivalent de l'action "détails" du web (app.js
+            ~5371/5454), sans reprendre son rendu exact -- juste les mêmes
+            informations dans une modale simple. */}
+        <Modal visible={indexDetails !== null} animationType="slide" transparent onRequestClose={() => setIndexDetails(null)}>
+          <Pressable style={styles.fondDetails} onPress={() => setIndexDetails(null)}>
+            <Pressable style={styles.feuilleDetails} onPress={(e) => e.stopPropagation()}>
+              {indexDetails !== null && lignes && (
+                <ScrollView contentContainerStyle={{ paddingBottom: 12 + insets.bottom }}>
+                  <Text style={styles.titreEdition}>{lignes[indexDetails].titre}</Text>
+                  <Text style={styles.sousInfoLigne}>
+                    {lignes[indexDetails].categorie} · {lignes[indexDetails].langue.toUpperCase()} · confiance {Math.round(lignes[indexDetails].confiance * 100)}%
+                  </Text>
+                  {!!lignes[indexDetails].refrain && (
+                    <>
+                      <Text style={styles.label}>Refrain détecté</Text>
+                      <Text style={styles.texteDetail}>{lignes[indexDetails].refrain}</Text>
+                    </>
+                  )}
+                  <Text style={styles.label}>Couplets détectés ({lignes[indexDetails].couplets.length})</Text>
+                  {lignes[indexDetails].couplets.map((c, i) => (
+                    <Text key={i} style={styles.texteDetail}>{i + 1}. {c}</Text>
+                  ))}
+                  {lignes[indexDetails].doublons.length > 0 && (
+                    <>
+                      <Text style={styles.label}>Doublons possibles</Text>
+                      {lignes[indexDetails].doublons.map((d) => (
+                        <Text key={d.id} style={styles.texteDetail}>• {d.titre} ({Math.round(d.similarite * 100)}% similaire)</Text>
+                      ))}
+                    </>
+                  )}
+                  <View style={{ marginTop: 16 }}><Bouton titre="Fermer" onPress={() => setIndexDetails(null)} /></View>
+                </ScrollView>
+              )}
+            </Pressable>
+          </Pressable>
+        </Modal>
 
         <Modal visible={indexEnEdition !== null} animationType="slide" onRequestClose={() => setIndexEnEdition(null)}>
           <View style={styles.conteneurEdition}>
@@ -279,29 +317,9 @@ export default function ImportScreen() {
         <Text style={styles.iconeFormat}>📄</Text>
         <View>
           <Text style={styles.titreFormat}>Formats acceptés</Text>
-          <Text style={styles.texteFormat}>DOC, DOCX, PDF (max 50 Mo)</Text>
+          <Text style={styles.texteFormat}>DOCX (100% hors-ligne), PDF (connexion requise) -- max 50 Mo</Text>
         </View>
       </View>
-
-      {enAttente.length > 0 && (
-        <View style={styles.blocEnAttente}>
-          <Text style={styles.titreEnAttente}>⏳ {enAttente.length} carnet(s) en attente de connexion</Text>
-          {enAttente.map((e) => (
-            <View key={e.cle} style={styles.ligneEnAttente}>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.nomFichier} numberOfLines={1}>{e.nom}</Text>
-                <Text style={styles.tailleFichier}>Ajouté le {new Date(e.creeLe).toLocaleString("fr-FR")}</Text>
-              </View>
-              <Pressable onPress={() => reessayerImportEnAttente(e)} disabled={reessaiEnCours === e.cle}>
-                <Text style={styles.lienReessayer}>{reessaiEnCours === e.cle ? "…" : "Réessayer"}</Text>
-              </Pressable>
-              <Pressable onPress={() => abandonnerImportEnAttente(e)} hitSlop={8}>
-                <Text style={styles.retirerFichier}>✕</Text>
-              </Pressable>
-            </View>
-          ))}
-        </View>
-      )}
 
       <Pressable style={styles.zoneFichier} onPress={choisirFichier}>
         <Text style={styles.iconeZoneFichier}>📤</Text>
@@ -323,7 +341,11 @@ export default function ImportScreen() {
       <Text style={styles.section}>⚙️ Paramètres d'importation</Text>
       <Text style={styles.sousTitreSection}>Ces informations aideront à classer correctement les chants importés.</Text>
       <Text style={styles.label}>Catégorie liturgique par défaut</Text>
-      <TextInput style={styles.champ} value={categorieDefaut} onChangeText={setCategorieDefaut} />
+      <SelectModal
+        label="Catégorie par défaut" value={categorieDefaut}
+        options={categories.length > 0 ? categories.map((c) => ({ value: c, label: c })) : [{ value: "Autre", label: "Autre" }]}
+        onChange={setCategorieDefaut}
+      />
       <Text style={styles.label}>Langue principale</Text>
       <SelectModal label="Langue principale" value={langue} options={LANGUES_IMPORT} onChange={setLangue} />
       <Text style={styles.label}>Occasions (ex: Noël, Mariage, Pâques...)</Text>
@@ -400,9 +422,18 @@ const styles = StyleSheet.create({
   barreRemplie: { height: "100%" },
   labelConfiance: { fontSize: 11, marginTop: 4, fontWeight: "600" },
   doublon: { fontSize: 11, color: "#d97706", marginTop: 4 },
+  blocDoublon: { marginTop: 6, backgroundColor: "#fffbeb", borderWidth: 1, borderColor: "#fde68a", borderRadius: 8, padding: 8, marginLeft: 26 },
+  rangeeChoixDoublon: { flexDirection: "row", gap: 6, marginTop: 6 },
+  choixDoublon: { flex: 1, paddingVertical: 6, borderRadius: 6, alignItems: "center", backgroundColor: "#fff", borderWidth: 1, borderColor: "#fde68a" },
+  choixDoublonActif: { backgroundColor: "#d97706", borderColor: "#d97706" },
+  texteChoixDoublon: { fontSize: 11, fontWeight: "600", color: "#92400e" },
+  texteChoixDoublonActif: { color: "#fff" },
   barreBas: { flexDirection: "row", gap: 10, padding: 16, position: "absolute", bottom: 0, left: 0, right: 0, backgroundColor: "#eef2f9" },
   conteneurEdition: { flex: 1, backgroundColor: "#eef2f9", padding: 16, paddingTop: 50 },
   titreEdition: { fontSize: 17, fontWeight: "800", color: "#1F4A7C", marginBottom: 14 },
   rangeeBoutonsEdition: { flexDirection: "row", gap: 10, paddingTop: 10 },
   champMulti: { minHeight: 80, textAlignVertical: "top" },
+  fondDetails: { flex: 1, backgroundColor: "rgba(15,23,42,0.4)", justifyContent: "flex-end" },
+  feuilleDetails: { backgroundColor: "#fff", borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20, maxHeight: "80%" },
+  texteDetail: { fontSize: 13, color: "#334155", marginTop: 4, lineHeight: 18 },
 });

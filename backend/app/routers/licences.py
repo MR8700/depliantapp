@@ -33,16 +33,22 @@ def _throttle(ip: str) -> None:
 
 
 class LicenceCreation(BaseModel):
-    chorale_id: int
-    max_appareils: int = 1
-    expire_le: str | None = None
-    quota_feuillets: int | None = None
+    # Blob déjà signé localement par l'appli admin (voir
+    # mobile/src/licence/adminSignature.ts::signerLicence) -- chorale_id,
+    # max_appareils, expire_le, quota_feuillets sont tous encodés dedans,
+    # ce serveur ne fait que vérifier la signature et enregistrer le
+    # bookkeeping (voir licences.py::creer_licence).
+    code: str
 
 
 class LicenceConfiguration(BaseModel):
-    max_appareils: int = 1
-    expire_le: str | None = None
-    quota_feuillets: int | None = None
+    # Nouveau blob re-signé côté admin avec les valeurs voulues -- même
+    # remarque que LicenceCreation ci-dessus.
+    code: str
+
+
+class LicenceRegeneration(BaseModel):
+    code: str
 
 
 class ActivationPayload(BaseModel):
@@ -62,11 +68,10 @@ def lister(chorale_id: int | None = None, _identite: auth.Identite = Depends(req
 
 @router.post("")
 def creer(payload: LicenceCreation, _identite: auth.Identite = Depends(require_superadmin)):
-    if not auth.get_chorale(payload.chorale_id):
-        raise HTTPException(status_code=404, detail="Chorale introuvable")
-    return licences_module.creer_licence(
-        payload.chorale_id, payload.max_appareils, payload.expire_le, payload.quota_feuillets,
-    )
+    try:
+        return licences_module.creer_licence(payload.code)
+    except licences_module.LicenceInvalide as erreur:
+        raise HTTPException(status_code=400, detail=str(erreur))
 
 
 @router.put("/{licence_id}")
@@ -76,7 +81,10 @@ def configurer(licence_id: int, payload: LicenceConfiguration, _identite: auth.I
     /revoquer (qui ne change que le statut)."""
     if not licences_module.get_licence(licence_id):
         raise HTTPException(status_code=404, detail="Licence introuvable")
-    licences_module.modifier_licence(licence_id, payload.max_appareils, payload.expire_le, payload.quota_feuillets)
+    try:
+        licences_module.modifier_licence(licence_id, payload.code)
+    except licences_module.LicenceInvalide as erreur:
+        raise HTTPException(status_code=400, detail=str(erreur))
     return licences_module.get_licence(licence_id)
 
 
@@ -124,10 +132,13 @@ def reactiver(licence_id: int, _identite: auth.Identite = Depends(require_supera
 
 
 @router.post("/{licence_id}/regenerer-code")
-def regenerer(licence_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+def regenerer(licence_id: int, payload: LicenceRegeneration, _identite: auth.Identite = Depends(require_superadmin)):
     if not licences_module.get_licence(licence_id):
         raise HTTPException(status_code=404, detail="Licence introuvable")
-    return {"code": licences_module.regenerer_code(licence_id)}
+    try:
+        return {"code": licences_module.regenerer_code(licence_id, payload.code)}
+    except licences_module.LicenceInvalide as erreur:
+        raise HTTPException(status_code=400, detail=str(erreur))
 
 
 @router.delete("/{licence_id}/activations/{appareil_id}")

@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View, useWindowDimensions,
 } from "react-native";
 import { useNavigation } from "@react-navigation/native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { rechercherChants, basculerFavori, dupliquerChant, proposerValidationChant, validerChant, retirerValidationChant } from "../api/chants";
+import { rechercherChants, basculerFavori, dupliquerChant, validerChant, retirerValidationChant } from "../api/chants";
 import { getMeta } from "../api/meta";
-import { fusionnerDansCache, lireCache } from "../storage/chantsCache";
+import { lireCache } from "../storage/chantsCache";
 import { useIdentite } from "../context/IdentiteContext";
 import { Chant, Meta } from "../types";
 import ChantCard from "../components/ChantCard";
@@ -37,8 +37,14 @@ const OPTIONS_ETAT = [
 
 export default function BibliothequeScreen() {
   const navigation = useNavigation<any>();
-  const { estSuperAdmin, syncBibliothequeJamaisEffectuee } = useIdentite();
-  const [bandeauSyncMasque, setBandeauSyncMasque] = useState(false);
+  const { estSuperAdmin } = useIdentite();
+  // useWindowDimensions (pas Dimensions.get, un instantané figé) -- réagit à
+  // une rotation d'écran, pertinent surtout sur tablette (voir
+  // utils/orientation.ts, qui y autorise le paysage) : sans ça, la grille
+  // restait bloquée à 2 colonnes quelle que soit la largeur réelle
+  // disponible, gaspillant l'essentiel de l'écran sur un grand appareil.
+  const { width: largeurEcran } = useWindowDimensions();
+  const colonnesGrille = largeurEcran >= 900 ? 4 : largeurEcran >= 600 ? 3 : 2;
 
   const [recherche, setRecherche] = useState("");
   const [rechercheDebattue, setRechercheDebattue] = useState("");
@@ -90,7 +96,6 @@ export default function BibliothequeScreen() {
     try {
       const resultats = await rechercherChants({ q: q || undefined, categorie: categorie || undefined, occasion: occasion || undefined });
       setChants(resultats);
-      fusionnerDansCache(resultats);
     } catch {
       const local = await lireCache();
       const q_ = q.trim().toLowerCase();
@@ -160,17 +165,17 @@ export default function BibliothequeScreen() {
     });
   }
 
-  // Clic sur le badge "à vérifier"/"Actif" : la chorale propose seulement,
-  // l'admin valide/annule directement (voir routers/chants.py).
+  // Clic sur le badge "Actif" -- super-admin uniquement (valide/annule
+  // directement, voir routers/chants.py). Le badge "à vérifier" n'existe
+  // plus pour une chorale 100% locale (valide_manuellement=true de
+  // naissance pour tout chant créé localement, voir
+  // storage/chantsLocal.ts::creerChantLocal -- etatChant() ne renvoie donc
+  // jamais "a-verifier" pour elle, voir utils/labels.ts) : pas de proposition
+  // à envoyer à un administrateur, plus de bibliothèque partagée à protéger.
   async function onChangerEtatChant(chant: Chant) {
+    if (!estSuperAdmin) return;
     try {
-      let misAJour: Chant;
-      if (estSuperAdmin) {
-        misAJour = chant.valide_manuellement ? await retirerValidationChant(chant.id) : await validerChant(chant.id);
-      } else {
-        misAJour = await proposerValidationChant(chant.id);
-        Alert.alert("Proposition envoyée", "L'administrateur va confirmer.");
-      }
+      const misAJour = chant.valide_manuellement ? await retirerValidationChant(chant.id) : await validerChant(chant.id);
       setChants((prev) => prev.map((c) => (c.id === chant.id ? misAJour : c)));
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible de mettre à jour l'état");
@@ -203,20 +208,6 @@ export default function BibliothequeScreen() {
         stickyHeaderIndices={[]}
         refreshControl={<RefreshControl refreshing={rafraichissement} onRefresh={onRafraichir} />}
       >
-        {syncBibliothequeJamaisEffectuee && !bandeauSyncMasque && (
-          // Invitation non bloquante : l'app fonctionne entièrement hors-ligne
-          // (composer/enregistrer/générer un PDF), mais tant qu'aucune
-          // synchronisation n'a réussi, la bibliothèque partagée par les
-          // autres chorales n'est pas encore disponible localement.
-          <View style={styles.bandeauSync}>
-            <Text style={styles.texteBandeauSync}>
-              📡 Connecte-toi à internet pour récupérer les chants de toutes les chorales. L'app fonctionne sans, mais la bibliothèque partagée sera vide en attendant.
-            </Text>
-            <Pressable onPress={() => setBandeauSyncMasque(true)} hitSlop={8}>
-              <Text style={styles.fermerBandeauSync}>✕</Text>
-            </Pressable>
-          </View>
-        )}
         {/* En-tête */}
         <View style={styles.entete}>
           <View style={styles.ligneTitre}>
@@ -307,10 +298,10 @@ export default function BibliothequeScreen() {
           </Text>
         ) : (
           <FlatList
-            key={vueMode}
+            key={`${vueMode}-${colonnesGrille}`}
             data={page}
             keyExtractor={(c) => String(c.id)}
-            numColumns={vueMode === "grid" ? 2 : 1}
+            numColumns={vueMode === "grid" ? colonnesGrille : 1}
             columnWrapperStyle={vueMode === "grid" ? { gap: 10 } : undefined}
             scrollEnabled={false}
             renderItem={({ item }) => (

@@ -89,6 +89,13 @@ def chants_du_jour(jour: str | None = None, identite: auth.Identite = Depends(id
     except aelf.ErreurAelf as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     lectures = aelf_matching.extraire_lectures(donnees)
+    if not lectures:
+        # Aucune lecture pour ce jour (ou AELF n'en a tout simplement pas
+        # pour cette date) -- inutile de comparer toute la bibliothèque de
+        # chants à un ensemble vide, le résultat serait "aucune
+        # correspondance" pour CHAQUE chant sans exception. Le client
+        # affiche un message dédié plutôt qu'une liste de chants tous à 0%.
+        return {"date": jour_cible, "informations": donnees.get("informations", {}), "chants": []}
 
     chorale_id_appelant = identite.compte_id if identite.type == "chorale" else None
     chants = crud.list_chants(chorale_id_appelant=chorale_id_appelant, limit=100000)

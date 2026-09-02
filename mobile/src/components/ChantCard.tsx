@@ -33,9 +33,6 @@ export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, on
   const nomLangue = NOMS_LANGUES[chant.langue] || chant.langue || "Français";
   const tagsVisibles = chant.mots_cles.slice(0, 3);
   const tagsRestants = chant.mots_cles.length - 3;
-  // Créé hors-ligne, pas encore poussé vers la bibliothèque partagée (voir
-  // storage/chantsOutbox.ts -- id négatif = encore dans la file d'attente).
-  const enAttenteEnvoi = chant.id < 0;
   // Chant créé par une chorale, pas encore publié par un administrateur
   // (voir routers/chants.py::create_chant) -- visible seulement de son
   // auteur (et de l'admin), jamais du reste de la communauté.
@@ -48,8 +45,7 @@ export default function ChantCard({ chant, estSuperAdmin, modeGrille, onVoir, on
         <View style={styles.ligneTitre}>
           <Text style={styles.pillCategorie}>{categorieLabel(chant.categorie)}</Text>
           <Text style={styles.titre} numberOfLines={1}>{chant.titre || "(sans titre)"}</Text>
-          {enAttenteEnvoi && <Text style={styles.pillEnAttente}>⏳ En attente d'envoi</Text>}
-          {!enAttenteEnvoi && estPrive && <Text style={styles.pillPrive}>🔒 Privé</Text>}
+          {estPrive && <Text style={styles.pillPrive}>🔒 Privé</Text>}
         </View>
         {chant.code_reference ? <Text style={styles.reference}>{chant.code_reference}</Text> : null}
         {apercu ? <Text style={styles.apercu} numberOfLines={2}>{apercu}{apercu.length >= 80 ? "..." : ""}</Text> : null}

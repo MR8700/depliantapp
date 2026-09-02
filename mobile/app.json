@@ -3,7 +3,7 @@
     "name": "DepliantApp",
     "slug": "depliantapp",
     "version": "1.0.0",
-    "orientation": "portrait",
+    "orientation": "default",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
     "ios": {
@@ -12,7 +12,7 @@
     },
     "android": {
       "package": "com.gotechnologie.depliantapp",
-      "versionCode": 5,
+      "versionCode": 7,
       "adaptiveIcon": {
         "backgroundColor": "#1a3c6e",
         "foregroundImage": "./assets/android-icon-foreground.png",

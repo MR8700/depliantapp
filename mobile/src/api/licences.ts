@@ -1,14 +1,6 @@
 import * as Crypto from "expo-crypto";
-import * as Device from "expo-device";
 import { apiFetch } from "./client";
 import { getAppareilId, setAppareilId } from "../storage/secureStore";
-
-interface ReponseActivation {
-  ok: boolean;
-  jeton: string;
-  chorale_id: number;
-  chorale_nom: string;
-}
 
 export interface Licence {
   id: number;
@@ -24,17 +16,6 @@ export interface Licence {
   created_at: string;
   updated_at: string;
 }
-
-export type MonAbonnement =
-  | { licence: false }
-  | {
-      licence: true;
-      statut: "active" | "revoquee";
-      max_appareils: number;
-      quota_feuillets: number | null;
-      feuillets_produits: number;
-      expire_le: string | null;
-    };
 
 export interface ActivationAppareil {
   id: number;
@@ -52,30 +33,22 @@ export function listerLicences(choraleId?: number): Promise<Licence[]> {
   return apiFetch<Licence[]>(`/licences${choraleId ? `?chorale_id=${choraleId}` : ""}`);
 }
 
-export function creerLicence(
-  choraleId: number, maxAppareils = 1, expireLe?: string | null, quotaFeuillets?: number | null,
-): Promise<Licence> {
-  return apiFetch<Licence>("/licences", {
-    method: "POST",
-    body: { chorale_id: choraleId, max_appareils: maxAppareils, expire_le: expireLe ?? null, quota_feuillets: quotaFeuillets ?? null },
-  });
+// `code` est un blob déjà signé localement par l'appli admin (voir
+// licence/adminSignature.ts::signerLicence) -- ce serveur ne signe jamais
+// rien, il vérifie (défense en profondeur) et enregistre le bookkeeping
+// (voir backend/app/licences.py::creer_licence). La validité de la licence
+// côté chorale ne dépend jamais de la réussite de cet appel réseau.
+export function creerLicence(code: string): Promise<Licence> {
+  return apiFetch<Licence>("/licences", { method: "POST", body: { code } });
 }
 
-// Reconfiguration complète d'une licence déjà créée (les 3 valeurs sont
-// toujours renvoyées, pas un patch partiel -- voir routers/licences.py).
-export function configurerLicence(
-  licenceId: number, maxAppareils: number, expireLe: string | null, quotaFeuillets: number | null,
-): Promise<Licence> {
-  return apiFetch<Licence>(`/licences/${licenceId}`, {
-    method: "PUT",
-    body: { max_appareils: maxAppareils, expire_le: expireLe, quota_feuillets: quotaFeuillets },
-  });
-}
-
-// Vue chorale de sa propre licence -- alimente la section "Abonnement" de
-// Réglages (voir ReglagesScreen.tsx).
-export function obtenirMonAbonnement(): Promise<MonAbonnement> {
-  return apiFetch<MonAbonnement>("/licences/mon-abonnement");
+// Reconfiguration complète d'une licence déjà créée : `code` est un NOUVEAU
+// blob re-signé côté admin avec les valeurs voulues (voir
+// licence/adminSignature.ts::reSignerLicence) -- distinct de
+// /regenerer-code (identité de licence inchangée, juste ré-émise) et
+// /revoquer (ne change que le statut de bookkeeping).
+export function configurerLicence(licenceId: number, code: string): Promise<Licence> {
+  return apiFetch<Licence>(`/licences/${licenceId}`, { method: "PUT", body: { code } });
 }
 
 export function listerActivationsLicence(licenceId: number): Promise<ActivationAppareil[]> {
@@ -90,8 +63,8 @@ export function reactiverLicence(licenceId: number): Promise<{ ok: boolean }> {
   return apiFetch<{ ok: boolean }>(`/licences/${licenceId}/reactiver`, { method: "POST" });
 }
 
-export function regenererCode(licenceId: number): Promise<{ code: string }> {
-  return apiFetch<{ code: string }>(`/licences/${licenceId}/regenerer-code`, { method: "POST" });
+export function regenererCode(licenceId: number, code: string): Promise<{ code: string }> {
+  return apiFetch<{ code: string }>(`/licences/${licenceId}/regenerer-code`, { method: "POST", body: { code } });
 }
 
 export function revoquerActivationAppareil(licenceId: number, appareilId: string): Promise<{ ok: boolean }> {
@@ -107,15 +80,4 @@ export async function idAppareil(): Promise<string> {
   const nouveau = Crypto.randomUUID();
   await setAppareilId(nouveau);
   return nouveau;
-}
-
-export async function activerLicence(code: string): Promise<ReponseActivation> {
-  const appareilId = await idAppareil();
-  const nomAppareilCompose = `${Device.manufacturer ?? ""} ${Device.modelName ?? ""}`.trim();
-  const nomAppareil = Device.deviceName ?? (nomAppareilCompose || "Appareil inconnu");
-  return apiFetch<ReponseActivation>("/licences/activer", {
-    method: "POST",
-    authentifie: false,
-    body: { code, appareil_id: appareilId, appareil_nom: nomAppareil },
-  });
 }

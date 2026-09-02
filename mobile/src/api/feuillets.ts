@@ -1,16 +1,27 @@
 import * as FileSystem from "expo-file-system/legacy";
 import { API_BASE_URL } from "../config";
-import { apiFetch, ApiError, jetonAuthorizationHeader } from "./client";
+import { apiFetch, ApiError, jetonAuthorizationHeader, verifierAccesReseau } from "./client";
 import { Feuillet, FeuilletCreate } from "../types";
 import {
   lireFeuilletsLocaux, getFeuilletLocal, fusionnerFeuilletsDistants,
-  enregistrerCreationLocale, enregistrerModificationLocale, estFeuilletLocal,
+  enregistrerCreationLocale, enregistrerModificationLocale, supprimerFeuilletLocal, estFeuilletLocal,
+  compterFeuilletsProduits, incrementerFeuilletsProduits,
 } from "../storage/feuilletsLocal";
-import { ajouterPublicationEnAttente } from "../storage/moderationOutbox";
+import { getLicenceLocale } from "../storage/secureStore";
 
-// Variantes réseau "brutes", sans repli hors-ligne -- réservées à
-// storage/syncFeuillets.ts (un échec ici doit laisser l'entrée en attente
-// telle quelle, jamais la remettre en file locale une seconde fois).
+// Miroir de backend/app/licences.py::QuotaFeuilletsAtteint -- avant ce
+// contrôle, quotaFeuillets (signé dans la licence, affiché en Réglages)
+// n'était vérifié nulle part côté mobile : une chorale pouvait produire un
+// nombre illimité de feuillets quel que soit le quota fixé par l'admin.
+export class QuotaFeuilletsAtteint extends Error {
+  constructor(public quota: number) {
+    super(`Quota de ${quota} feuillet(s) atteint pour votre licence. Contactez l'administrateur.`);
+  }
+}
+
+// Variantes réseau "brutes" -- réservées au compte super-admin (toujours en
+// ligne). Un compte chorale (licence locale) n'appelle jamais ces fonctions,
+// voir les variantes ci-dessous qui branchent sur getLicenceLocale().
 export function creerFeuilletDistant(payload: FeuilletCreate): Promise<Feuillet> {
   return apiFetch<Feuillet>("/feuillets", { method: "POST", body: payload });
 }
@@ -22,10 +33,13 @@ export function mettreAJourFeuilletDistant(id: number, payload: FeuilletCreate):
   return apiFetch<Feuillet>(`/feuillets/${id}`, { method: "PUT", body: payload });
 }
 
-// Liste réseau + repli local -- réseau toujours prioritaire quand
-// disponible, le cache local (dernier état connu + brouillons non
-// synchronisés) ne sert que si l'appel échoue (hors-ligne).
+// Compte chorale (licence locale) : bibliothèque de dépliants 100% locale,
+// jamais d'appel réseau -- voir storage/feuilletsLocal.ts (chaque feuillet y
+// porte un id local négatif, à vie -- il n'existe plus de serveur pour lui
+// attribuer un id "réel"). Compte super-admin : comportement réseau
+// inchangé, repli sur le dernier état connu si l'appel échoue.
 export async function listerFeuillets(mine: boolean): Promise<Feuillet[]> {
+  if (await getLicenceLocale()) return lireFeuilletsLocaux();
   try {
     const distants = await apiFetch<Feuillet[]>(`/feuillets?mine=${mine}&limit=200`);
     await fusionnerFeuilletsDistants(distants);
@@ -36,7 +50,7 @@ export async function listerFeuillets(mine: boolean): Promise<Feuillet[]> {
 }
 
 export async function getFeuillet(id: number): Promise<Feuillet> {
-  if (estFeuilletLocal(id)) {
+  if (estFeuilletLocal(id) || (await getLicenceLocale())) {
     const local = await getFeuilletLocal(id);
     if (local) return local;
     throw new Error("Feuillet local introuvable");
@@ -53,11 +67,17 @@ export async function getFeuillet(id: number): Promise<Feuillet> {
   }
 }
 
-// Écrit en réseau ; sur échec RÉSEAU (pas une erreur serveur -- même
-// distinction que SongDetailModal.tsx::enregistrer()) enregistre le
-// brouillon en local storage pour synchronisation différée (voir
-// storage/syncFeuillets.ts) plutôt que de faire échouer l'enregistrement.
 export async function creerFeuillet(payload: FeuilletCreate): Promise<Feuillet> {
+  const licence = await getLicenceLocale();
+  if (licence) {
+    const quota = licence.payload.quotaFeuillets;
+    if (quota != null && (await compterFeuilletsProduits()) >= quota) {
+      throw new QuotaFeuilletsAtteint(quota);
+    }
+    const cree = await enregistrerCreationLocale(payload);
+    await incrementerFeuilletsProduits();
+    return cree;
+  }
   try {
     const cree = await creerFeuilletDistant(payload);
     await fusionnerFeuilletsDistants([cree]);
@@ -69,9 +89,9 @@ export async function creerFeuillet(payload: FeuilletCreate): Promise<Feuillet> 
 }
 
 export async function mettreAJourFeuillet(id: number, payload: FeuilletCreate): Promise<Feuillet> {
-  if (estFeuilletLocal(id)) {
-    // Le feuillet lui-même n'a jamais atteint le serveur -- pas la peine de
-    // tenter un PUT sur un id qui n'existe pas côté serveur.
+  // Le feuillet lui-même n'a jamais atteint (et n'atteindra jamais, pour une
+  // chorale locale) le serveur -- pas la peine de tenter un PUT.
+  if (estFeuilletLocal(id) || (await getLicenceLocale())) {
     return enregistrerModificationLocale(id, payload);
   }
   try {
@@ -84,44 +104,12 @@ export async function mettreAJourFeuillet(id: number, payload: FeuilletCreate): 
   }
 }
 
-export function supprimerFeuillet(id: number): Promise<{ ok: boolean }> {
+export async function supprimerFeuillet(id: number): Promise<{ ok: boolean }> {
+  if (estFeuilletLocal(id) || (await getLicenceLocale())) {
+    await supprimerFeuilletLocal(id);
+    return { ok: true };
+  }
   return apiFetch<{ ok: boolean }>(`/feuillets/${id}`, { method: "DELETE" });
-}
-
-// Variante réseau "brute", réservée à storage/syncModeration.ts (voir
-// creerFeuilletDistant plus haut pour la même convention).
-export function demanderPublicationFeuilletDistant(id: number): Promise<Feuillet> {
-  return apiFetch<Feuillet>(`/feuillets/${id}/demander-publication`, { method: "POST" });
-}
-
-// Demande de publication : geste de la chorale propriétaire pour qu'un
-// dépliant privé rejoigne, après validation admin, la bibliothèque publique
-// (voir demarrage de ce fichier + backend routers/feuillets.py). Un
-// dépliant pas encore synchronisé (id local négatif) n'a pas encore
-// d'existence côté serveur -- rien à publier tant qu'il n'est pas envoyé.
-export async function demanderPublicationFeuillet(id: number): Promise<Feuillet> {
-  if (estFeuilletLocal(id)) {
-    throw new Error("Ce dépliant doit d'abord être synchronisé avant de pouvoir demander sa publication.");
-  }
-  try {
-    const maj = await demanderPublicationFeuilletDistant(id);
-    await fusionnerFeuilletsDistants([maj]);
-    return maj;
-  } catch (erreur) {
-    if (erreur instanceof ApiError) throw erreur;
-    // Pas de connexion : mémorisé pour un envoi différé (voir
-    // storage/syncModeration.ts::synchroniserDemandesPublication), et
-    // reflété optimistiquement dans le cache local pour que l'écran affiche
-    // tout de suite "en attente" plutôt que l'ancien état "privé".
-    await ajouterPublicationEnAttente(id);
-    const local = await getFeuilletLocal(id);
-    if (local) {
-      const optimiste: Feuillet = { ...local, visibilite: "demande_publication" };
-      await fusionnerFeuilletsDistants([optimiste]);
-      return optimiste;
-    }
-    throw erreur;
-  }
 }
 
 export interface DepassementPdf {
@@ -133,18 +121,16 @@ export interface PdfLocal {
   uri: string;
 }
 
-// Télécharge le PDF vers un fichier local (cache) -- pas de rendu "iframe
-// live" comme sur le web (voir memory : simplification assumée en attendant
-// un vrai composant PDF natif). En cas de dépassement (409), lève une
-// ApiError dont `.detail` est {message, moments_en_cause}.
+// Télécharge le PDF vers un fichier local (cache) -- repli réseau utilisé
+// uniquement par render/genererPdfLocal.ts::obtenirPdfAvecRepliLocal si le
+// rendu local échoue de façon inattendue (jamais le chemin normal, jamais
+// atteint par un compte chorale sans réseau -- la tentative échoue alors
+// simplement, et l'erreur de rendu local d'origine est celle affichée).
 export async function telechargerFeuilletPdf(id: number): Promise<PdfLocal> {
+  await verifierAccesReseau(`/feuillets/${id}/pdf`);
   const dest = `${FileSystem.cacheDirectory}feuillet_${id}_${Date.now()}.pdf`;
   const headers = await jetonAuthorizationHeader();
   const url = `${API_BASE_URL}/feuillets/${id}/pdf`;
-  // Même retry qu'apiFetch (client.ts) : la génération PDF est justement
-  // l'endpoint le plus lourd, donc celui qui a le plus de chances de tomber
-  // sur un service Render encore endormi -- un seul nouvel essai après une
-  // courte pause suffit à couvrir la connexion coupée du tout premier réveil.
   let resultat: FileSystem.FileSystemDownloadResult;
   try {
     resultat = await FileSystem.downloadAsync(url, dest, { headers });

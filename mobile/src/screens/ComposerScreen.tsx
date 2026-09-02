@@ -6,9 +6,11 @@ import * as Crypto from "expo-crypto";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getMeta } from "../api/meta";
-import { creerFeuillet, mettreAJourFeuillet, getFeuillet, DepassementPdf } from "../api/feuillets";
+import { creerFeuillet, mettreAJourFeuillet, getFeuillet, supprimerFeuillet, DepassementPdf } from "../api/feuillets";
 import { getChant } from "../api/chants";
 import { ApiError } from "../api/client";
+import { getLicenceLocale } from "../storage/secureStore";
+import { useIdentite } from "../context/IdentiteContext";
 import { Chant, FeuilletCreate, MomentContenu } from "../types";
 import SelecteurChant from "../components/SelecteurChant";
 import SelectModal from "../components/SelectModal";
@@ -79,6 +81,16 @@ interface Props {
 
 export default function ComposerScreen({ route, navigation }: Props) {
   const feuilletIdAOuvrir = route?.params?.feuilletId;
+  const { estSuperAdmin } = useIdentite();
+  // Même règle de visibilité que DepliantsScreen::supprimer -- une chorale
+  // 100% locale (licence) est seule propriétaire de ses feuillets et peut
+  // les supprimer directement ; une chorale en ligne n'a pas ce bouton (le
+  // serveur refuserait de toute façon, voir routers/feuillets.py::delete_feuillet,
+  // réservé au super-admin -- cette valeur ne pilote que l'affichage).
+  const [choraleLocale, setChoraleLocale] = useState(false);
+  useEffect(() => {
+    getLicenceLocale().then((l) => setChoraleLocale(!!l));
+  }, []);
   const [moments, setMoments] = useState<string[]>([]);
   const [lignes, setLignes] = useState<LigneMoment[]>([]);
   const [date, setDate] = useState("");
@@ -280,7 +292,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
 
   function onChantChoisi(chant: Chant) {
     if (lectureCiblee) {
-      const texte = chant.code_reference || chant.titre;
+      const texte = chant.titre;
       if (lectureCiblee === "premiere") setPremiereLecture(texte);
       else if (lectureCiblee === "psaume") setPsaume(texte);
       else if (lectureCiblee === "deuxieme") setDeuxiemeLecture(texte);
@@ -389,23 +401,44 @@ export default function ComposerScreen({ route, navigation }: Props) {
   // Rejoue enregistrer()+génération avec la nouvelle taille -- le stepper de
   // PdfViewer appelle directement cette fonction, pas besoin de repasser par
   // le bouton "Créer".
-  async function changerTailleTexte(taille: number | null) {
+  //
+  // Debounce délibéré (même raisonnement que DepliantsScreen.tsx::
+  // changerTailleTexteApercu) : un tap sur +/- ne déclenche plus tout de
+  // suite un aller-retour serveur complet -- le chiffre affiché bouge
+  // instantanément, seule la régénération réelle attend une courte pause
+  // sans nouveau tap, et un numéro de requête ignore toute réponse déjà
+  // périmée à son retour (plusieurs taps rapprochés ne se bousculent plus).
+  const minuteurTailleTexte = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requeteTailleTexteId = useRef(0);
+  const DELAI_DEBOUNCE_TAILLE_MS = 700;
+
+  function changerTailleTexte(taille: number | null) {
     setTailleTexteManuelle(taille);
+    if (minuteurTailleTexte.current) clearTimeout(minuteurTailleTexte.current);
+    minuteurTailleTexte.current = setTimeout(() => appliquerTailleTexte(taille), DELAI_DEBOUNCE_TAILLE_MS);
+  }
+
+  async function appliquerTailleTexte(taille: number | null) {
+    const idRequete = ++requeteTailleTexteId.current;
     const id = feuilletId ?? await enregistrer();
     if (!id) return;
+    if (idRequete !== requeteTailleTexteId.current) return;
     setPdfChargement(true);
     setPdfErreur(null);
     try {
       const payload = { ...construirePayload(), taille_texte_manuelle: taille };
       const maj = await mettreAJourFeuillet(id, payload);
+      if (idRequete !== requeteTailleTexteId.current) return;
       if (maj.id !== id) setFeuilletId(maj.id);
       const { uri } = await obtenirPdfAvecRepliLocal(maj.id, bridgeMesure.current!);
+      if (idRequete !== requeteTailleTexteId.current) return;
       setPdfUri(uri);
     } catch (erreur) {
+      if (idRequete !== requeteTailleTexteId.current) return;
       if (erreur instanceof ApiError && erreur.status === 409) setPdfErreur(erreur.detail as DepassementPdf);
       else if (erreur instanceof DepassementImpossible) setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
     } finally {
-      setPdfChargement(false);
+      if (idRequete === requeteTailleTexteId.current) setPdfChargement(false);
     }
   }
 
@@ -418,6 +451,28 @@ export default function ComposerScreen({ route, navigation }: Props) {
     setWidgetInfoChorale(false); setWidgetRefBibles(false);
     setLignes(moments.map((m, i) => ({ cle: m, moment: m, special: false, ordre: i * 10, type: "vide" })));
     navigation?.setParams({ feuilletId: undefined });
+  }
+
+  // Supprime le feuillet actuellement affiché dans l'aperçu -- équivalent du
+  // bouton corbeille de la barre d'outils de l'aperçu PDF web (voir
+  // supprimerFeuilletDepuisComposer dans app.js). Réutilise supprimerFeuillet
+  // (api/feuillets.ts), la même fonction que DepliantsScreen::supprimer.
+  function supprimerFeuilletCourant() {
+    if (feuilletId === null) return;
+    Alert.alert("Supprimer ce dépliant ?", "Cette action est irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer", style: "destructive", onPress: async () => {
+          try {
+            await supprimerFeuillet(feuilletId);
+            setApercuVisible(false);
+            nouveauFeuillet();
+          } catch (erreur: any) {
+            Alert.alert("Erreur", erreur?.message ?? "Impossible de supprimer");
+          }
+        },
+      },
+    ]);
   }
 
   const lignesFixesTriees = lignes.filter((l) => !l.special).sort((a, b) => a.ordre - b.ordre);
@@ -710,6 +765,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
           onFermer={() => setApercuVisible(false)}
           tailleTexteManuelle={tailleTexteManuelle}
           onChangerTailleTexte={changerTailleTexte}
+          onSupprimer={feuilletId !== null ? supprimerFeuilletCourant : undefined}
         />
       </Modal>
 

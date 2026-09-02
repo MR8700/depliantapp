@@ -96,3 +96,22 @@ export async function supprimerFeuilletLocal(id: number): Promise<void> {
 export function estFeuilletLocal(id: number): boolean {
   return id < 0;
 }
+
+// --- Quota de la licence (compte chorale) -----------------------------------
+// Compteur MONOTONE (jamais décrémenté, même si un feuillet est ensuite
+// supprimé) -- même sémantique que licences.feuillets_produits côté backend
+// (voir app/licences.py::consommer_quota_feuillet) : un quota borne le
+// nombre de feuillets qu'une licence autorise à PRODUIRE au total, pas le
+// nombre actuellement existant. Avant ce compteur, quotaFeuillets n'était
+// vérifié nulle part côté mobile -- juste affiché en Réglages.
+const CLE_COMPTEUR_PRODUITS = "depliantapp.feuillets_produits_compteur";
+
+export async function compterFeuilletsProduits(): Promise<number> {
+  const brut = await AsyncStorage.getItem(CLE_COMPTEUR_PRODUITS);
+  return brut ? Number(brut) : 0;
+}
+
+export async function incrementerFeuilletsProduits(): Promise<void> {
+  const actuel = await compterFeuilletsProduits();
+  await AsyncStorage.setItem(CLE_COMPTEUR_PRODUITS, String(actuel + 1));
+}

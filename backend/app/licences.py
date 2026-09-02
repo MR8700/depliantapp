@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
-from . import auth, db
+from . import auth, db, licence_signature
 from .db import get_connection, insert_returning_id
 
 # Alphabet sans 0/O/1/I/L (ambigus à recopier depuis un écran ou un papier).
@@ -21,36 +21,71 @@ ACTIVATION_TOKEN_DUREE_SECONDES = 90 * 24 * 3600  # 90 jours
 
 
 def generer_code() -> str:
+    """Non utilisé par le flux de licence hors-ligne (voir creer_licence
+    ci-dessous) -- conservé sans appelant, comme le reste du code devenu mort
+    avec ce chantier (activer/verifier_activation/verifier_licence_appareil),
+    au cas où un flux de code lisible reviendrait un jour."""
     groupes = ["".join(secrets.choice(_ALPHABET) for _ in range(4)) for _ in range(4)]
     return "-".join(groupes)
 
 
-def creer_licence(
-    chorale_id: Optional[int], max_appareils: int = 1, expire_le: Optional[str] = None,
-    quota_feuillets: Optional[int] = None,
-) -> dict:
-    code = generer_code()
+class LicenceInvalide(Exception):
+    """Levée quand un blob reçu du client (censé être déjà signé par l'appli
+    admin, voir mobile/src/licence/adminSignature.ts) ne passe pas la
+    vérification Ed25519 -- signature corrompue/falsifiée, format
+    inattendu, ou clé publique pas encore configurée côté serveur (voir
+    licence_signature.py)."""
+
+
+def creer_licence(code: str) -> dict:
+    """Enregistre le bookkeeping d'une licence déjà signée HORS-LIGNE par
+    l'appli admin -- ce serveur ne signe jamais rien lui-même (pas de clé
+    privée détenue ici), il vérifie (défense en profondeur) et stocke tel
+    quel pour l'affichage/le suivi dans AdministrationScreen. La validité de
+    la licence côté chorale ne dépend jamais de cet enregistrement : le blob
+    est valide dès sa signature, indépendamment de ce serveur."""
+    verifie = licence_signature.verifier_blob(code)
+    if not verifie:
+        raise LicenceInvalide("Signature de licence invalide")
+    if not auth.get_chorale(verifie.chorale_id):
+        raise LicenceInvalide("Chorale introuvable")
     with get_connection() as conn:
         licence_id = insert_returning_id(
             conn,
-            "INSERT INTO licences (code, chorale_id, max_appareils, expire_le, quota_feuillets) VALUES (?, ?, ?, ?, ?)",
-            (code, chorale_id, max_appareils, expire_le, quota_feuillets),
+            "INSERT INTO licences (code, chorale_id, max_appareils, expire_le, quota_feuillets, seed, licence_uid) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (code, verifie.chorale_id, verifie.dev_max, verifie.expire_le, verifie.quota_feuillets, verifie.seed, verifie.licence_uid),
         )
     return get_licence(licence_id)
 
 
-def modifier_licence(
-    licence_id: int, max_appareils: int, expire_le: Optional[str], quota_feuillets: Optional[int],
-) -> None:
-    """Reconfiguration complète (pas un patch partiel) -- l'appelant renvoie
-    toujours les 3 valeurs voulues, `None` pour expire_le/quota_feuillets
-    signifiant explicitement "illimité"/"jamais", pas "ne pas toucher"."""
+def modifier_licence(licence_id: int, code: str) -> None:
+    """Reconfiguration complète : l'appelant (AdministrationScreen, via
+    l'appli admin qui détient la clé privée) a déjà signé un NOUVEAU blob
+    portant les valeurs voulues -- ce serveur vérifie et remplace
+    code/seed/licence_uid/max_appareils/expire_le/quota_feuillets en base.
+    Comme pour revoquer_licence/reactiver_licence ci-dessous : sans effet
+    immédiat sur un appareil chorale déjà activé avec l'ancien blob (il ne
+    revérifie jamais rien côté serveur) -- tradeoff accepté du modèle
+    100% hors-ligne."""
+    verifie = licence_signature.verifier_blob(code)
+    if not verifie:
+        raise LicenceInvalide("Signature de licence invalide")
+    existante = get_licence(licence_id)
+    if existante and existante["chorale_id"] is not None and verifie.chorale_id != existante["chorale_id"]:
+        # Ce blob ne touche jamais la colonne chorale_id (voir l'UPDATE
+        # ci-dessous) -- sans ce contrôle, un blob signé pour une AUTRE
+        # chorale que celle d'origine désynchroniserait silencieusement le
+        # bookkeeping (chorale_id en base) du contenu réellement signé, et
+        # cette licence deviendrait introuvable par Messagerie (qui filtre
+        # sur chorale_id + licence_uid ensemble).
+        raise LicenceInvalide("Le blob fourni correspond à une autre chorale que celle de la licence d'origine")
     horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(
-            f"UPDATE licences SET max_appareils = ?, expire_le = ?, quota_feuillets = ?, updated_at = {horodatage} "
-            f"WHERE id = ?",
-            (max_appareils, expire_le, quota_feuillets, licence_id),
+            f"UPDATE licences SET code = ?, max_appareils = ?, expire_le = ?, quota_feuillets = ?, seed = ?, licence_uid = ?, "
+            f"updated_at = {horodatage} WHERE id = ?",
+            (code, verifie.dev_max, verifie.expire_le, verifie.quota_feuillets, verifie.seed, verifie.licence_uid, licence_id),
         )
 
 
@@ -123,9 +158,15 @@ def _derniere_licence_pour_chorale(chorale_id: int) -> Optional[dict]:
 
 
 def verifier_licence_appareil(chorale_id: int, appareil_id: Optional[str]) -> Optional[str]:
-    """Contrôle CONTINU (pas seulement à l'activation) du droit d'accès d'un
-    appareil mobile déjà connecté -- appelé par AuthMiddleware à CHAQUE
-    requête d'un compte chorale portant un en-tête X-Appareil-Id (voir
+    """DEVENUE INUTILISÉE (plus jamais appelée par AuthMiddleware) depuis le
+    passage au modèle de licence 100% hors-ligne -- un appareil chorale ne
+    présente plus jamais de session/Bearer classique, donc plus jamais ce
+    contrôle par requête. Conservée sans appelant, comme le reste du flux
+    HMAC devenu mort avec ce chantier (activer/verifier_activation), au cas
+    où elle redeviendrait utile. Contrôle CONTINU (pas seulement à
+    l'activation) du droit d'accès d'un appareil mobile déjà connecté --
+    appelé par AuthMiddleware à CHAQUE requête d'un compte chorale portant un
+    en-tête X-Appareil-Id (voir
     main.py). Sans ce contrôle, le jeton de SESSION classique (30 jours,
     voir auth.py::create_session_token) restait valide même après que
     l'admin révoque la licence, la laisse expirer, ou révoque cet appareil
@@ -185,26 +226,44 @@ def lister_activations(licence_id: int) -> list[dict]:
 
 
 def revoquer_licence(licence_id: int) -> None:
+    """Marque la licence révoquée pour le bookkeeping/affichage admin
+    uniquement -- SANS EFFET IMMÉDIAT sur un appareil chorale déjà activé,
+    qui ne recontacte jamais ce serveur pour revérifier son statut (modèle
+    100% hors-ligne). Seule la Messagerie consulte ce statut en direct (voir
+    messages_auth.py) ; tout le reste continue de fonctionner localement
+    jusqu'à ce que la chorale reçoive et active un nouveau blob."""
     horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(f"UPDATE licences SET statut = 'revoquee', updated_at = {horodatage} WHERE id = ?", (licence_id,))
 
 
 def reactiver_licence(licence_id: int) -> None:
+    """Symétrique de revoquer_licence -- mêmes limites (pas d'effet immédiat
+    hors Messagerie)."""
     horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
         conn.execute(f"UPDATE licences SET statut = 'active', updated_at = {horodatage} WHERE id = ?", (licence_id,))
 
 
-def regenerer_code(licence_id: int) -> str:
-    """Change le code d'une licence existante (perte/fuite du code) sans
-    toucher aux appareils déjà activés, rattachés à licence_id et non au
-    code lui-même."""
-    nouveau_code = generer_code()
+def regenerer_code(licence_id: int, code: str) -> str:
+    """Remplace le blob d'une licence existante (perte/fuite du code) par un
+    nouveau, RE-SIGNÉ côté admin -- contrairement à l'ancienne version
+    (génération aléatoire faite ici), la re-signature exige la clé privée,
+    qui ne vit que sur l'appareil admin. Ne touche pas aux appareils déjà
+    activés (rattachés à licence_id/licence_uid, pas au blob lui-même)."""
+    verifie = licence_signature.verifier_blob(code)
+    if not verifie:
+        raise LicenceInvalide("Signature de licence invalide")
+    existante = get_licence(licence_id)
+    if existante and existante["chorale_id"] is not None and verifie.chorale_id != existante["chorale_id"]:
+        raise LicenceInvalide("Le blob fourni correspond à une autre chorale que celle de la licence d'origine")
     horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
     with get_connection() as conn:
-        conn.execute(f"UPDATE licences SET code = ?, updated_at = {horodatage} WHERE id = ?", (nouveau_code, licence_id))
-    return nouveau_code
+        conn.execute(
+            f"UPDATE licences SET code = ?, seed = ?, licence_uid = ?, updated_at = {horodatage} WHERE id = ?",
+            (code, verifie.seed, verifie.licence_uid, licence_id),
+        )
+    return code
 
 
 def revoquer_activation(licence_id: int, appareil_id: str) -> None:

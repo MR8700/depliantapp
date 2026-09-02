@@ -13,7 +13,9 @@ import { Feuillet } from "../types";
 import { telechargerFeuilletPdf, getFeuillet, PdfLocal } from "../api/feuillets";
 import { ApiError } from "../api/client";
 import { lireCache } from "../storage/chantsCache";
+import { listerChantsLocaux } from "../storage/chantsLocal";
 import { lireParametresCache } from "../storage/parametresCache";
+import { getLicenceLocale } from "../storage/secureStore";
 import { buildSections, Section } from "./model";
 import { construireUnites, UniteNonMesuree } from "./measure";
 import { construireStyles, ECHELLES_CORPS, NomStyle, StyleParagraphe, TAILLE_TEXTE, TAILLE_TEXTE_PLAFOND } from "./typography";
@@ -110,8 +112,14 @@ async function testerTaille(
  * `bridge` doit être le ref d'un <MeasurementBridge/> monté par l'écran
  * appelant (voir ComposerScreen.tsx/DepliantsScreen.tsx). */
 export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: MeasurementBridgeHandle): Promise<ResultatPdfLocal> {
-  const chantsCache = await lireCache();
-  const chantsParId = new Map(chantsCache.map((c) => [c.id, c] as const));
+  // Compte chorale (licence locale) : bibliothèque de chants 100% locale
+  // (voir storage/chantsLocal.ts) -- storage/chantsCache.ts reste vide pour
+  // ce compte (c'est le cache réseau du super-admin, jamais alimenté par
+  // une chorale). Sans cette branche, un feuillet chorale se rendrait avec
+  // TOUS ses chants marqués introuvables.
+  const licence = await getLicenceLocale();
+  const bibliothequeChants = licence ? await listerChantsLocaux() : await lireCache();
+  const chantsParId = new Map(bibliothequeChants.map((c) => [c.id, c] as const));
   const sections = buildSections(feuillet, chantsParId); // peut lever ChantIntrouvableHorsLigne
 
   const grille = construireGrille(!!feuillet.priere_active, !!feuillet.one_page_mode, feuillet.banniere_active !== false);
@@ -161,15 +169,22 @@ export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: Measur
 }
 
 /** Enveloppe partagée par tous les écrans qui affichent/partagent un PDF de
- * feuillet (ComposerScreen, DepliantsScreen) : rendu 100% local ultra-rapide (< 500ms)
- * et 100% hors-ligne en priorité, avec repli sur le serveur uniquement si nécessaire. */
+ * feuillet (ComposerScreen, DepliantsScreen) : rendu 100% local ultra-rapide
+ * (< 500ms). Compte chorale (licence locale) : JAMAIS de repli serveur --
+ * même si le rendu local échoue de façon inattendue, tenter le réseau
+ * enfreindrait la règle "100% hors-ligne, sauf Messagerie" (une chorale
+ * dont l'appareil a par ailleurs du réseau, ex. pour la Messagerie,
+ * verrait sinon sa génération PDF repartir en silence côté serveur).
+ * Compte super-admin (toujours en ligne) : repli sur le serveur conservé,
+ * comportement inchangé. */
 export async function obtenirPdfAvecRepliLocal(feuilletId: number, bridge: MeasurementBridgeHandle): Promise<PdfLocal> {
+  const licenceLocale = await getLicenceLocale();
   try {
     const feuilletActuel = await getFeuillet(feuilletId);
     const resultat = await genererPdfFeuilletLocal(feuilletActuel, bridge);
     return { uri: resultat.uri };
   } catch (erreurLocale) {
-    if (erreurLocale instanceof DepassementImpossible) throw erreurLocale;
+    if (erreurLocale instanceof DepassementImpossible || licenceLocale) throw erreurLocale;
     try {
       return await telechargerFeuilletPdf(feuilletId);
     } catch (erreurServeur) {

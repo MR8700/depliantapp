@@ -1,4 +1,8 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Feuillet } from "../types";
+import MeasurementBridge, { MeasurementBridgeHandle } from "../components/MeasurementBridge";
+import { genererPdfFeuilletLocal } from "../render/genererPdfLocal";
+import { lireFeuilletsLocaux, compterFeuilletsProduits } from "../storage/feuilletsLocal";
 import {
   ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
@@ -6,19 +10,17 @@ import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
 import * as Sharing from "expo-sharing";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useNavigation } from "@react-navigation/native";
+import { useFocusEffect, useNavigation } from "@react-navigation/native";
 import {
   getParametres, sauvegarderParametres, listerMedias, urlImageActive, urlMedia,
   uploaderEtActiverImage, activerImageDuPool, retirerImage, telechargerApercuPdf, ImageSlot, Media,
+  getImageActiveLocale, definirImageActiveLocale, retirerImageActiveLocale,
 } from "../api/parametres";
 import { jetonAuthorizationHeader } from "../api/client";
 import { entrainerModele } from "../api/ml";
 import { supprimerTouteLaBibliotheque, rechercherChants } from "../api/chants";
-import { synchroniserBibliotheque, dernieresSyncLe } from "../storage/sync";
-import { synchroniserBibliothequeBiblique, ProgresSynchronisation } from "../api/aelf";
-import { derniereSyncLe as derniereSyncBibliqueLe } from "../storage/lecturesCache";
-import { lireOutbox } from "../storage/chantsOutbox";
-import { obtenirMonAbonnement, MonAbonnement } from "../api/licences";
+import { getLicenceLocale, LicenceLocale } from "../storage/secureStore";
+import { pinDefini, effacerPin } from "../licence/pinChorale";
 import { useIdentite } from "../context/IdentiteContext";
 import PdfViewer from "../components/PdfViewer";
 import Bouton from "../components/Bouton";
@@ -33,15 +35,42 @@ const SLOTS: { cle: ImageSlot; label: string }[] = [
   { cle: "banniere_bas", label: "Bannière décorative en bas de page" },
 ];
 
+// Miroir de backend/app/routers/parametres.py::preview_settings_pdf --
+// utilisé pour l'aperçu réglages d'une chorale 100% locale quand elle n'a
+// encore aucun dépliant (voir voirApercuReel ci-dessous).
+const MOMENTS_FACTICES = [
+  { moment: "Entrée", type: "texte_libre" as const, titre_libre: "Chant d'Entrée", texte_libre: "Refrain :\nPrends Seigneur et reçois,\ntoutes nos vies et nos joies.\n\nCouplet 1 :\nVoici le pain et le vin de nos terres.\nVoici le fruit de notre travail." },
+  { moment: "Kyrie", type: "texte_libre" as const, titre_libre: "Kyrie eleison", texte_libre: "Kyrie eleison, Christe eleison, Kyrie eleison." },
+  { moment: "Offertoire", type: "texte_libre" as const, titre_libre: "Apporte ton offrande", texte_libre: "Refrain :\nApporte ton offrande, devant l'autel,\ncar le Seigneur t'appelle à partager." },
+  { moment: "Communion", type: "texte_libre" as const, titre_libre: "Pain de Vie", texte_libre: "Refrain :\nPain de Vie, Sang de l'Alliance,\nforce et joie de notre marche.\n\nCouplet 1 :\nTu nous donnes ta vie en partage.\nTu nous donnes ton pain pour la route." },
+  { moment: "Envoi", type: "texte_libre" as const, titre_libre: "Vierge Marie", texte_libre: "Refrain :\nRegarde l'étoile, invoque Marie,\nsi tu la suis, tu ne crains rien." },
+];
+
+function feuilletApercuFactice(onePageMode: boolean): Feuillet {
+  return {
+    id: 0, date: "2026-07-13", lieu: "Paroisse Saint Esprit",
+    lectures: { premiere_lecture: "1 Co 12, 12-31", psaume: "Ps 99", deuxieme_lecture: null, evangile: "Lc 4, 14-21" },
+    moments: MOMENTS_FACTICES, priere_active: true,
+    priere_texte: "Seigneur, nous te prions pour la paix dans notre pays et dans le monde entier.",
+    taille_texte_manuelle: null, one_page_mode: onePageMode, banniere_active: true,
+    chorale_id: null, clone_de_id: null, chorale_nom: null, visibilite: "chorale", created_at: null,
+  };
+}
+
 export default function ReglagesScreen() {
   const insets = useSafeAreaInsets();
   const navigation = useNavigation<any>();
   const { estSuperAdmin } = useIdentite();
-  const [abonnement, setAbonnement] = useState<MonAbonnement | null>(null);
+  const [licenceInfo, setLicenceInfo] = useState<LicenceLocale | null>(null);
+  const [feuilletsProduits, setFeuilletsProduits] = useState(0);
+  const [pinActif, setPinActif] = useState(false);
   const [chorale, setChorale] = useState("");
   const [paroisse, setParoisse] = useState("");
+  const [ccb, setCcb] = useState("");
   const [contact, setContact] = useState("");
   const [annonce, setAnnonce] = useState("");
+  const [banniereSousTitre, setBanniereSousTitre] = useState("");
+  const [priereTitre, setPriereTitre] = useState("");
   const [priereDefaut, setPriereDefaut] = useState("");
   const [chargement, setChargement] = useState(true);
   const [rafraichissement, setRafraichissement] = useState(false);
@@ -54,13 +83,9 @@ export default function ReglagesScreen() {
   const [apercuVisible, setApercuVisible] = useState(false);
   const [pdfUri, setPdfUri] = useState<string | null>(null);
   const [pdfChargement, setPdfChargement] = useState(false);
-  const [syncBibliotheque, setSyncBibliotheque] = useState(true);
-  const [syncEnCours, setSyncEnCours] = useState(false);
-  const [derniereSync, setDerniereSync] = useState<string | null>(null);
-  const [syncBibliqueEnCours, setSyncBibliqueEnCours] = useState(false);
-  const [derniereSyncBiblique, setDerniereSyncBiblique] = useState<string | null>(null);
-  const [progresBiblique, setProgresBiblique] = useState<ProgresSynchronisation>({ traites: 0, total: null });
-  const [enAttenteOutbox, setEnAttenteOutbox] = useState(0);
+  // Compte chorale (licence locale) uniquement -- images copiées en local
+  // permanent, jamais uploadées (voir storage/parametresCache.ts).
+  const [imagesLocales, setImagesLocales] = useState<Partial<Record<ImageSlot, string>>>({});
   // Aperçu local instantané pendant l'envoi -- le web voit son image tout de
   // suite (data URI côté navigateur) ; sans ça, mobile n'affichait le
   // nouveau logo/bannière qu'une fois l'upload terminé, ce qui semblait figé
@@ -68,24 +93,47 @@ export default function ReglagesScreen() {
   const [apercusLocaux, setApercusLocaux] = useState<Partial<Record<ImageSlot, string>>>({});
   const [slotsEnEnvoi, setSlotsEnEnvoi] = useState<Set<ImageSlot>>(new Set());
   const [reentrainementEnCours, setReentrainementEnCours] = useState(false);
+  const bridgeMesure = useRef<MeasurementBridgeHandle>(null);
   const timerAuto = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const charger = async () => {
     const data = await getParametres();
     setChorale(data.chorale ?? "");
     setParoisse(data.paroisse ?? "");
+    setCcb(data.ccb ?? "");
     setContact(data.contact ?? "");
     setAnnonce(data.annonce ?? "");
+    setBanniereSousTitre(data.banniere_sous_titre ?? "");
+    setPriereTitre(data.priere_titre ?? "");
     setPriereDefaut(data.priere_defaut ?? "");
-    setSyncBibliotheque(data.sync_bibliotheque_partagee !== false);
-    setDerniereSync(await dernieresSyncLe());
-    setEnAttenteOutbox((await lireOutbox()).length);
-    setDerniereSyncBiblique(await derniereSyncBibliqueLe());
+    if (await getLicenceLocale()) {
+      const entrees = await Promise.all(SLOTS.map(async ({ cle }) => [cle, await getImageActiveLocale(cle)] as const));
+      setImagesLocales(Object.fromEntries(entrees.filter(([, uri]) => uri)));
+    }
   };
 
   useEffect(() => {
-    if (!estSuperAdmin) obtenirMonAbonnement().then(setAbonnement).catch(() => {});
+    if (!estSuperAdmin) {
+      getLicenceLocale().then(setLicenceInfo);
+      compterFeuilletsProduits().then(setFeuilletsProduits);
+    }
   }, [estSuperAdmin]);
+
+  // useFocusEffect (pas un simple useEffect) : le statut du verrou doit se
+  // rafraîchir au RETOUR depuis l'écran DefinirPin (navigation.goBack()),
+  // pas seulement au premier montage de Réglages.
+  useFocusEffect(
+    useCallback(() => {
+      if (!estSuperAdmin) pinDefini().then(setPinActif);
+    }, [estSuperAdmin]),
+  );
+
+  function onDesactiverPin() {
+    Alert.alert("Désactiver le verrouillage ?", "L'application ne demandera plus de code au démarrage sur cet appareil.", [
+      { text: "Annuler", style: "cancel" },
+      { text: "Désactiver", style: "destructive", onPress: async () => { await effacerPin(); setPinActif(false); } },
+    ]);
+  }
 
   async function contacterAdminWhatsapp() {
     const texte = encodeURIComponent("Bonjour, je souhaite gérer mon abonnement DepliantApp.");
@@ -109,27 +157,13 @@ export default function ReglagesScreen() {
 
   useEffect(() => {
     jetonAuthorizationHeader().then(setEntetesAuth);
-    charger().finally(async () => {
-      setChargement(false);
-      // Sync silencieuse et best-effort à l'ouverture des Réglages si la
-      // chorale a consenti -- pas d'Alert ici (contrairement au bouton
-      // manuel), un échec réseau reste invisible et sera retenté plus tard.
-      const data = await getParametres().catch(() => null);
-      if (data?.sync_bibliotheque_partagee !== false) {
-        synchroniserBibliotheque()
-          .then(async () => {
-            setDerniereSync(await dernieresSyncLe());
-            setEnAttenteOutbox((await lireOutbox()).length);
-          })
-          .catch(() => {});
-      }
-    });
+    charger().finally(() => setChargement(false));
   }, []);
 
   function planifierAutosave() {
     if (timerAuto.current) clearTimeout(timerAuto.current);
     timerAuto.current = setTimeout(() => {
-      sauvegarderParametres({ chorale, paroisse, contact, annonce, priere_defaut: priereDefaut }).catch(() => {});
+      sauvegarderParametres({ chorale, paroisse, ccb, contact, annonce, banniere_sous_titre: banniereSousTitre, priere_titre: priereTitre, priere_defaut: priereDefaut }).catch(() => {});
     }, 1000);
   }
 
@@ -137,11 +171,11 @@ export default function ReglagesScreen() {
     if (chargement) return;
     planifierAutosave();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chorale, paroisse, contact, annonce, priereDefaut]);
+  }, [chorale, paroisse, ccb, contact, annonce, banniereSousTitre, priereTitre, priereDefaut]);
 
   async function enregistrerInformations() {
     try {
-      await sauvegarderParametres({ chorale, paroisse, contact, annonce });
+      await sauvegarderParametres({ chorale, paroisse, ccb, contact, annonce, banniere_sous_titre: banniereSousTitre });
       Alert.alert("Enregistré", "Les informations générales ont été mises à jour.");
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer");
@@ -150,7 +184,7 @@ export default function ReglagesScreen() {
 
   async function enregistrerPriere() {
     try {
-      await sauvegarderParametres({ priere_defaut: priereDefaut });
+      await sauvegarderParametres({ priere_titre: priereTitre, priere_defaut: priereDefaut });
       Alert.alert("Enregistré", "Le texte de la prière a été mis à jour.");
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer");
@@ -175,8 +209,13 @@ export default function ReglagesScreen() {
     setApercusLocaux((prev) => ({ ...prev, [slot]: asset.uri }));
     setSlotsEnEnvoi((prev) => new Set(prev).add(slot));
     try {
-      await uploaderEtActiverImage(slot, asset.uri, asset.fileName ?? "image.jpg", asset.mimeType ?? "image/jpeg");
-      setEntetesAuth({ ...entetesAuth }); // force le re-rendu de l'<Image> (nouvelle image active)
+      if (licenceInfo) {
+        const dest = await definirImageActiveLocale(slot, asset.uri);
+        setImagesLocales((prev) => ({ ...prev, [slot]: dest }));
+      } else {
+        await uploaderEtActiverImage(slot, asset.uri, asset.fileName ?? "image.jpg", asset.mimeType ?? "image/jpeg");
+        setEntetesAuth({ ...entetesAuth }); // force le re-rendu de l'<Image> (nouvelle image active)
+      }
     } catch (erreur: any) {
       setApercusLocaux((prev) => { const suivant = { ...prev }; delete suivant[slot]; return suivant; });
       Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer l'image");
@@ -212,8 +251,13 @@ export default function ReglagesScreen() {
 
   async function onRetirer(slot: ImageSlot) {
     try {
-      await retirerImage(slot);
-      setEntetesAuth({ ...entetesAuth });
+      if (licenceInfo) {
+        await retirerImageActiveLocale(slot);
+        setImagesLocales((prev) => { const suivant = { ...prev }; delete suivant[slot]; return suivant; });
+      } else {
+        await retirerImage(slot);
+        setEntetesAuth({ ...entetesAuth });
+      }
     } catch {
       // pas d'image active -- rien à faire
     }
@@ -266,54 +310,25 @@ export default function ReglagesScreen() {
     ]);
   }
 
-  async function changerSyncBibliotheque(valeur: boolean) {
-    setSyncBibliotheque(valeur);
-    try {
-      await sauvegarderParametres({ sync_bibliotheque_partagee: valeur });
-      if (valeur) synchroniserMaintenant();
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible d'enregistrer ce réglage");
-    }
-  }
-
-  async function synchroniserMaintenant() {
-    setSyncEnCours(true);
-    try {
-      const resultat = await synchroniserBibliotheque();
-      setDerniereSync(await dernieresSyncLe());
-      setEnAttenteOutbox((await lireOutbox()).length);
-      Alert.alert(
-        "Synchronisation terminée",
-        `${resultat.tires} chant(s) à jour dans la bibliothèque locale.` +
-          (resultat.pousses > 0 ? `\n${resultat.pousses} chant(s) créé(s) hors-ligne envoyé(s).` : "") +
-          (resultat.doublonsEvites > 0 ? `\n${resultat.doublonsEvites} doublon(s) évité(s).` : ""),
-      );
-    } catch {
-      Alert.alert("Hors-ligne", "La synchronisation nécessite une connexion internet. Réessaie plus tard.");
-    } finally {
-      setSyncEnCours(false);
-    }
-  }
-
-  async function lancerSynchronisationBiblique() {
-    setSyncBibliqueEnCours(true);
-    setProgresBiblique({ traites: 0, total: null });
-    try {
-      const resultat = await synchroniserBibliothequeBiblique((p) => setProgresBiblique(p));
-      setDerniereSyncBiblique(await derniereSyncBibliqueLe());
-      Alert.alert("Synchronisation terminée", `${resultat.nbJours} jour(s) de lectures téléchargés (zone AELF : ${resultat.zone}).`);
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "La synchronisation nécessite une connexion internet. Réessaie plus tard.");
-    } finally {
-      setSyncBibliqueEnCours(false);
-    }
-  }
-
+  // Compte chorale (licence locale) : rendu ENTIÈREMENT local, via le même
+  // moteur que les vrais dépliants (render/genererPdfLocal.ts) -- sur le
+  // dernier dépliant local de la chorale, ou un dépliant factice si elle
+  // n'en a encore aucun (même contenu que backend/app/routers/parametres.py
+  // ::preview_settings_pdf, voir feuilletApercuFactice ci-dessus). Compte
+  // super-admin : comportement réseau inchangé.
   async function voirApercuReel() {
     setApercuVisible(true);
     setPdfChargement(true);
     setPdfUri(null);
     try {
+      if (licenceInfo) {
+        const locaux = await lireFeuilletsLocaux();
+        const dernier = [...locaux].sort((a, b) => (b.created_at ?? "").localeCompare(a.created_at ?? ""))[0];
+        const feuilletApercu: Feuillet = dernier ? { ...dernier, one_page_mode: onePageMode } : feuilletApercuFactice(onePageMode);
+        const { uri } = await genererPdfFeuilletLocal(feuilletApercu, bridgeMesure.current!);
+        setPdfUri(uri);
+        return;
+      }
       const { uri } = await telechargerApercuPdf({ one_page_mode: onePageMode });
       setPdfUri(uri);
     } catch (erreur: any) {
@@ -335,12 +350,16 @@ export default function ReglagesScreen() {
       <Text style={styles.section}>⚙️ Informations générales</Text>
       <Text style={styles.label}>Nom de la chorale</Text>
       <TextInput style={styles.champ} placeholder="Ex: Chorale Sainte Cécile" value={chorale} onChangeText={setChorale} />
-      <Text style={styles.label}>Première ligne / CTA</Text>
-      <TextInput style={styles.champ} placeholder="Ex: Paroisse Saint Jean / CCB Saint Paul" value={paroisse} onChangeText={setParoisse} />
+      <Text style={styles.label}>Paroisse (titre de l'en-tête)</Text>
+      <TextInput style={styles.champ} placeholder="Ex: Paroisse Saint Albert Le Grand de la Rotonde" value={paroisse} onChangeText={setParoisse} />
+      <Text style={styles.label}>CCB / sous-titre paroissial</Text>
+      <TextInput style={styles.champ} placeholder="Ex: CCB Saint Thomas d'Aquin" value={ccb} onChangeText={setCcb} />
       <Text style={styles.label}>Contact (téléphone, affiché en pied de feuillet)</Text>
       <TextInput style={styles.champ} placeholder="Ex: Tél. +226 xx xx xx xx" value={contact} onChangeText={setContact} />
       <Text style={styles.label}>Annonce (bannière, bas de page gauche)</Text>
       <TextInput style={styles.champ} placeholder="Ex: Bon dimanche à tous !" value={annonce} onChangeText={setAnnonce} />
+      <Text style={styles.label}>Sous-titre de bannière (date / temps liturgique)</Text>
+      <TextInput style={[styles.champ, styles.champMulti]} placeholder={'Ex: Dimanche 22 Mars 2026\n« Carême »'} value={banniereSousTitre} onChangeText={setBanniereSousTitre} multiline />
       <Bouton titre="Enregistrer les informations" onPress={enregistrerInformations} />
 
       <Text style={styles.section}>🖼️ Images du feuillet</Text>
@@ -350,7 +369,13 @@ export default function ReglagesScreen() {
           <Text style={styles.labelImage}>{label}</Text>
           <View>
             <Image
-              source={apercusLocaux[cle] ? { uri: apercusLocaux[cle] } : { uri: urlImageActive(cle), headers: entetesAuth }}
+              source={
+                apercusLocaux[cle]
+                  ? { uri: apercusLocaux[cle] }
+                  : licenceInfo
+                    ? (imagesLocales[cle] ? { uri: imagesLocales[cle] } : undefined)
+                    : { uri: urlImageActive(cle), headers: entetesAuth }
+              }
               style={styles.imagePreview}
               resizeMode="contain"
               onError={() => {}}
@@ -366,9 +391,11 @@ export default function ReglagesScreen() {
             <Pressable style={styles.actionImage} onPress={() => choisirDepuisAppareil(cle)}>
               <Text style={styles.texteActionImage}>Téléverser</Text>
             </Pressable>
-            <Pressable style={styles.actionImage} onPress={() => ouvrirPickerPool(cle)}>
-              <Text style={styles.texteActionImage}>Depuis la bibliothèque</Text>
-            </Pressable>
+            {!licenceInfo && (
+              <Pressable style={styles.actionImage} onPress={() => ouvrirPickerPool(cle)}>
+                <Text style={styles.texteActionImage}>Depuis la bibliothèque</Text>
+              </Pressable>
+            )}
             <Pressable style={styles.actionImage} onPress={() => onRetirer(cle)}>
               <Text style={[styles.texteActionImage, { color: "#dc2626" }]}>Retirer</Text>
             </Pressable>
@@ -380,6 +407,8 @@ export default function ReglagesScreen() {
       <Text style={styles.hint}>
         Utilisé quand un feuillet active le widget « Prière » sans texte personnalisé. Un texte spécifique saisi dans le Composer primera sur cette valeur.
       </Text>
+      <Text style={styles.label}>Titre de la prière</Text>
+      <TextInput style={styles.champ} value={priereTitre} onChangeText={setPriereTitre} placeholder="Ex: PRIERE POUR LE BURKINA FASO" />
       <Text style={styles.label}>Texte de la prière</Text>
       <TextInput
         style={[styles.champ, styles.champMulti]}
@@ -412,119 +441,78 @@ export default function ReglagesScreen() {
 
       {!estSuperAdmin && (
         <>
-          <Text style={styles.section}>💳 Abonnement</Text>
-          {!abonnement ? (
-            <Text style={styles.hint}>Chargement de l'abonnement…</Text>
-          ) : !abonnement.licence ? (
-            <Text style={styles.hint}>Aucune licence active rattachée à ce compte.</Text>
+          <Text style={styles.section}>💳 Licence</Text>
+          {!licenceInfo ? (
+            <Text style={styles.hint}>Aucune licence locale valide.</Text>
           ) : (() => {
-            const quotaAtteint = abonnement.quota_feuillets != null && abonnement.feuillets_produits >= abonnement.quota_feuillets;
-            const joursAvantExpiration = abonnement.expire_le
-              ? Math.ceil((new Date(abonnement.expire_le).getTime() - Date.now()) / (24 * 3600 * 1000))
+            const { payload } = licenceInfo;
+            const joursAvantExpiration = payload.expireLe
+              ? Math.ceil((new Date(payload.expireLe).getTime() - Date.now()) / (24 * 3600 * 1000))
               : null;
             const expiree = joursAvantExpiration != null && joursAvantExpiration < 0;
             const expireBientot = joursAvantExpiration != null && joursAvantExpiration >= 0 && joursAvantExpiration <= 14;
-            const revoquee = abonnement.statut !== "active";
+            const quotaAtteint = payload.quotaFeuillets != null && feuilletsProduits >= payload.quotaFeuillets;
             return (
               <>
                 <View style={styles.carteAbonnement}>
                   <View style={styles.ligneAbonnement}>
-                    <Text style={styles.labelAbonnement}>Statut</Text>
-                    <Text style={[styles.valeurAbonnement, revoquee && { color: "#dc2626" }]}>
-                      {abonnement.statut === "active" ? "Active" : "Révoquée"}
-                    </Text>
+                    <Text style={styles.labelAbonnement}>Chorale</Text>
+                    <Text style={styles.valeurAbonnement}>{payload.choraleNom}</Text>
+                  </View>
+                  <View style={styles.ligneAbonnement}>
+                    <Text style={styles.labelAbonnement}>Appareils autorisés</Text>
+                    <Text style={styles.valeurAbonnement}>{payload.devMax}</Text>
                   </View>
                   <View style={styles.ligneAbonnement}>
                     <Text style={styles.labelAbonnement}>Feuillets produits</Text>
                     <Text style={[styles.valeurAbonnement, quotaAtteint && { color: "#dc2626" }]}>
-                      {abonnement.feuillets_produits}{abonnement.quota_feuillets != null ? ` / ${abonnement.quota_feuillets}` : " (illimité)"}
+                      {feuilletsProduits}{payload.quotaFeuillets != null ? ` / ${payload.quotaFeuillets}` : " (illimité)"}
                     </Text>
                   </View>
                   <View style={styles.ligneAbonnement}>
                     <Text style={styles.labelAbonnement}>Expiration</Text>
                     <Text style={[styles.valeurAbonnement, (expiree || expireBientot) && { color: expiree ? "#dc2626" : "#d97706" }]}>
-                      {abonnement.expire_le ?? "Aucune"}
+                      {payload.expireLe ?? "Aucune"}
                     </Text>
                   </View>
                 </View>
-                {revoquee && (
+                {expiree && (
                   <Text style={styles.avertissementAbonnement}>
-                    ⛔ Votre licence a été révoquée -- l'application ne fonctionnera plus sur cet appareil tant qu'elle n'est pas réactivée par
-                    l'administrateur. Contactez-le ci-dessous.
+                    ⛔ Votre licence a expiré -- contactez l'administrateur pour la renouveler.
                   </Text>
                 )}
-                {!revoquee && expiree && (
+                {quotaAtteint && (
                   <Text style={styles.avertissementAbonnement}>
-                    ⛔ Votre licence a expiré -- l'application ne fonctionnera plus sur cet appareil tant qu'elle n'est pas renouvelée. Contactez
-                    l'administrateur ci-dessous.
+                    ⛔ Quota de feuillets atteint -- contactez l'administrateur pour l'augmenter.
                   </Text>
                 )}
-                {!revoquee && !expiree && expireBientot && (
+                {!expiree && expireBientot && (
                   <Text style={styles.avertissementAbonnementAttention}>
                     ⏳ Votre licence expire dans {joursAvantExpiration} jour{joursAvantExpiration !== 1 ? "s" : ""} -- pensez à la renouveler pour ne
                     pas perdre l'accès.
                   </Text>
                 )}
-                {quotaAtteint && (
-                  <Text style={styles.avertissementAbonnement}>
-                    ⛔ Quota de feuillets atteint -- vous ne pouvez plus générer de nouveaux feuillets avec cette licence. Contactez
-                    l'administrateur pour l'augmenter.
-                  </Text>
-                )}
               </>
             );
           })()}
-          <Bouton titre="💬 Gérer mon abonnement" onPress={gererMonAbonnement} />
+          <Bouton titre="📱 Gérer les appareils" variante="contour" onPress={() => navigation.navigate("GestionAppareils")} />
+          <Bouton titre="💬 Contacter l'administrateur" onPress={gererMonAbonnement} />
+
+          <Text style={styles.section}>🔒 Sécurité</Text>
+          <Text style={styles.hint}>
+            Un code de verrouillage local protège l'accès à l'application sur cet appareil -- il n'est jamais transmis ni connu
+            de l'administrateur. En cas d'oubli, il se réinitialise avec le code de licence de la chorale.
+          </Text>
+          {pinActif ? (
+            <>
+              <Bouton titre="Modifier le code" variante="contour" onPress={() => navigation.navigate("DefinirPin")} />
+              <Bouton titre="Désactiver le verrouillage" variante="contour" onPress={onDesactiverPin} />
+            </>
+          ) : (
+            <Bouton titre="Activer un code de verrouillage" variante="contour" onPress={() => navigation.navigate("DefinirPin")} />
+          )}
         </>
       )}
-
-      <Text style={styles.section}>🔄 Synchronisation hors-ligne</Text>
-      <Text style={styles.hint}>
-        L'application fonctionne entièrement hors-ligne. Ce réglage contrôle si la bibliothèque partagée de chants (toutes chorales confondues) est
-        téléchargée pour un usage sans connexion, et si les chants ajoutés hors-ligne sont ensuite envoyés vers cette bibliothèque commune -- avec
-        détection automatique des doublons pour éviter qu'un même chant soit créé deux fois.
-      </Text>
-      <Pressable style={styles.ligneToggle} onPress={() => changerSyncBibliotheque(!syncBibliotheque)}>
-        <View style={{ flex: 1 }}>
-          <Text style={styles.labelToggle}>Accepter la synchronisation des chants de la bibliothèque partagée</Text>
-          <Text style={styles.sousLabelToggle}>Synchronisation bidirectionnelle activée par défaut</Text>
-        </View>
-        <View style={[styles.interrupteur, syncBibliotheque && styles.interrupteurActif]}>
-          <View style={[styles.poucePastille, syncBibliotheque && styles.poucePastilleActive]} />
-        </View>
-      </Pressable>
-      {enAttenteOutbox > 0 && (
-        <Text style={styles.hint}>{enAttenteOutbox} chant(s) créé(s) hors-ligne en attente d'envoi.</Text>
-      )}
-      <Text style={styles.hint}>
-        {derniereSync ? `Dernière synchronisation : ${new Date(derniereSync).toLocaleString("fr-FR")}` : "Jamais synchronisé."}
-      </Text>
-      <Bouton
-        titre={syncEnCours ? "Synchronisation..." : "🔄 Synchroniser maintenant"}
-        variante="contour"
-        onPress={synchroniserMaintenant}
-        desactive={syncEnCours || !syncBibliotheque}
-      />
-
-      <Text style={styles.section}>📖 Bibliothèque biblique</Text>
-      <Text style={styles.hint}>
-        Télécharge les lectures liturgiques (AELF) de l'année en cours pour pouvoir les consulter -- et faire ressortir les chants qui leur
-        correspondent -- entièrement hors-ligne, depuis Plus → Lectures du jour. Le téléchargement peut prendre une minute ou deux la première fois.
-      </Text>
-      {syncBibliqueEnCours && (
-        <Text style={styles.hint}>
-          Synchronisation en cours... {progresBiblique.traites}{progresBiblique.total ? ` / ${progresBiblique.total}` : ""} jour(s)
-        </Text>
-      )}
-      <Text style={styles.hint}>
-        {derniereSyncBiblique ? `Dernière synchronisation : ${new Date(derniereSyncBiblique).toLocaleString("fr-FR")}` : "Jamais synchronisée."}
-      </Text>
-      <Bouton
-        titre={syncBibliqueEnCours ? "Synchronisation..." : "📖 Synchroniser la bibliothèque biblique"}
-        variante="contour"
-        onPress={lancerSynchronisationBiblique}
-        enCours={syncBibliqueEnCours}
-      />
 
       {estSuperAdmin && (
         <>
@@ -550,6 +538,8 @@ export default function ReglagesScreen() {
           />
         </>
       )}
+
+      <MeasurementBridge ref={bridgeMesure} />
 
       <Modal visible={!!pickerSlot} animationType="slide" onRequestClose={() => setPickerSlot(null)}>
         <View style={styles.conteneurPicker}>

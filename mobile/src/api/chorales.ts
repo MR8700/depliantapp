@@ -46,9 +46,9 @@ export function reinitialiserMotDePasse(choraleId: number): Promise<{ mot_de_pas
   return apiFetch(`/chorales/${choraleId}/reset-password`, { method: "POST", body: {} });
 }
 
-export function planifierSuppression(choraleId: number, raison: string, delaiJours?: number) {
+export function planifierSuppression(choraleId: number, raison: string, delaiJours?: number, dateButoir?: string) {
   return apiFetch(`/chorales/${choraleId}/planifier-suppression`, {
-    method: "PUT", body: { raison, delai_jours: delaiJours },
+    method: "PUT", body: { raison, delai_jours: delaiJours, date_butoir: dateButoir },
   });
 }
 

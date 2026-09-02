@@ -5,9 +5,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import DateTimePicker from "@react-native-community/datetimepicker";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as Sharing from "expo-sharing";
-import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, demanderPublicationFeuillet, DepassementPdf } from "../api/feuillets";
-import { demanderSuppression } from "../api/moderation";
+import { listerFeuillets, getFeuillet, supprimerFeuillet, creerFeuillet, mettreAJourFeuillet, DepassementPdf } from "../api/feuillets";
+import { rechercherChants } from "../api/chants";
 import { ApiError } from "../api/client";
+import { getLicenceLocale } from "../storage/secureStore";
 import { useIdentite } from "../context/IdentiteContext";
 import { Feuillet } from "../types";
 import PdfViewer from "../components/PdfViewer";
@@ -17,7 +18,7 @@ import MeasurementBridge, { MeasurementBridgeHandle } from "../components/Measur
 import { obtenirPdfAvecRepliLocal, DepassementImpossible, ChantIntrouvableHorsLigne } from "../render/genererPdfLocal";
 
 type Onglet = "mine" | "publics" | "tous" | "favoris" | "recents" | "sauvegardes";
-type Tri = "recent" | "ancien" | "nom-asc" | "nom-desc" | "creation" | "modification";
+type Tri = "recent" | "ancien" | "nom-asc" | "nom-desc" | "creation" | "modification" | "chants" | "auteur";
 
 const ONGLETS: { value: Onglet; label: string }[] = [
   { value: "mine", label: "Mes créations" },
@@ -35,6 +36,8 @@ const OPTIONS_TRI: { value: Tri; label: string }[] = [
   { value: "nom-desc", label: "Nom Z → A" },
   { value: "creation", label: "Date de création" },
   { value: "modification", label: "Date de modification" },
+  { value: "chants", label: "Nombre de chants" },
+  { value: "auteur", label: "Auteur" },
 ];
 
 const CLE_FAVORIS = "depliants_favoris";
@@ -79,14 +82,38 @@ export default function DepliantsScreen() {
   const [feuilletApercuId, setFeuilletApercuId] = useState<number | null>(null);
   const [tailleTexteApercu, setTailleTexteApercu] = useState<number | null>(null);
   const bridgeMesure = useRef<MeasurementBridgeHandle>(null);
-  const [raisonModal, setRaisonModal] = useState<{ id: number } | null>(null);
-  const [raison, setRaison] = useState("");
   const [menuOuvert, setMenuOuvert] = useState<Feuillet | null>(null);
   const [renommerCible, setRenommerCible] = useState<Feuillet | null>(null);
   const [nouvelleDate, setNouvelleDate] = useState("");
   const [pickerRenommerVisible, setPickerRenommerVisible] = useState(false);
   const [infosModal, setInfosModal] = useState<Feuillet | null>(null);
-  const [publicationEnCours, setPublicationEnCours] = useState<number | null>(null);
+  // Une chorale 100% locale (licence "essence vivante") est seule
+  // propriétaire de ses dépliants -- suppression directe, comme l'admin,
+  // contrairement à l'ancien modèle de bibliothèque partagée (qui ne
+  // laissait qu'une "demande de suppression"/"demande de publication").
+  const [choraleLocale, setChoraleLocale] = useState(false);
+  useEffect(() => {
+    getLicenceLocale().then((l) => setChoraleLocale(!!l));
+  }, []);
+
+  // Recherche par titre de chant contenu dans le dépliant -- contrairement
+  // au web (app.js::matchesChants), qui lit un champ `chant_titre` jamais
+  // renvoyé par l'API (aucune trace côté backend/schemas.py -- fonctionnalité
+  // web silencieusement morte), les moments n'exposent que `chant_id` : on
+  // résout les titres via une recherche dans la bibliothèque (locale pour
+  // une chorale, réseau+cache pour l'admin -- rechercherChants() gère déjà
+  // cette bifurcation), débouncée pour ne pas déclencher un appel par frappe.
+  const [chantIdsCorrespondants, setChantIdsCorrespondants] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    const q = recherche.trim();
+    if (q.length < 2) { setChantIdsCorrespondants(new Set()); return; }
+    const minuteur = setTimeout(() => {
+      rechercherChants({ q, resume: true, limit: 200 })
+        .then((chants) => setChantIdsCorrespondants(new Set(chants.map((c) => c.id))))
+        .catch(() => {});
+    }, 300);
+    return () => clearTimeout(minuteur);
+  }, [recherche]);
 
   useEffect(() => {
     AsyncStorage.getItem(CLE_FAVORIS).then((v) => setFavoris(v ? JSON.parse(v) : []));
@@ -151,9 +178,28 @@ export default function DepliantsScreen() {
   // pour ajuster, comme sur le web (le "zoom" du panneau d'aperçu EST en
   // réalité ce réglage, voir PdfViewer.tsx). Persiste sur le feuillet pour
   // que le prochain "Voir"/téléchargement conserve le choix.
-  async function changerTailleTexteApercu(taille: number | null) {
-    if (!feuilletApercuId) return;
+  //
+  // Debounce délibéré : régénérer le PDF (PUT serveur + rendu) à CHAQUE tap
+  // du stepper +/- obligeait à attendre la fin d'un aller-retour complet
+  // avant de pouvoir retoucher au réglage -- plusieurs taps rapprochés
+  // déclenchaient plusieurs régénérations concurrentes, avec un risque que
+  // la plus lente écrase l'affichage d'une réponse plus récente mais plus
+  // rapide. Le chiffre affiché change instantanément à chaque tap ; seule
+  // la régénération réelle attend une courte pause sans nouveau tap, et un
+  // numéro de requête ignore toute réponse déjà périmée à son retour.
+  const minuteurTailleApercu = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requeteTailleApercuId = useRef(0);
+  const DELAI_DEBOUNCE_TAILLE_MS = 700;
+
+  function changerTailleTexteApercu(taille: number | null) {
     setTailleTexteApercu(taille);
+    if (minuteurTailleApercu.current) clearTimeout(minuteurTailleApercu.current);
+    minuteurTailleApercu.current = setTimeout(() => appliquerTailleTexteApercu(taille), DELAI_DEBOUNCE_TAILLE_MS);
+  }
+
+  async function appliquerTailleTexteApercu(taille: number | null) {
+    if (!feuilletApercuId) return;
+    const idRequete = ++requeteTailleApercuId.current;
     setPdfChargement(true);
     setPdfErreur(null);
     try {
@@ -163,15 +209,18 @@ export default function DepliantsScreen() {
         priere_active: orig.priere_active, priere_texte: orig.priere_texte,
         taille_texte_manuelle: taille, one_page_mode: orig.one_page_mode, banniere_active: orig.banniere_active,
       });
+      if (idRequete !== requeteTailleApercuId.current) return; // une régénération plus récente a déjà démarré
       if (maj.id !== feuilletApercuId) setFeuilletApercuId(maj.id);
       const { uri } = await obtenirPdfAvecRepliLocal(maj.id, bridgeMesure.current!);
+      if (idRequete !== requeteTailleApercuId.current) return;
       setPdfUri(uri);
     } catch (erreur) {
+      if (idRequete !== requeteTailleApercuId.current) return;
       if (erreur instanceof ApiError && erreur.status === 409) setPdfErreur(erreur.detail as DepassementPdf);
       else if (erreur instanceof DepassementImpossible) setPdfErreur({ message: erreur.message, moments_en_cause: erreur.momentsEnCause });
       else Alert.alert("Erreur", "Impossible d'appliquer cette taille de texte.");
     } finally {
-      setPdfChargement(false);
+      if (idRequete === requeteTailleApercuId.current) setPdfChargement(false);
     }
   }
 
@@ -193,21 +242,16 @@ export default function DepliantsScreen() {
   }
 
   function supprimer(feuillet: Feuillet) {
-    const estAMoi = feuillet.chorale_id === identite?.compte_id || estSuperAdmin;
-    if (estSuperAdmin) {
-      Alert.alert("Supprimer ce dépliant ?", "Cette action est irréversible.", [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer", style: "destructive", onPress: async () => {
-            try { await supprimerFeuillet(feuillet.id); setFeuillets((p) => p.filter((f) => f.id !== feuillet.id)); }
-            catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Impossible de supprimer"); }
-          },
+    if (!estSuperAdmin && !choraleLocale) return;
+    Alert.alert("Supprimer ce dépliant ?", "Cette action est irréversible.", [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: "Supprimer", style: "destructive", onPress: async () => {
+          try { await supprimerFeuillet(feuillet.id); setFeuillets((p) => p.filter((f) => f.id !== feuillet.id)); }
+          catch (erreur: any) { Alert.alert("Erreur", erreur?.message ?? "Impossible de supprimer"); }
         },
-      ]);
-    } else if (estAMoi) {
-      setRaison("");
-      setRaisonModal({ id: feuillet.id });
-    }
+      },
+    ]);
   }
 
   function ouvrirMenu(feuillet: Feuillet) {
@@ -278,39 +322,6 @@ export default function DepliantsScreen() {
     setInfosModal(feuillet);
   }
 
-  async function onDemanderPublication(feuillet: Feuillet) {
-    setMenuOuvert(null);
-    setPublicationEnCours(feuillet.id);
-    try {
-      const maj = await demanderPublicationFeuillet(feuillet.id);
-      setFeuillets((prev) => prev.map((f) => (f.id === maj.id ? maj : f)));
-      Alert.alert(
-        "Publication demandée",
-        "Un administrateur doit encore valider ce dépliant avant qu'il ne devienne visible de toute la communauté.",
-      );
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible de demander la publication");
-    } finally {
-      setPublicationEnCours(null);
-    }
-  }
-
-  async function envoyerDemande() {
-    if (!raisonModal || !raison.trim()) return;
-    try {
-      const resultat = await demanderSuppression("feuillet", raisonModal.id, raison.trim());
-      setRaisonModal(null);
-      Alert.alert(
-        "enAttente" in resultat ? "Mise en attente" : "Demande envoyée",
-        "enAttente" in resultat
-          ? "Pas de connexion -- la demande sera envoyée dès le retour du réseau."
-          : "Le super-admin va examiner ta demande.",
-      );
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer la demande");
-    }
-  }
-
   const filtres = feuillets.filter((f) => {
     if (onglet === "mine") return f.chorale_id === identite?.compte_id;
     if (onglet === "publics") return f.chorale_id !== identite?.compte_id;
@@ -320,7 +331,12 @@ export default function DepliantsScreen() {
   }).filter((f) => {
     const q = recherche.trim().toLowerCase();
     if (!q) return true;
-    return f.date.includes(q) || (f.lieu ?? "").toLowerCase().includes(q) || (f.chorale_nom ?? "").toLowerCase().includes(q);
+    const champsCorrespondent =
+      f.date.includes(q) || (f.lieu ?? "").toLowerCase().includes(q) || (f.chorale_nom ?? "").toLowerCase().includes(q);
+    const chantCorrespond =
+      chantIdsCorrespondants.size > 0
+      && f.moments.some((m) => m.type === "chant" && m.chant_id != null && chantIdsCorrespondants.has(m.chant_id));
+    return champsCorrespondent || chantCorrespond;
   });
 
   const tries = [...filtres].sort((a, b) => {
@@ -329,17 +345,23 @@ export default function DepliantsScreen() {
     if (tri === "nom-desc") return (b.lieu ?? "").localeCompare(a.lieu ?? "");
     if (tri === "creation") return (b.created_at ?? "").localeCompare(a.created_at ?? "");
     if (tri === "modification") return (b.created_at ?? "").localeCompare(a.created_at ?? "");
+    if (tri === "chants") {
+      const nbA = a.moments.filter((m) => m.type === "chant").length;
+      const nbB = b.moments.filter((m) => m.type === "chant").length;
+      return nbB - nbA;
+    }
+    if (tri === "auteur") return (a.chorale_nom || "Ma chorale").toLowerCase().localeCompare((b.chorale_nom || "Ma chorale").toLowerCase());
     return b.date.localeCompare(a.date); // recent (défaut)
   });
 
-  // Sur l'onglet "Tous les feuillets" uniquement, le web regroupe visuellement
-  // en 2 sections avec compteurs séparés ("⭐ MES CRÉATIONS" / "👥 FEUILLETS
-  // PUBLICS") plutôt qu'une liste plate -- reproduit ici via une FlatList
-  // unique dont les données incluent des lignes d'en-tête, pour ne pas
-  // dupliquer tout le rendu de carte dans un composant SectionList séparé.
+  // Le web regroupe toujours visuellement en 2 sections avec compteurs
+  // séparés ("⭐ MES CRÉATIONS" / "👥 FEUILLETS PUBLICS"), quel que soit
+  // l'onglet actif (un des deux groupes est simplement vide/absent sur les
+  // onglets "mine"/"publics") -- reproduit ici via une FlatList unique dont
+  // les données incluent des lignes d'en-tête, pour ne pas dupliquer tout le
+  // rendu de carte dans un composant SectionList séparé.
   type LigneListe = { type: "header"; label: string; count: number } | { type: "item"; feuillet: Feuillet };
   const donneesListe: LigneListe[] = useMemo(() => {
-    if (onglet !== "tous") return tries.map((f) => ({ type: "item", feuillet: f }) as const);
     const mesCreations = tries.filter((f) => f.chorale_id === identite?.compte_id);
     const publics = tries.filter((f) => f.chorale_id !== identite?.compte_id);
     const lignes: LigneListe[] = [];
@@ -400,7 +422,7 @@ export default function DepliantsScreen() {
             );
           }
           const item = ligne.feuillet;
-          const estAMoi = item.chorale_id === identite?.compte_id || estSuperAdmin;
+          const estAMoi = choraleLocale || estSuperAdmin || item.chorale_id === identite?.compte_id;
           const nbChants = item.moments.filter((m) => m.type === "chant").length;
           const format = item.one_page_mode ? "1 page paysage" : "2 pages paysage";
           const estFavori = favoris.includes(item.id);
@@ -446,19 +468,6 @@ export default function DepliantsScreen() {
         />
       </Modal>
 
-      <Modal visible={!!raisonModal} animationType="fade" transparent onRequestClose={() => setRaisonModal(null)}>
-        <View style={styles.fondModal}>
-          <View style={styles.boiteModal}>
-            <Text style={styles.titreModal}>Demander la suppression</Text>
-            <TextInput style={styles.champModal} placeholder="Raison..." value={raison} onChangeText={setRaison} multiline />
-            <View style={styles.rangeeModal}>
-              <View style={{ flex: 1 }}><Bouton titre="Annuler" variante="contour" onPress={() => setRaisonModal(null)} /></View>
-              <View style={{ flex: 1 }}><Bouton titre="Envoyer" onPress={envoyerDemande} desactive={!raison.trim()} /></View>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
       <Modal visible={!!menuOuvert} animationType="slide" transparent onRequestClose={() => setMenuOuvert(null)}>
         <Pressable style={styles.fondFeuille} onPress={() => setMenuOuvert(null)}>
           <Pressable style={[styles.feuilleBas, { paddingBottom: 24 + insets.bottom }]} onPress={() => {}}>
@@ -468,7 +477,7 @@ export default function DepliantsScreen() {
               <Pressable onPress={() => setMenuOuvert(null)}><Text style={styles.fermerFeuille}>✕</Text></Pressable>
             </View>
             {menuOuvert && (() => {
-              const estAMoi = menuOuvert.chorale_id === identite?.compte_id || estSuperAdmin;
+              const estAMoi = choraleLocale || estSuperAdmin || menuOuvert.chorale_id === identite?.compte_id;
               const estFavori = favoris.includes(menuOuvert.id);
               return (
                 <>
@@ -490,17 +499,6 @@ export default function DepliantsScreen() {
                   <Pressable style={styles.itemFeuille} onPress={() => voirInfos(menuOuvert)}>
                     <Text style={styles.texteItemFeuille}>ℹ️ Voir les informations</Text>
                   </Pressable>
-                  {estAMoi && menuOuvert.id > 0 && menuOuvert.visibilite === "chorale" && (
-                    <Pressable
-                      style={styles.itemFeuille}
-                      disabled={publicationEnCours === menuOuvert.id}
-                      onPress={() => onDemanderPublication(menuOuvert)}
-                    >
-                      <Text style={styles.texteItemFeuille}>
-                        {publicationEnCours === menuOuvert.id ? "⏳ Envoi de la demande..." : "🌐 Demander la publication"}
-                      </Text>
-                    </Pressable>
-                  )}
                   <Pressable style={styles.itemFeuille} onPress={() => telechargerPdf(menuOuvert)}>
                     <Text style={styles.texteItemFeuille}>📥 Télécharger le PDF</Text>
                   </Pressable>
@@ -556,7 +554,7 @@ export default function DepliantsScreen() {
             <Text style={styles.titreModal}>ℹ️ Fiche technique du feuillet</Text>
             {infosModal && (() => {
               const f = infosModal;
-              const estAMoi = f.chorale_id === identite?.compte_id || estSuperAdmin;
+              const estAMoi = choraleLocale || estSuperAdmin || f.chorale_id === identite?.compte_id;
               const format = f.one_page_mode ? "1 page paysage" : "2 pages paysage";
               const nbChants = f.moments.filter((m) => m.type === "chant").length;
               let dateCreation = "Non précisé";

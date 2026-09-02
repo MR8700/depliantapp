@@ -6,7 +6,7 @@
 // l'orchestration complète.
 import { Section } from "./model";
 import { NomStyle } from "./typography";
-import { escapeHtml, mettreEnGrasNumero, mettreEnGrasRefrain } from "./texteUtils";
+import { escapeHtml, formaterTexteLiturgique, mettreEnGrasNumero, mettreEnGrasRefrain } from "./texteUtils";
 
 export interface UniteNonMesuree {
   html: string;
@@ -31,7 +31,7 @@ export function construireUnitesSection(section: Section): UniteNonMesuree[] {
 
   const song = section.song;
   if (song.titre) {
-    let html = escapeHtml(song.titre);
+    let html = formaterTexteLiturgique(song.titre);
     if (song.auteurCompositeur) {
       // Sous-ligne auteur/compositeur intégrée au MÊME html que le titre
       // (jamais une unité séparée) -- une unité est indivisible : il ne faut
@@ -44,7 +44,7 @@ export function construireUnitesSection(section: Section): UniteNonMesuree[] {
 
   if (song.refrain) {
     unites.push({
-      html: mettreEnGrasRefrain(escapeHtml(song.refrain)),
+      html: mettreEnGrasRefrain(song.refrain),
       nomStyle: "refrain", sectionOrdre: section.ordre, nature: "refrain", supplement,
     });
   }

@@ -1,9 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getIdentite } from "../api/meta";
-import { dernieresSyncLe } from "../storage/sync";
-import { synchroniserTout } from "../storage/syncAll";
-import { useSyncAutomatique, StatutSyncAuto } from "../storage/useSyncAutomatique";
+import { getLicenceLocale } from "../storage/secureStore";
 import { Identite } from "../types";
 
 const CLE_CACHE_IDENTITE = "depliantapp.identite_cache";
@@ -19,14 +17,6 @@ interface IdentiteContextValeur {
   estSuperAdmin: boolean;
   avatarUri: string | null;
   definirAvatar: (uri: string | null) => Promise<void>;
-  /** Vrai tant qu'aucune synchronisation de la bibliothèque partagée n'a
-   * jamais réussi sur cet appareil -- sert au bandeau d'invitation non
-   * bloquant du premier lancement (voir ActivationScreen.tsx). */
-  syncBibliothequeJamaisEffectuee: boolean;
-  /** Statut de la dernière synchronisation automatique déclenchée par le
-   * retour de connexion (voir useSyncAutomatique.ts) -- affichable en badge
-   * discret dans Réglages ou ailleurs. */
-  statutSyncAuto: StatutSyncAuto;
 }
 
 const IdentiteContext = createContext<IdentiteContextValeur | null>(null);
@@ -39,9 +29,32 @@ const IdentiteContext = createContext<IdentiteContextValeur | null>(null);
 export function IdentiteProvider({ children }: { children: React.ReactNode }) {
   const [identite, setIdentite] = useState<Identite | null>(null);
   const [avatarUri, setAvatarUriState] = useState<string | null>(null);
-  const [syncBibliothequeJamaisEffectuee, setSyncBibliothequeJamaisEffectuee] = useState(false);
 
+  // Compte chorale : identité résolue ENTIÈREMENT en local depuis la licence
+  // signée (voir storage/secureStore.ts::getLicenceLocale) -- aucun appel
+  // réseau, aucune notion de session à revalider. Compte super-admin (pas de
+  // licence locale) : seul cas restant à dépendre encore d'une résolution
+  // serveur classique (voir api/meta.ts::getIdentite).
   const rafraichirIdentite = useCallback(async () => {
+    const licenceLocale = await getLicenceLocale();
+    if (licenceLocale) {
+      const identiteLocale: Identite = {
+        authenticated: true,
+        type: "chorale",
+        compte_id: licenceLocale.payload.choraleId,
+        nom: licenceLocale.payload.choraleNom,
+        username: licenceLocale.payload.choraleNom,
+        must_change_password: false,
+        suppression_date_butoir: null,
+        suppression_raison: null,
+        suppression_delai_jours: null,
+        suppression_demande_revision: 0,
+        suppression_revision_raison: null,
+      };
+      setIdentite(identiteLocale);
+      await AsyncStorage.setItem(CLE_CACHE_IDENTITE, JSON.stringify(identiteLocale));
+      return;
+    }
     try {
       const fraiche = await getIdentite();
       setIdentite(fraiche);
@@ -63,28 +76,6 @@ export function IdentiteProvider({ children }: { children: React.ReactNode }) {
     AsyncStorage.getItem(`${CLE_AVATAR_PREFIX}${identite.username}`).then(setAvatarUriState);
   }, [identite?.username]);
 
-  // Synchronisation best-effort de la bibliothèque partagée + des feuillets
-  // en attente dès qu'une identité est résolue -- silencieuse, jamais
-  // bloquante (voir storage/syncAll.ts). Avant, seule l'ouverture manuelle de
-  // Réglages déclenchait ce PULL ; un tout premier lancement hors-ligne
-  // pouvait donc rester avec une bibliothèque vide indéfiniment si
-  // l'utilisateur n'allait jamais dans Réglages.
-  useEffect(() => {
-    if (!identite) return;
-    dernieresSyncLe().then((derniere) => setSyncBibliothequeJamaisEffectuee(derniere === null));
-    synchroniserTout()
-      .then(() => dernieresSyncLe().then((derniere) => setSyncBibliothequeJamaisEffectuee(derniere === null)))
-      .catch(() => {});
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identite?.username]);
-
-  // Retour de connexion détecté en cours de session (pas seulement au
-  // démarrage) -- voir useSyncAutomatique.ts : comble le trou où l'app
-  // restait ouverte des heures hors-ligne sans jamais repousser l'outbox ni
-  // retirer les nouvelles données, tant que l'utilisateur n'ouvrait pas
-  // Réglages ni ne relançait l'app.
-  const statutSyncAuto = useSyncAutomatique(!!identite);
-
   const definirAvatar = useCallback(async (uri: string | null) => {
     if (!identite?.username) return;
     setAvatarUriState(uri);
@@ -94,10 +85,7 @@ export function IdentiteProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <IdentiteContext.Provider
-      value={{
-        identite, rafraichirIdentite, estSuperAdmin: identite?.type === "super",
-        avatarUri, definirAvatar, syncBibliothequeJamaisEffectuee, statutSyncAuto,
-      }}
+      value={{ identite, rafraichirIdentite, estSuperAdmin: identite?.type === "super", avatarUri, definirAvatar }}
     >
       {children}
     </IdentiteContext.Provider>

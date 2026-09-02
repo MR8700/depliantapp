@@ -5,10 +5,12 @@ import ReglagesScreen from "../screens/ReglagesScreen";
 import ProfilScreen from "../screens/ProfilScreen";
 import EditeurScreen from "../screens/EditeurScreen";
 import ImportScreen from "../screens/ImportScreen";
-import LecturesJourScreen from "../screens/LecturesJourScreen";
+import GestionAppareilsScreen from "../screens/GestionAppareilsScreen";
+import AjouterAppareilMaitreScreen from "../screens/AjouterAppareilMaitreScreen";
 import StatistiquesScreen from "../screens/StatistiquesScreen";
 import AdministrationScreen from "../screens/AdministrationScreen";
 import AProposScreen from "../screens/AProposScreen";
+import DefinirPinScreen from "../screens/DefinirPinScreen";
 import { useIdentite } from "../context/IdentiteContext";
 
 const Stack = createNativeStackNavigator();
@@ -22,6 +24,10 @@ export default function PlusStack({ onDeconnecte }: Props) {
   // redémonterait l'écran Profil (et sa navigation interne) à chaque
   // re-rendu de PlusStack.
   const rendreProfil = useCallback(() => <ProfilScreen onDeconnecte={onDeconnecte} />, [onDeconnecte]);
+  const rendreDefinirPin = useCallback(
+    ({ navigation }: any) => <DefinirPinScreen onTermine={() => navigation.goBack()} onAnnuler={() => navigation.goBack()} />,
+    [],
+  );
   const { estSuperAdmin } = useIdentite();
 
   return (
@@ -33,7 +39,11 @@ export default function PlusStack({ onDeconnecte }: Props) {
       </Stack.Screen>
       <Stack.Screen name="Editeur" component={EditeurScreen} options={{ title: "Éditeur de chants" }} />
       <Stack.Screen name="Import" component={ImportScreen} options={{ title: "Importer" }} />
-      <Stack.Screen name="LecturesJour" component={LecturesJourScreen} options={{ title: "Lectures du jour", headerShown: false }} />
+      <Stack.Screen name="GestionAppareils" component={GestionAppareilsScreen} options={{ title: "Appareils" }} />
+      <Stack.Screen name="AjouterAppareil" component={AjouterAppareilMaitreScreen} options={{ title: "Ajouter un appareil" }} />
+      <Stack.Screen name="DefinirPin" options={{ title: "Code de verrouillage" }}>
+        {rendreDefinirPin}
+      </Stack.Screen>
       {/* Équivalent mobile du garde de routage web (VUES_SUPERADMIN_UNIQUEMENT,
           app.js) : ces écrans ne sont même pas enregistrés dans le navigateur
           pour un compte chorale, donc injoignables par un deep link ou un bug

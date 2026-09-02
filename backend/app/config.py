@@ -117,21 +117,28 @@ DEFAULTS = {
         {"icon": "🔄", "title": "Mises à jour régulières", "desc": "Des améliorations continues basées sur les retours de la communauté."},
         {"icon": "🙌", "title": "Respect des utilisateurs", "desc": "Pas de publicité intrusive, pas de traçage abusif, respect total de votre attention."}
     ], ensure_ascii=False),
-    "got_politique_confidentialite": "La protection de vos données constitue une priorité absolue pour GO Technologie (GOT). Nous collectons uniquement les informations nécessaires au fonctionnement normal et à la personnalisation de vos feuillets. Nous ne vendons jamais vos données personnelles à des tiers. Les informations de compte ne sont utilisées que pour fournir les services demandés et optimiser la qualité de l'application.",
+    # Ces textes par défaut décrivent le modèle 100% hors-ligne des comptes
+    # chorale (licence "essence vivante", voir app/licence_signature.py) :
+    # bibliothèque/dépliants/réglages ne quittent jamais l'appareil, seule la
+    # Messagerie touche ce serveur. Un ancien texte parlait encore de
+    # "synchroniser vos appareils" et de "base de données sauvegardée" pour
+    # ces données, ce qui n'est plus vrai depuis ce chantier -- une chorale
+    # dont l'appareil est perdu SANS l'avoir elle-même sauvegardé (export/
+    # partage manuel) perd ce contenu, ce serveur n'en détient aucune copie.
+    "got_politique_confidentialite": "La protection de vos données constitue une priorité absolue pour GO Technologie (GOT). Pour une chorale, votre bibliothèque de chants, vos dépliants et vos réglages restent EXCLUSIVEMENT sur votre appareil -- ils ne sont jamais envoyés ni stockés sur nos serveurs. Seule la messagerie avec l'administrateur nécessite une connexion et transite par nos serveurs. Nous ne vendons jamais vos données personnelles à des tiers.",
     "got_securite": json.dumps([
-        {"icon": "🔑", "title": "HTTPS / TLS", "desc": "Toutes les connexions et transferts de données sont chiffrés avec des certificats SSL/TLS sécurisés."},
-        {"icon": "🛡️", "title": "Authentification sécurisée", "desc": "Mots de passe hachés avec des algorithmes sécurisés et gestion de session robuste."},
-        {"icon": "👥", "title": "Gestion des rôles", "desc": "Permissions distinctes selon les rôles (chorale, modérateur, administrateur)."},
-        {"icon": "💾", "title": "Sauvegardes régulières", "desc": "Base de données sauvegardée périodiquement pour éviter toute perte accidentelle."},
+        {"icon": "🔑", "title": "HTTPS / TLS", "desc": "Toutes les connexions et transferts de données (messagerie) sont chiffrés avec des certificats SSL/TLS sécurisés."},
+        {"icon": "🔏", "title": "Licence signée hors-ligne", "desc": "Votre licence est vérifiée par signature cryptographique directement sur votre appareil, sans jamais transmettre vos données au serveur."},
+        {"icon": "👥", "title": "Gestion des rôles", "desc": "Permissions distinctes selon les rôles (chorale, administrateur)."},
+        {"icon": "📱", "title": "Données conservées sur l'appareil", "desc": "Pour un compte chorale, la bibliothèque de chants et les dépliants vivent uniquement sur votre téléphone -- pensez à exporter/partager vos sauvegardes vous-même, ce serveur n'en détient aucune copie."},
         {"icon": "📝", "title": "Journalisation", "desc": "Suivi des actions système critiques pour détecter les anomalies et tentatives d'intrusion."},
         {"icon": "🔄", "title": "Mises à jour de sécurité", "desc": "Application rapide des correctifs sur les serveurs et dépendances logicielles."}
     ], ensure_ascii=False),
     "got_utilisation_donnees": json.dumps([
-        "Créer et authentifier le compte",
-        "Gérer et personnaliser le profil",
-        "Créer, enregistrer et éditer vos feuillets liturgiques",
-        "Synchroniser vos modifications entre vos différents appareils",
-        "Sécuriser l'accès et détecter les connexions suspectes",
+        "Vérifier votre licence (entièrement sur votre appareil, sans connexion)",
+        "Créer, enregistrer et éditer vos feuillets liturgiques (localement, sur votre appareil)",
+        "Échanger des messages avec l'administrateur lorsque vous êtes connecté(e)",
+        "Gérer et personnaliser le profil de l'administrateur",
         "Produire des statistiques d'utilisation anonymes pour améliorer l'application",
         "Assurer le support technique et répondre aux demandes d'assistance"
     ], ensure_ascii=False),

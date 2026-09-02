@@ -42,6 +42,38 @@ function iconePieceJointe(nomFichier: string | null): string {
   return "📁";
 }
 
+// React Native réutilise les en-têtes fournis à <Image>. Une preuve HMAC à
+// nonce unique ne peut pas être réemployée pour plusieurs chargements, donc
+// l'image est d'abord téléchargée avec une preuve dédiée puis affichée depuis
+// le cache local.
+function ImagePieceJointe({ message, onPress }: { message: Message; onPress: () => void }) {
+  const [uri, setUri] = useState<string | null>(null);
+
+  useEffect(() => {
+    let annule = false;
+    async function charger() {
+      try {
+        const headers = await jetonAuthorizationHeader(`/messages/${message.id}/piece-jointe`);
+        const destination = `${FileSystem.cacheDirectory}message_image_${message.id}_${Date.now()}`;
+        const resultat = await FileSystem.downloadAsync(urlPieceJointe(message.id), destination, { headers });
+        if (resultat.status === 200 && !annule) setUri(resultat.uri);
+      } catch {
+        // La pièce reste accessible par le bouton d'ouverture explicite.
+      }
+    }
+    charger();
+    return () => { annule = true; };
+  }, [message.id]);
+
+  return (
+    <Pressable onPress={onPress}>
+      {uri
+        ? <Image source={{ uri }} style={styles.imagePieceJointe} resizeMode="cover" />
+        : <View style={styles.imagePieceJointe} />}
+    </Pressable>
+  );
+}
+
 export default function MessagerieScreen() {
   const insets = useSafeAreaInsets();
   const { estSuperAdmin, identite } = useIdentite();
@@ -62,13 +94,10 @@ export default function MessagerieScreen() {
   const [menuEmojiOuvert, setMenuEmojiOuvert] = useState(false);
   const [telechargementEnCours, setTelechargementEnCours] = useState<number | null>(null);
   const intervalle = useRef<ReturnType<typeof setInterval> | null>(null);
-  const [authHeaders, setAuthHeaders] = useState<Record<string, string>>({});
   const [estHorsLigne, setEstHorsLigne] = useState(false);
   const [rechercheConvVisible, setRechercheConvVisible] = useState(false);
   const [rechercheConv, setRechercheConv] = useState("");
   const [infoPanelVisible, setInfoPanelVisible] = useState(false);
-
-  useEffect(() => { jetonAuthorizationHeader().then(setAuthHeaders); }, []);
 
   useEffect(() => {
     AsyncStorage.getItem(CLE_ARCHIVES).then((brut) => {
@@ -191,7 +220,7 @@ export default function MessagerieScreen() {
     if (telechargementEnCours === message.id) return;
     setTelechargementEnCours(message.id);
     try {
-      const headers = await jetonAuthorizationHeader();
+      const headers = await jetonAuthorizationHeader(`/messages/${message.id}/piece-jointe`);
       const dest = `${FileSystem.cacheDirectory}${message.piece_jointe_filename}`;
       const resultat = await FileSystem.downloadAsync(urlPieceJointe(message.id), dest, { headers });
       if (await Sharing.isAvailableAsync()) await Sharing.shareAsync(resultat.uri);
@@ -347,7 +376,7 @@ export default function MessagerieScreen() {
                 {item.piece_jointe_filename && (
                   (item.piece_jointe_content_type ?? "").startsWith("image/") ? (
                     <Pressable onPress={() => ouvrirPieceJointe(item)}>
-                      <Image source={{ uri: urlPieceJointe(item.id), headers: authHeaders }} style={styles.imagePieceJointe} resizeMode="cover" />
+                      <ImagePieceJointe message={item} onPress={() => ouvrirPieceJointe(item)} />
                     </Pressable>
                   ) : (
                     <Pressable style={styles.cartePieceJointe} onPress={() => ouvrirPieceJointe(item)}>
@@ -380,14 +409,17 @@ export default function MessagerieScreen() {
                 ))}
                 <Pressable onPress={() => setMessageEnReponseA(item)} hitSlop={6}><Text style={styles.lienAction}>Répondre</Text></Pressable>
                 {moi && (
-                  <>
-                    <Pressable onPress={() => { setMessageEnEdition(item); setTexte(item.texte ?? ""); }} hitSlop={6}>
-                      <Text style={styles.lienAction}>Modifier</Text>
-                    </Pressable>
-                    <Pressable onPress={() => confirmerSuppression(item)} hitSlop={6}>
-                      <Text style={[styles.lienAction, { color: "#dc2626" }]}>Supprimer</Text>
-                    </Pressable>
-                  </>
+                  <Pressable onPress={() => { setMessageEnEdition(item); setTexte(item.texte ?? ""); }} hitSlop={6}>
+                    <Text style={styles.lienAction}>Modifier</Text>
+                  </Pressable>
+                )}
+                {/* Un admin peut supprimer n'importe quel message du fil (modération),
+                    une chorale seulement les siens -- même règle que web (app.js ~7384
+                    et backend/app/routers/messages.py::supprimer). */}
+                {(moi || estSuperAdmin) && (
+                  <Pressable onPress={() => confirmerSuppression(item)} hitSlop={6}>
+                    <Text style={[styles.lienAction, { color: "#dc2626" }]}>Supprimer</Text>
+                  </Pressable>
                 )}
               </View>
               {Object.entries(item.reactions ?? {}).filter(([, u]) => u.length > 0).length > 0 && (

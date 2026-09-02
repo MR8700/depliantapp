@@ -6,11 +6,10 @@ import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
 
 interface Props {
-  choraleNom?: string;
   onConnecte: () => void;
 }
 
-export default function LoginScreen({ choraleNom, onConnecte }: Props) {
+export default function LoginScreen({ onConnecte }: Props) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [enCours, setEnCours] = useState(false);
@@ -33,10 +32,8 @@ export default function LoginScreen({ choraleNom, onConnecte }: Props) {
     <KeyboardAvoidingView style={styles.fond} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Carte>
-          <Text style={styles.titre}>{choraleNom ?? "Connexion"}</Text>
-          <Text style={styles.sousTitre}>
-            {choraleNom ? "Connecte-toi avec le compte de ta chorale." : "Connexion avec un compte administrateur (aucune licence requise)."}
-          </Text>
+          <Text style={styles.titre}>Connexion</Text>
+          <Text style={styles.sousTitre}>Connexion avec un compte administrateur (aucune licence requise).</Text>
           <TextInput
             style={styles.champ}
             placeholder="Identifiant"

@@ -134,9 +134,11 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
         <Pressable style={[styles.tab, onglet === "informations" && styles.tabActif]} onPress={() => setOnglet("informations")}>
           <Text style={[styles.texteTab, onglet === "informations" && styles.texteTabActif]}>👤 Informations</Text>
         </Pressable>
-        <Pressable style={[styles.tab, onglet === "securite" && styles.tabActif]} onPress={() => setOnglet("securite")}>
-          <Text style={[styles.texteTab, onglet === "securite" && styles.texteTabActif]}>🔒 Sécurité</Text>
-        </Pressable>
+        {identite?.type === "super" && (
+          <Pressable style={[styles.tab, onglet === "securite" && styles.tabActif]} onPress={() => setOnglet("securite")}>
+            <Text style={[styles.texteTab, onglet === "securite" && styles.texteTabActif]}>🔒 Sécurité</Text>
+          </Pressable>
+        )}
         <Pressable style={[styles.tab, onglet === "compte" && styles.tabActif]} onPress={() => setOnglet("compte")}>
           <Text style={[styles.texteTab, onglet === "compte" && styles.texteTabActif]}>ℹ️ Infos du compte</Text>
         </Pressable>
@@ -165,10 +167,14 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
               )}
             </View>
           </View>
-          <Text style={styles.label}>Nom complet</Text>
+          <Text style={styles.label}>{identite?.type === "super" ? "Prénom" : "Nom complet"}</Text>
           <TextInput style={styles.champ} placeholder="Entrez votre nom..." value={nomComplet} onChangeText={setNomComplet} />
-          <Text style={styles.label}>Nom de la chorale</Text>
-          <TextInput style={styles.champ} placeholder="Chorale..." value={choraleNom} onChangeText={setChoraleNom} />
+          {identite?.type !== "super" && (
+            <>
+              <Text style={styles.label}>Nom de la chorale</Text>
+              <TextInput style={styles.champ} placeholder="Chorale..." value={choraleNom} onChangeText={setChoraleNom} />
+            </>
+          )}
           <Text style={styles.label}>Paroisse</Text>
           <TextInput style={styles.champ} placeholder="Paroisse..." value={paroisse} onChangeText={setParoisse} />
           <Text style={styles.label}>CCB / Quartier</Text>
@@ -183,7 +189,7 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
         </View>
       )}
 
-      {onglet === "securite" && (
+      {onglet === "securite" && identite?.type === "super" && (
         <View>
           <Text style={styles.label}>Mot de passe actuel</Text>
           <TextInput style={styles.champ} secureTextEntry value={motDePasseActuel} onChangeText={setMotDePasseActuel} />

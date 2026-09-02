@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, ReactNode } from "react";
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PdfView } from "@kishannareshpal/expo-pdf";
@@ -15,6 +15,10 @@ interface Props {
    * stepper +/- si fourni, comme le réglage manuel du web (voir Composer). */
   tailleTexteManuelle?: number | null;
   onChangerTailleTexte?: (taille: number | null) => void;
+  /** Supprime le feuillet actuellement prévisualisé -- équivalent du bouton
+   * corbeille de la barre d'outils web (voir supprimerFeuilletDepuisComposer
+   * dans app.js). N'affiche le bouton que si fourni (feuillet déjà existant). */
+  onSupprimer?: () => void;
 }
 
 // Aperçu PDF : rendu natif via @kishannareshpal/expo-pdf (PDFium) sur le
@@ -24,7 +28,7 @@ interface Props {
 // vide sur appareil réel (confirmé sur Samsung/Android 13), d'où ce
 // composant natif dédié. Le bouton "Ouvrir avec..." reste en secours.
 export default function PdfViewer({
-  uri, chargement, erreur, momentsEnCause, onFermer, tailleTexteManuelle, onChangerTailleTexte,
+  uri, chargement, erreur, momentsEnCause, onFermer, tailleTexteManuelle, onChangerTailleTexte, onSupprimer,
 }: Props) {
   const insets = useSafeAreaInsets();
   const [erreurAffichage, setErreurAffichage] = useState<string | null>(null);
@@ -52,17 +56,23 @@ export default function PdfViewer({
     }
   }
 
+  // IMPORTANT : le sélecteur de taille (barreTaille plus bas) ne doit
+  // JAMAIS disparaître, y compris pendant le chargement ou en cas de
+  // débordement -- avant ce correctif, chaque état ci-dessous faisait un
+  // retour anticipé qui le masquait entièrement : une fois un débordement
+  // atteint, impossible de revenir à une taille plus petite depuis cet
+  // écran (il fallait fermer l'aperçu et retrouver le réglage ailleurs).
+  // Le contenu central (spinner / erreur / PDF) varie, la barre reste.
+  let contenuCentral: ReactNode;
   if (chargement) {
-    return (
+    contenuCentral = (
       <View style={styles.centre}>
         <ActivityIndicator size="large" color="#2563eb" />
         <Text style={styles.texteChargement}>Génération du PDF...</Text>
       </View>
     );
-  }
-
-  if (erreur) {
-    return (
+  } else if (erreur) {
+    contenuCentral = (
       <View style={styles.centre}>
         <Text style={styles.titreErreur}>Le feuillet ne tient pas dans la page</Text>
         <Text style={styles.texteErreur}>{erreur}</Text>
@@ -71,42 +81,50 @@ export default function PdfViewer({
             {momentsEnCause.map((m) => <Text key={m} style={styles.momentEnCause}>• {m}</Text>)}
           </View>
         )}
+        {onChangerTailleTexte && (
+          <Text style={styles.astuceErreur}>👇 Réduis la taille du texte ci-dessous pour que tout tienne.</Text>
+        )}
       </View>
     );
-  }
-
-  if (!uri) {
-    return (
+  } else if (!uri) {
+    contenuCentral = (
       <View style={styles.centre}>
         <Text style={styles.texteChargement}>Aucun aperçu pour le moment.</Text>
       </View>
+    );
+  } else if (erreurAffichage) {
+    contenuCentral = (
+      <View style={styles.centre}>
+        <Text style={styles.texteChargement}>
+          L'aperçu intégré n'a pas pu s'afficher ({erreurAffichage}) -- utilise "Ouvrir le PDF" ci-dessous.
+        </Text>
+      </View>
+    );
+  } else {
+    contenuCentral = (
+      <PdfView
+        uri={uri}
+        style={{ flex: 1 }}
+        fitMode="width"
+        pagingEnabled
+        doubleTapToZoom
+        onError={({ message }) => setErreurAffichage(message)}
+      />
     );
   }
 
   return (
     <View style={{ flex: 1 }}>
-      {erreurAffichage ? (
-        <View style={styles.centre}>
-          <Text style={styles.texteChargement}>
-            L'aperçu intégré n'a pas pu s'afficher ({erreurAffichage}) -- utilise "Ouvrir le PDF" ci-dessous.
-          </Text>
-        </View>
-      ) : (
-        <PdfView
-          uri={uri}
-          style={{ flex: 1 }}
-          fitMode="width"
-          pagingEnabled
-          doubleTapToZoom
-          onError={({ message }) => setErreurAffichage(message)}
-        />
-      )}
+      {contenuCentral}
       {onChangerTailleTexte && (
         <View style={[styles.barreTaille, { paddingTop: 8 }]}>
-          <Text style={styles.texteTaille}>Taille du texte</Text>
+          <Text style={styles.texteTaille}>
+            Taille du texte{chargement ? " (mise à jour...)" : ""}
+          </Text>
           <View style={styles.stepperTaille}>
             <Pressable
               style={styles.boutonStepper}
+              disabled={chargement}
               onPress={() => onChangerTailleTexte(Math.max(8, (tailleTexteManuelle ?? 8) - 1))}
             >
               <Text style={styles.texteStepper}>－</Text>
@@ -114,12 +132,13 @@ export default function PdfViewer({
             <Text style={styles.valeurStepper}>{tailleTexteManuelle != null ? `${tailleTexteManuelle}pt` : "Auto"}</Text>
             <Pressable
               style={styles.boutonStepper}
+              disabled={chargement}
               onPress={() => onChangerTailleTexte(Math.min(32, (tailleTexteManuelle ?? 8) + 1))}
             >
               <Text style={styles.texteStepper}>＋</Text>
             </Pressable>
             {tailleTexteManuelle != null && (
-              <Pressable style={styles.boutonStepper} onPress={() => onChangerTailleTexte(null)}>
+              <Pressable style={styles.boutonStepper} disabled={chargement} onPress={() => onChangerTailleTexte(null)}>
                 <Text style={[styles.texteStepper, { fontSize: 11 }]}>Auto</Text>
               </Pressable>
             )}
@@ -127,12 +146,17 @@ export default function PdfViewer({
         </View>
       )}
       <View style={[styles.barreOutils, { paddingBottom: insets.bottom + 10 }]}>
-        <Pressable style={styles.boutonPrincipal} onPress={ouvrirAvec}>
+        <Pressable style={styles.boutonPrincipal} onPress={ouvrirAvec} disabled={!uri}>
           <Text style={styles.texteBoutonPrincipal}>Ouvrir le PDF</Text>
         </Pressable>
-        <Pressable style={styles.boutonOutil} onPress={imprimer} disabled={impressionEnCours}>
+        <Pressable style={styles.boutonOutil} onPress={imprimer} disabled={impressionEnCours || !uri}>
           <Text style={styles.texteBoutonOutil}>{impressionEnCours ? "…" : "🖨️ Imprimer"}</Text>
         </Pressable>
+        {onSupprimer && (
+          <Pressable style={styles.boutonOutil} onPress={onSupprimer}>
+            <Text style={[styles.texteBoutonOutil, { color: "#dc2626" }]}>🗑️ Supprimer</Text>
+          </Pressable>
+        )}
         {onFermer && (
           <Pressable style={styles.boutonOutil} onPress={onFermer}>
             <Text style={styles.texteBoutonOutil}>Fermer</Text>
@@ -150,6 +174,7 @@ const styles = StyleSheet.create({
   texteErreur: { fontSize: 14, color: "#7f1d1d", textAlign: "center" },
   listeMoments: { marginTop: 12 },
   momentEnCause: { fontSize: 13, color: "#991b1b" },
+  astuceErreur: { marginTop: 16, fontSize: 13, color: "#2563eb", fontWeight: "600", textAlign: "center" },
   barreTaille: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, backgroundColor: "#fff" },
   texteTaille: { fontSize: 12, color: "#64748b", fontWeight: "600" },
   stepperTaille: { flexDirection: "row", alignItems: "center", gap: 6 },

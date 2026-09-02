@@ -46,17 +46,34 @@ const STYLE_COMMUN = `
   .page:last-child { page-break-after: auto; }
   .zone, .widget { position: absolute; overflow: hidden; }
   .bordure { position: absolute; border: 0.4pt solid #000; box-sizing: border-box; }
-  .entete-logo { position: absolute; top: 0; height: 26mm; }
+  /* Logos : boîte FIXE 26mm x 26mm (comme ReportLab drawImage height=width=
+     HAUTEUR_LOGO, preserveAspectRatio=True) -- object-fit:contain reproduit
+     exactement ce "letterboxing" : l'image réelle, quel que soit son propre
+     ratio, ne dépasse JAMAIS cette boîte. Sans largeur explicite (bug
+     précédent), un logo non carré s'affichait à sa largeur naturelle et
+     pouvait chevaucher le cadre central. */
+  .entete-logo { position: absolute; top: 0; height: 26mm; width: 26mm; object-fit: contain; }
   .entete-logo-g { left: 0; }
   .entete-logo-d { right: 0; }
-  .entete-paroisse { text-align: center; font-weight: bold; font-size: 11pt; color: #4a4a4a; }
-  .entete-cadre { position: absolute; left: 50%; transform: translateX(-50%); top: 8mm; width: 70%; text-align: center; border: 1.2pt solid #b23b3b; padding: 2mm; }
+  .entete-paroisse { text-align:center; font-family:Impact,'Arial Narrow',sans-serif; font-weight:bold; font-size:16pt; line-height:16pt; letter-spacing:.2pt; color:#fff; text-shadow:-.6pt -.6pt 0 #111,.6pt -.6pt 0 #111,-.6pt .6pt 0 #111,.6pt .6pt 0 #111; white-space:nowrap; }
+  .entete-ccb { text-align:center; font-size:8pt; color:#555; margin-top:.5mm; white-space:nowrap; }
+  /* Largeur EXACTE de widgets.py::dessiner_entete (largeur_bloc = largeur
+     totale - 2*HAUTEUR_LOGO - 8pt) -- un "70%" fixe précédent ne
+     correspondait à rien de réel et pouvait chevaucher les logos selon la
+     largeur effective de la demi-page. 8pt = 8/72*25.4mm ≈ 2.82mm. */
+  .entete-cadre { position:absolute; left:50%; transform:translateX(-50%); top:12mm; width:calc(100% - 54.82mm); text-align:center; border:1.2pt solid #111; padding:1mm 2mm; box-sizing:border-box; }
   .entete-nom-chorale { font-weight: bold; font-size: 12pt; text-decoration: underline; }
   .entete-sous-titre { font-weight: bold; font-size: 10pt; text-decoration: underline; margin-top: 1mm; }
   .entete-lecture { font-weight: bold; font-size: 8pt; text-align: left; margin-top: 1mm; }
-  .banniere-annonce { text-align: center; font-weight: bold; font-size: 13pt; color: #4a4a4a; }
-  .banniere-image { display: block; margin: 1mm auto; max-height: 20mm; max-width: 100%; }
+  .banniere-annonce { text-align:center; font-family:Impact,'Arial Narrow',sans-serif; font-weight:bold; font-size:16pt; color:#fff; text-shadow:-.6pt -.6pt 0 #555,.6pt -.6pt 0 #555,-.6pt .6pt 0 #555,.6pt .6pt 0 #555; }
+  /* Hauteur FIXE 20mm (comme widgets.py::_image_dims -- hauteur imposée,
+     largeur dérivée du ratio réel de l'image) -- "max-height" seul ne force
+     rien : une image plus petite que 20mm en taille naturelle s'affichait
+     minuscule au lieu d'être mise à l'échelle jusqu'à 20mm. */
+  .banniere-image { display: block; margin: 1mm auto; height: 20mm; width: auto; max-width: 100%; }
+  .banniere-sous-titre { text-align:center; color:#06f; font-family:cursive; font-weight:bold; font-size:12pt; line-height:13pt; border:.5pt solid #c06; margin:.5mm auto; padding:.5mm; width:82%; }
   .banniere-contact { text-align: center; font-style: italic; font-size: 8pt; }
+  .reference-liturgique { color:#06f; text-decoration:underline; }
 `;
 
 export interface DonneesAssemblage {
@@ -102,7 +119,7 @@ export function assemblerHtml(d: DonneesAssemblage): string {
       <div class="page">
         ${divBordure(0)}
         ${construireEntete(feuillet, config, images)}
-        ${banniereActive ? construireBanniere(config, images) : ""}
+        ${banniereActive ? construireBanniere(feuillet, config, images) : ""}
         ${zoneAvecContenu("D1")}
         ${zoneAvecContenu("D2")}
         ${zoneAvecContenu("G1")}

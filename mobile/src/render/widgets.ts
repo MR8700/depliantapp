@@ -6,7 +6,7 @@
 //   contenu n'est jamais mesuré/distribué par le LayoutEngine, il occupe
 //   la zone en entier, sans condition).
 import { Feuillet } from "../types";
-import { escapeHtml } from "./texteUtils";
+import { escapeHtml, formaterTexteLiturgique } from "./texteUtils";
 import { NomStyle, StyleParagraphe } from "./typography";
 import {
   HAUTEUR_BANNIERE_MM, HAUTEUR_ENTETE_MM, LARGEUR_DEMI_MM, PAGE_H_MM,
@@ -58,6 +58,7 @@ export function construireEntete(feuillet: Feuillet, config: Record<string, any>
   const logoD = images.logo_droit ? `<img src="${images.logo_droit}" class="entete-logo entete-logo-d" />` : "";
 
   const paroisse = config?.paroisse ? `<div class="entete-paroisse">${escapeHtml(config.paroisse)}</div>` : "";
+  const ccb = config?.ccb ? `<div class="entete-ccb">${escapeHtml(config.ccb)}</div>` : "";
   const nomChorale = escapeHtml(config?.chorale ?? "");
 
   const dateAffichee = formaterDateAffichage(feuillet.date);
@@ -66,7 +67,7 @@ export function construireEntete(feuillet: Feuillet, config: Record<string, any>
   const lectures = feuillet.lectures;
   const lignesLecture: string[] = [];
   const ajouterLecture = (label: string, valeur?: string | null) => {
-    if (valeur) lignesLecture.push(`<div class="entete-lecture">${label} : ${escapeHtml(valeur)}</div>`);
+    if (valeur) lignesLecture.push(`<div class="entete-lecture">${label} : ${formaterTexteLiturgique(valeur)}</div>`);
   };
   ajouterLecture("1ère lecture", lectures?.premiere_lecture);
   ajouterLecture("Psaume", lectures?.psaume);
@@ -77,6 +78,7 @@ export function construireEntete(feuillet: Feuillet, config: Record<string, any>
     <div class="widget entete" style="top:${top}mm; left:${left}mm; width:${largeur}mm; height:${HAUTEUR_ENTETE_MM}mm;">
       ${logoG}${logoD}
       ${paroisse}
+      ${ccb}
       <div class="entete-cadre">
         <div class="entete-nom-chorale">${nomChorale}</div>
         <div class="entete-sous-titre">${sousTitre}</div>
@@ -87,12 +89,15 @@ export function construireEntete(feuillet: Feuillet, config: Record<string, any>
 
 /** Bannière : annonce, image décorative, coordonnées. Toujours ancrée en bas
  * de la demi-page gauche -- jamais utilisée pour les chants. */
-export function construireBanniere(config: Record<string, any>, images: ParametresCache["images"]): string {
+export function construireBanniere(feuillet: Feuillet, config: Record<string, any>, images: ParametresCache["images"]): string {
   const top = PAGE_H_MM - Y0_MM - HAUTEUR_BANNIERE_MM;
   const left = X_GAUCHE_MM;
   const largeur = LARGEUR_DEMI_MM;
 
   const annonce = config?.annonce ? `<div class="banniere-annonce">${escapeHtml(config.annonce)}</div>` : "";
+  const sousTitre = config?.banniere_sous_titre
+    ? `<div class="banniere-sous-titre">${formaterTexteLiturgique(config.banniere_sous_titre)}</div>`
+    : `<div class="banniere-sous-titre">${escapeHtml(formaterDateAffichage(feuillet.date))}</div>`;
   const image = images.banniere_bas ? `<img src="${images.banniere_bas}" class="banniere-image" />` : "";
   const contact = config?.contact
     ? `<div class="banniere-contact">Pour de plus amples informations sur votre chorale, veuillez nous contacter au : ${escapeHtml(config.contact)}</div>`
@@ -100,7 +105,7 @@ export function construireBanniere(config: Record<string, any>, images: Parametr
 
   return `
     <div class="widget banniere" style="top:${top}mm; left:${left}mm; width:${largeur}mm; height:${HAUTEUR_BANNIERE_MM}mm;">
-      ${annonce}${image}${contact}
+      ${annonce}${image}${sousTitre}${contact}
     </div>`;
 }
 
@@ -111,7 +116,7 @@ export function construireBanniere(config: Record<string, any>, images: Parametr
 export function construireContenuPriere(
   feuillet: Feuillet, styles: Record<NomStyle, StyleParagraphe>, config?: Record<string, any> | null,
 ): string {
-  const titre = escapeHtml(DEFAULT_PRIERE_TITRE).toUpperCase();
+  const titre = escapeHtml(config?.priere_titre || DEFAULT_PRIERE_TITRE).toUpperCase();
   const texte: string = feuillet.priere_texte || config?.priere_texte_defaut || DEFAULT_PRIERE_TEXTE;
   const st = styles.titre_section;
   const sp = styles.priere_corps;
@@ -121,7 +126,7 @@ export function construireContenuPriere(
     .map((p) => p.trim())
     .filter(Boolean)
     .map((p) => {
-      const contenu = escapeHtml(p).replace(/\n/g, "<br/>");
+      const contenu = formaterTexteLiturgique(p);
       return `<div style="font-size:${sp.fontSize}pt; line-height:${sp.lineHeight}pt; margin-bottom:${sp.marginBottom ?? 0}pt;">${contenu}</div>`;
     })
     .join("");

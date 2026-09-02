@@ -1,13 +1,18 @@
 import { apiFetchForm, apiFetch, ApiError } from "./client";
-import { ajouterAImportOutbox } from "../storage/importOutbox";
 import { analyserDocxLocal } from "../import/analyserLocal";
+import { getLicenceLocale } from "../storage/secureStore";
+import { creerChantLocal, modifierChantLocal } from "../storage/chantsLocal";
+import { ChantCreate } from "../types";
 
-// Levée quand l'upload échoue faute de réseau (pas une erreur serveur) --
-// le fichier a été mis en file d'attente locale (voir storage/importOutbox.ts)
-// plutôt que de faire échouer l'import pour rien.
-export class ImportMisEnAttente extends Error {
+// Levée pour un compte chorale (licence locale) qui tente d'importer un
+// fichier sans équivalent d'analyse 100% locale (PDF, .doc) sans connexion
+// -- seul le .docx a un moteur d'analyse embarqué (voir
+// import/analyserLocal.ts, porté fidèlement depuis le serveur). Le PDF reste
+// analysé côté serveur (comme .doc, qui exige Word/COM et n'a jamais eu
+// d'équivalent local, même pour le compte super-admin).
+export class ImportIndisponibleHorsLigne extends Error {
   constructor() {
-    super("Pas de connexion -- le carnet a été mis en attente d'envoi, il sera analysable dès le retour du réseau.");
+    super("L'analyse de ce format nécessite une connexion internet -- seul le .docx s'importe entièrement hors-ligne.");
   }
 }
 
@@ -31,10 +36,8 @@ export interface ReponseUpload {
   chants: ChantExtrait[];
 }
 
-// Variante réseau "brute", sans repli hors-ligne -- réservée à
-// storage/sync.ts (ré-essai d'une entrée de importOutbox : un échec ici doit
-// la laisser en attente telle quelle, jamais recopier le fichier une
-// seconde fois).
+// Variante réseau "brute", sans repli hors-ligne -- utilisée directement par
+// uploaderCarnet ci-dessous pour le compte super-admin.
 export function uploaderCarnetDistant(params: {
   uri: string; nom: string; mimeType: string;
   categorieDefaut: string; occasions: string; langue: string; auteur: string;
@@ -51,30 +54,35 @@ export function uploaderCarnetDistant(params: {
   return apiFetchForm<ReponseUpload>("/import/upload", form, { method: "POST" });
 }
 
+// Compte chorale (licence locale) : le .docx s'analyse toujours entièrement
+// en local (aucun appel réseau tenté). Le PDF n'a pas d'équivalent local
+// (voir ImportIndisponibleHorsLigne) -- ImportScreen.tsx ne propose de
+// toute façon que .docx/.pdf au sélecteur de fichiers pour ce rôle (.doc
+// retiré, sans équivalent local ni serveur viable sur mobile). Compte
+// super-admin : comportement réseau inchangé.
 export async function uploaderCarnet(params: {
   uri: string; nom: string; mimeType: string;
   categorieDefaut: string; occasions: string; langue: string; auteur: string;
 }): Promise<ReponseUpload> {
-  try {
-    return await uploaderCarnetDistant(params);
-  } catch (erreur) {
-    if (erreur instanceof ApiError) throw erreur;
-    // Pas de connexion (erreur RÉSEAU, pas serveur) : pour un .docx,
-    // analyse ENTIÈREMENT locale (voir import/analyserLocal.ts -- moteur de
-    // segmentation porté fidèlement depuis le serveur) plutôt que de
-    // simplement mettre en attente -- contrairement au PDF/.doc, dont
-    // l'analyse reste nécessairement côté serveur (comme le web pour le
-    // PDF ; le .doc, lui, exige Word/COM, jamais disponible sur mobile).
-    const extension = params.nom.toLowerCase().slice(params.nom.lastIndexOf("."));
+  const extension = params.nom.toLowerCase().slice(params.nom.lastIndexOf("."));
+  if (await getLicenceLocale()) {
     if (extension === ".docx") {
       return analyserDocxLocal(params.uri, params.nom, {
         categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
       });
     }
-    await ajouterAImportOutbox(params, {
-      categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
-    });
-    throw new ImportMisEnAttente();
+    throw new ImportIndisponibleHorsLigne();
+  }
+  try {
+    return await uploaderCarnetDistant(params);
+  } catch (erreur) {
+    if (erreur instanceof ApiError) throw erreur;
+    if (extension === ".docx") {
+      return analyserDocxLocal(params.uri, params.nom, {
+        categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
+      });
+    }
+    throw erreur;
   }
 }
 
@@ -93,7 +101,28 @@ export interface ChantAFinaliser {
   compositeur?: string | null;
 }
 
-export function finaliserImport(chants: ChantAFinaliser[]) {
+export async function finaliserImport(chants: ChantAFinaliser[]): Promise<{ saved: number; replaced: number; ignored: number }> {
+  if (await getLicenceLocale()) {
+    let saved = 0, replaced = 0, ignored = 0;
+    for (const c of chants) {
+      if (c.action === "ignore") { ignored++; continue; }
+      const payload: ChantCreate = {
+        titre: c.titre, categorie: c.categorie, refrain: c.refrain || null, couplets: c.couplets,
+        code_reference: c.code_reference ?? null, langue: c.langue, occasions: c.occasions,
+        slug: null, mots_cles: [], references_bibliques: [], actif: true, favori: false,
+        chant_principal: false, tonalite: null, duree_estimee: null, remarques: null,
+        auteur: c.auteur ?? null, compositeur: c.compositeur ?? null,
+      };
+      if (c.action === "replace" && c.replace_id != null) {
+        await modifierChantLocal(c.replace_id, payload);
+        replaced++;
+      } else {
+        await creerChantLocal(payload);
+        saved++;
+      }
+    }
+    return { saved, replaced, ignored };
+  }
   return apiFetch<{ saved: number; replaced: number; ignored: number }>("/import/finalize", {
     method: "POST", body: { chants },
   });

@@ -7,4 +7,5 @@ pillow
 pymupdf
 python-multipart
 psycopg2-binary
+cryptography
 pywin32; sys_platform == "win32"

@@ -1,28 +1,12 @@
-import { apiFetch, ApiError } from "./client";
-import { ajouterDemandeEnAttente } from "../storage/moderationOutbox";
+import * as FileSystem from "expo-file-system/legacy";
+import { apiFetch, jetonAuthorizationHeader, verifierAccesReseau } from "./client";
+import { API_BASE_URL } from "../config";
 
-// Variante réseau "brute", sans repli hors-ligne -- réservée à
-// storage/syncModeration.ts.
-export function demanderSuppressionDistant(typeCible: "chant" | "feuillet", cibleId: number, raison: string) {
-  return apiFetch<{ id: number }>("/moderation/demandes", {
-    method: "POST",
-    body: { type_cible: typeCible, cible_id: cibleId, raison },
-  });
-}
-
-// Sur échec RÉSEAU (pas une erreur serveur), met la demande en file
-// d'attente locale plutôt que de faire échouer l'action pour l'utilisateur
-// -- une chorale doit pouvoir demander une suppression hors-ligne, comme
-// n'importe quelle autre action de la bibliothèque.
-export async function demanderSuppression(typeCible: "chant" | "feuillet", cibleId: number, raison: string): Promise<{ id: number } | { enAttente: true }> {
-  try {
-    return await demanderSuppressionDistant(typeCible, cibleId, raison);
-  } catch (erreur) {
-    if (erreur instanceof ApiError) throw erreur;
-    await ajouterDemandeEnAttente(typeCible, cibleId, raison);
-    return { enAttente: true };
-  }
-}
+// Le déclenchement chorale (demanderSuppression) a été retiré : une chorale
+// 100% locale est seule propriétaire de sa bibliothèque, suppression
+// directe (voir api/chants.ts::supprimerChant/bulkSupprimer,
+// api/feuillets.ts::supprimerFeuillet). Tout ce qui suit reste réservé au
+// compte super-admin (file de modération, toujours en ligne).
 
 export interface DemandeSuppression {
   id: number;
@@ -128,4 +112,38 @@ export function validerMedia(id: number): Promise<import("../types").ChantMedia>
 
 export function rejeterMedia(id: number): Promise<import("../types").ChantMedia> {
   return apiFetch<import("../types").ChantMedia>(`/moderation/medias-a-valider/${id}/rejeter`, { method: "POST" });
+}
+
+// --- Partitions (copies notées) en attente de vérification -------------
+// Une seule partition "validee" à la fois par chant (voir crud.py::
+// valider_partition, qui résilie automatiquement l'ancienne active) --
+// contrairement aux médias audio/vidéo, jamais utilisées sur le rendu PDF
+// des feuillets mais bien affichées/téléchargeables dans le détail du chant.
+
+export function listerPartitionsAValider(): Promise<import("./chants").Partition[]> {
+  return apiFetch<import("./chants").Partition[]>("/moderation/partitions");
+}
+
+export function validerPartition(id: number): Promise<import("./chants").Partition> {
+  return apiFetch<import("./chants").Partition>(`/moderation/partitions/${id}/valider`, { method: "POST" });
+}
+
+export function rejeterPartition(id: number): Promise<import("./chants").Partition> {
+  return apiFetch<import("./chants").Partition>(`/moderation/partitions/${id}/revoquer`, { method: "POST" });
+}
+
+// Même raison que api/chants.ts::telechargerPartition -- l'endpoint exige le
+// jeton Bearer, à récupérer en fichier local avant de pouvoir l'ouvrir/le
+// partager (une WebView ne peut pas attacher ce jeton à une requête média).
+export async function telechargerApercuPartitionModeration(id: number): Promise<string> {
+  await verifierAccesReseau(`/moderation/partitions/${id}/fichier`);
+  const dest = `${FileSystem.cacheDirectory}partition_moderation_${id}.pdf`;
+  const headers = await jetonAuthorizationHeader();
+  const url = `${API_BASE_URL}/moderation/partitions/${id}/fichier`;
+  const resultat = await FileSystem.downloadAsync(url, dest, { headers });
+  if (resultat.status !== 200) {
+    await FileSystem.deleteAsync(dest, { idempotent: true });
+    throw new Error(`Erreur ${resultat.status} lors du téléchargement`);
+  }
+  return resultat.uri;
 }

@@ -13,13 +13,15 @@ import {
   listerMediasChant, ajouterMediaChant, supprimerMediaChant, telechargerMediaChant,
   getPartitionActive, getPartitionSoumiseParMaChorale, uploaderPartition, telechargerPartition, Partition,
 } from "../api/chants";
-import { demanderSuppression } from "../api/moderation";
-import { ApiError } from "../api/client";
-import { ajouterAOutbox, versChant } from "../storage/chantsOutbox";
+import { getLicenceLocale } from "../storage/secureStore";
+import { creerCategorie } from "../api/meta";
 import { useIdentite } from "../context/IdentiteContext";
-import { categorieLabel, NOMS_LANGUES, etatChant, LABEL_ETAT, COULEUR_ETAT } from "../utils/labels";
+import { categorieLabel, NOMS_LANGUES, LANGUES_OPTIONS, etatChant, LABEL_ETAT, COULEUR_ETAT } from "../utils/labels";
 import Bouton from "./Bouton";
+import SelectModal from "./SelectModal";
 import ChantMediaPlayer from "./ChantMediaPlayer";
+
+const LANGUES_EDITION = LANGUES_OPTIONS.filter((o) => o.value !== "");
 
 interface Props {
   visible: boolean;
@@ -86,12 +88,22 @@ export default function SongDetailModal({
   const { identite } = useIdentite();
   const modeCreation = visible && !chant;
   const [modeEdition, setModeEdition] = useState(false);
-  const [modeDemandeSuppression, setModeDemandeSuppression] = useState(false);
-  const [raisonSuppression, setRaisonSuppression] = useState("");
   const [enCours, setEnCours] = useState(false);
+  // Une chorale 100% locale (licence "essence vivante", voir
+  // storage/secureStore.ts) est seule propriétaire de sa bibliothèque --
+  // elle peut modifier/archiver/supprimer directement, comme l'admin,
+  // contrairement à l'ancien modèle de bibliothèque partagée (qui ne
+  // laissait qu'une "demande de suppression" aux comptes chorale).
+  const [choraleLocale, setChoraleLocale] = useState(false);
+  useEffect(() => {
+    getLicenceLocale().then((l) => setChoraleLocale(!!l));
+  }, []);
 
   const [titre, setTitre] = useState("");
   const [categorie, setCategorie] = useState("");
+  const [langue, setLangue] = useState("fr");
+  const [categorieOptions, setCategorieOptions] = useState<string[]>([]);
+  const [nouvelleCategorieNom, setNouvelleCategorieNom] = useState("");
   const [refrain, setRefrain] = useState("");
   const [couplets, setCouplets] = useState("");
   const [remarques, setRemarques] = useState("");
@@ -116,7 +128,7 @@ export default function SongDetailModal({
   const [actionEnCours, setActionEnCours] = useState<string | null>(null);
 
   useEffect(() => {
-    if (chant && visible) {
+    if (chant && visible && !choraleLocale) {
       listerMediasChant(chant.id).then(setMedias).catch(() => setMedias([]));
       getPartitionActive(chant.id).then(setPartitionActive).catch(() => setPartitionActive(null));
       if (!estSuperAdmin) {
@@ -129,7 +141,7 @@ export default function SongDetailModal({
       setPartitionActive(null);
       setPartitionMienne(null);
     }
-  }, [chant, visible, estSuperAdmin]);
+  }, [chant, visible, estSuperAdmin, choraleLocale]);
 
   async function ajouterMedia(type: "audio" | "video") {
     const resultat = await DocumentPicker.getDocumentAsync({ type: type === "audio" ? "audio/*" : "video/*" });
@@ -220,6 +232,7 @@ export default function SongDetailModal({
     if (chant) {
       setTitre(chant.titre);
       setCategorie(chant.categorie);
+      setLangue(chant.langue || "fr");
       setRefrain(chant.refrain ?? "");
       setCouplets(chant.couplets.join("\n\n"));
       setRemarques(chant.remarques ?? "");
@@ -232,15 +245,18 @@ export default function SongDetailModal({
       setDureeEstimee(chant.duree_estimee ?? "");
       setModeEdition(!!ouvrirEnEdition);
     } else if (modeCreation) {
-      setTitre(VIDE.titre); setCategorie(VIDE.categorie); setRefrain(VIDE.refrain);
+      setTitre(VIDE.titre); setCategorie(VIDE.categorie); setLangue("fr"); setRefrain(VIDE.refrain);
       setCouplets(VIDE.couplets); setRemarques(VIDE.remarques); setAuteurCompositeur("");
       setCodeReference(""); setOccasions(""); setMotsCles(""); setReferencesBibliques(""); setTonalite(""); setDureeEstimee("");
       setModeEdition(true);
     }
-    setModeDemandeSuppression(false);
-    setRaisonSuppression("");
+    setNouvelleCategorieNom("");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chant, visible]);
+
+  useEffect(() => {
+    if (meta) setCategorieOptions(meta.categories);
+  }, [meta]);
 
   if (!visible) return null;
 
@@ -249,8 +265,23 @@ export default function SongDetailModal({
   }
 
   async function enregistrer() {
+    if (categorie === "Autre" && !nouvelleCategorieNom.trim()) {
+      Alert.alert("Catégorie manquante", "Saisis le nom de la nouvelle catégorie, ou choisis-en une existante.");
+      return;
+    }
     setEnCours(true);
     try {
+      // Comme le web (édition du <select> "Autre", app.js ~4790) : la
+      // catégorie est créée (localement pour une chorale, via l'API pour
+      // l'admin -- voir api/meta.ts::creerCategorie) juste avant l'enregistrement
+      // du chant, qui l'utilise directement au lieu de la valeur "Autre".
+      let categorieFinale = categorie;
+      if (categorie === "Autre") {
+        const nom = nouvelleCategorieNom.trim();
+        const categoriesMaJour = await creerCategorie(nom);
+        setCategorieOptions(categoriesMaJour);
+        categorieFinale = nom;
+      }
       const couvertsListe = couplets.split(/\n\s*\n/).map((c) => c.trim()).filter(Boolean);
       const auteurValeur = auteurCompositeur.trim() || null;
       const champsCommuns = {
@@ -263,40 +294,20 @@ export default function SongDetailModal({
       };
       if (modeCreation) {
         const payload: ChantCreate = {
-          titre: titre.trim(), categorie, refrain: refrain.trim() || null, couplets: couvertsListe,
-          langue: "fr", actif: true, favori: false,
+          titre: titre.trim(), categorie: categorieFinale, refrain: refrain.trim() || null, couplets: couvertsListe,
+          langue, actif: true, favori: false,
           chant_principal: false, remarques: remarques.trim() || null,
           auteur: auteurValeur, compositeur: auteurValeur, slug: null,
           ...champsCommuns,
         };
-        try {
-          const cree = await creerChant(payload);
-          onCreated?.(cree);
-          // Un chant ajouté par une chorale reste privé (visible seulement
-          // d'elle) tant qu'un administrateur ne l'a pas publié -- sauf si
-          // l'admin a activé la publication automatique (voir Administration).
-          if (!estSuperAdmin && cree.visibilite === "chorale") {
-            Alert.alert(
-              "Chant enregistré",
-              "Il n'est visible que par votre chorale pour l'instant, en attente de publication par l'administrateur.",
-            );
-          }
-        } catch (erreurReseau) {
-          // Pas d'ApiError = échec réseau (pas d'erreur serveur) -- on met en
-          // file d'attente locale, la synchronisation (voir storage/sync.ts)
-          // l'enverra à la bibliothèque partagée dès le retour du réseau.
-          if (erreurReseau instanceof ApiError) throw erreurReseau;
-          // idLocal vient de l'entrée outbox elle-même (pas recalculé ici) --
-          // sinon un id "placeholder" différent de celui réellement stocké
-          // dans l'outbox rendrait ce chant introuvable par getChant/
-          // modifierChant/supprimerChant tant qu'il reste en attente.
-          const entree = await ajouterAOutbox(payload);
-          onCreated?.(versChant(entree));
-          Alert.alert("Enregistré hors-ligne", "Ce chant sera envoyé à la bibliothèque partagée dès que la connexion sera rétablie.");
-        }
+        // Une chorale (100% locale) est seule propriétaire de sa bibliothèque
+        // -- plus de notion de publication/validation admin à attendre, le
+        // chant créé lui appartient immédiatement et définitivement.
+        const cree = await creerChant(payload);
+        onCreated?.(cree);
       } else if (chant) {
         const misAJour = await modifierChant(chant.id, {
-          titre: titre.trim(), categorie, refrain: refrain.trim() || null, couplets: couvertsListe,
+          titre: titre.trim(), categorie: categorieFinale, langue, refrain: refrain.trim() || null, couplets: couvertsListe,
           remarques: remarques.trim() || null, auteur: auteurValeur, compositeur: auteurValeur,
           ...champsCommuns,
         });
@@ -310,7 +321,7 @@ export default function SongDetailModal({
     }
   }
 
-  async function confirmerSuppressionSuper() {
+  async function confirmerSuppression() {
     if (!chant) return;
     Alert.alert("Supprimer ce chant ?", "Cette action est irréversible.", [
       { text: "Annuler", style: "cancel" },
@@ -340,25 +351,6 @@ export default function SongDetailModal({
       Alert.alert("Erreur", erreur?.message ?? "Impossible de mettre à jour l'état");
     } finally {
       setActionEnCours(null);
-    }
-  }
-
-  async function envoyerDemandeSuppression() {
-    if (!chant || !raisonSuppression.trim()) return;
-    setEnCours(true);
-    try {
-      const resultat = await demanderSuppression("chant", chant.id, raisonSuppression.trim());
-      setModeDemandeSuppression(false);
-      Alert.alert(
-        "enAttente" in resultat ? "Mise en attente" : "Demande envoyée",
-        "enAttente" in resultat
-          ? "Pas de connexion -- la demande sera envoyée dès le retour du réseau."
-          : "Le super-admin va examiner ta demande.",
-      );
-    } catch (erreur: any) {
-      Alert.alert("Erreur", erreur?.message ?? "Impossible d'envoyer la demande");
-    } finally {
-      setEnCours(false);
     }
   }
 
@@ -416,7 +408,20 @@ export default function SongDetailModal({
                 <Text style={styles.label}>Titre</Text>
                 <TextInput style={styles.champ} value={titre} onChangeText={setTitre} />
                 <Text style={styles.label}>Catégorie</Text>
-                <TextInput style={styles.champ} value={categorie} onChangeText={setCategorie} />
+                <SelectModal
+                  label="Catégorie"
+                  value={categorie}
+                  onChange={setCategorie}
+                  options={categorieOptions.map((c) => ({ value: c, label: categorieLabel(c) }))}
+                />
+                {categorie === "Autre" && (
+                  <TextInput
+                    style={styles.champ} value={nouvelleCategorieNom} onChangeText={setNouvelleCategorieNom}
+                    placeholder="Nom de la nouvelle catégorie liturgique"
+                  />
+                )}
+                <Text style={styles.label}>Langue</Text>
+                <SelectModal label="Langue" value={langue} onChange={setLangue} options={LANGUES_EDITION} />
                 <Text style={styles.label}>Référence</Text>
                 <TextInput style={styles.champ} value={codeReference} onChangeText={setCodeReference} placeholder="Ex: AL 123" />
                 <Text style={styles.label}>Tonalité</Text>
@@ -433,7 +438,7 @@ export default function SongDetailModal({
                   placeholder="Ex: Mt 17, 1-9"
                 />
                 <Text style={styles.aideChamp}>
-                  Sert à faire ressortir ce chant quand ses paroles collent aux lectures d'un jour donné (voir 📖 Lectures du jour).
+                  Références des lectures liturgiques auxquelles ce chant correspond thématiquement.
                 </Text>
                 <Text style={styles.label}>Auteur / Compositeur</Text>
                 <TextInput style={styles.champ} value={auteurCompositeur} onChangeText={setAuteurCompositeur} />
@@ -448,24 +453,6 @@ export default function SongDetailModal({
                   <View style={styles.boutonMoitie}><Bouton titre="Enregistrer" onPress={enregistrer} enCours={enCours} desactive={!titre.trim()} /></View>
                 </View>
               </>
-            ) : modeDemandeSuppression ? (
-              <>
-                <Text style={styles.titrePrincipal}>Demander la suppression</Text>
-                <Text style={styles.label}>Pourquoi ce chant devrait-il être supprimé ?</Text>
-                <TextInput
-                  style={[styles.champ, styles.champMulti]}
-                  value={raisonSuppression}
-                  onChangeText={setRaisonSuppression}
-                  multiline
-                  placeholder="Raison..."
-                />
-                <View style={styles.rangeeBoutons}>
-                  <View style={styles.boutonMoitie}><Bouton titre="Annuler" variante="contour" onPress={() => setModeDemandeSuppression(false)} /></View>
-                  <View style={styles.boutonMoitie}>
-                    <Bouton titre="Envoyer" onPress={envoyerDemandeSuppression} enCours={enCours} desactive={!raisonSuppression.trim()} />
-                  </View>
-                </View>
-              </>
             ) : chant ? (
               <>
                 <Text style={styles.titrePrincipal}>{chant.titre}</Text>
@@ -475,7 +462,7 @@ export default function SongDetailModal({
                   {chant.duree_estimee ? ` · ${chant.duree_estimee}` : ""}
                   {chant.actif === false ? " · Archivé" : ""}
                 </Text>
-                {chant.visibilite === "chorale" && (
+                {estSuperAdmin && chant.visibilite === "chorale" && (
                   <Text style={styles.notePriveChant}>
                     🔒 {chant.chorale_proprietaire_nom ? `Ajouté par ${chant.chorale_proprietaire_nom}` : "Chant privé"} — pas encore publié pour toute la communauté.
                   </Text>
@@ -555,76 +542,78 @@ export default function SongDetailModal({
                   </Pressable>
                 </View>
 
-                <Text style={styles.label}>📄 Partition</Text>
-                {partitionActive ? (
-                  <View style={styles.ligneMedia}>
-                    <Pressable style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }} onPress={ouvrirPartition} disabled={actionEnCours === "partition"}>
-                      <Text style={styles.iconeMedia}>📄</Text>
-                      <View style={{ flex: 1 }}>
-                        <Text style={styles.nomMedia}>Partition publiée</Text>
-                        {!!partitionActive.chorale_nom && <Text style={styles.sousNomMedia}>Ajoutée par {partitionActive.chorale_nom}</Text>}
+                {/* Partition/médias : moteur de modération réseau (voir
+                    api/chants.ts) sans équivalent local -- masqué pour une
+                    chorale 100% hors-ligne plutôt que de proposer des
+                    boutons qui échoueraient systématiquement. */}
+                {!choraleLocale && (
+                  <>
+                    <Text style={styles.label}>📄 Partition</Text>
+                    {partitionActive ? (
+                      <View style={styles.ligneMedia}>
+                        <Pressable style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }} onPress={ouvrirPartition} disabled={actionEnCours === "partition"}>
+                          <Text style={styles.iconeMedia}>📄</Text>
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.nomMedia}>Partition publiée</Text>
+                            {!!partitionActive.chorale_nom && <Text style={styles.sousNomMedia}>Ajoutée par {partitionActive.chorale_nom}</Text>}
+                          </View>
+                          <Text style={styles.lienMedia}>{actionEnCours === "partition" ? "…" : "▶ Ouvrir"}</Text>
+                        </Pressable>
                       </View>
-                      <Text style={styles.lienMedia}>{actionEnCours === "partition" ? "…" : "▶ Ouvrir"}</Text>
+                    ) : (
+                      <Text style={styles.texteMediaVide}>Aucune partition publiée pour ce chant.</Text>
+                    )}
+                    {partitionMienne && partitionMienne.statut !== "validee" && (
+                      <Text style={styles.notePartitionAttente}>
+                        Ta soumission est {LABEL_STATUT_PARTITION[partitionMienne.statut].toLowerCase()}.
+                      </Text>
+                    )}
+                    <Pressable style={styles.boutonMediaAjout} onPress={ajouterPartition} disabled={envoiPartitionEnCours}>
+                      <Text style={styles.texteBoutonMediaAjout}>{envoiPartitionEnCours ? "Envoi..." : "📄 Soumettre une partition (PDF)"}</Text>
                     </Pressable>
-                  </View>
-                ) : (
-                  <Text style={styles.texteMediaVide}>Aucune partition publiée pour ce chant.</Text>
-                )}
-                {partitionMienne && partitionMienne.statut !== "validee" && (
-                  <Text style={styles.notePartitionAttente}>
-                    Ta soumission est {LABEL_STATUT_PARTITION[partitionMienne.statut].toLowerCase()}.
-                  </Text>
-                )}
-                <Pressable style={styles.boutonMediaAjout} onPress={ajouterPartition} disabled={envoiPartitionEnCours}>
-                  <Text style={styles.texteBoutonMediaAjout}>{envoiPartitionEnCours ? "Envoi..." : "📄 Soumettre une partition (PDF)"}</Text>
-                </Pressable>
 
-                <Text style={styles.label}>🎧 Audio / Vidéo</Text>
-                {medias.length === 0 ? (
-                  <Text style={styles.texteMediaVide}>Aucun audio/vidéo pour ce chant.</Text>
-                ) : (
-                  medias.map((m) => (
-                    <View key={m.id} style={styles.ligneMedia}>
-                      <Pressable style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }} onPress={() => lireMedia(m)}>
-                        <Text style={styles.iconeMedia}>{m.type === "audio" ? "🎵" : "🎥"}</Text>
-                        <View style={{ flex: 1 }}>
-                          <Text style={styles.nomMedia} numberOfLines={1}>{m.filename}</Text>
-                          {!!m.chorale_nom && (
-                            <Text style={styles.sousNomMedia}>
-                              {m.chorale_nom}{m.statut === "a_verifier" ? " · ⏳ en attente de validation" : ""}
-                            </Text>
+                    <Text style={styles.label}>🎧 Audio / Vidéo</Text>
+                    {medias.length === 0 ? (
+                      <Text style={styles.texteMediaVide}>Aucun audio/vidéo pour ce chant.</Text>
+                    ) : (
+                      medias.map((m) => (
+                        <View key={m.id} style={styles.ligneMedia}>
+                          <Pressable style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 8 }} onPress={() => lireMedia(m)}>
+                            <Text style={styles.iconeMedia}>{m.type === "audio" ? "🎵" : "🎥"}</Text>
+                            <View style={{ flex: 1 }}>
+                              <Text style={styles.nomMedia} numberOfLines={1}>{m.filename}</Text>
+                              {!!m.chorale_nom && (
+                                <Text style={styles.sousNomMedia}>
+                                  {m.chorale_nom}{m.statut === "a_verifier" ? " · ⏳ en attente de validation" : ""}
+                                </Text>
+                              )}
+                            </View>
+                            <Text style={styles.lienMedia}>▶ Lire</Text>
+                          </Pressable>
+                          {peutSupprimerMedia(m) && (
+                            <Pressable onPress={() => confirmerSuppressionMedia(m)} hitSlop={8}>
+                              <Text style={styles.supprimerMedia}>🗑️</Text>
+                            </Pressable>
                           )}
                         </View>
-                        <Text style={styles.lienMedia}>▶ Lire</Text>
+                      ))
+                    )}
+                    <View style={styles.rangeeMediaBoutons}>
+                      <Pressable style={styles.boutonMediaAjout} onPress={() => ajouterMedia("audio")} disabled={envoiMediaEnCours !== null}>
+                        <Text style={styles.texteBoutonMediaAjout}>{envoiMediaEnCours === "audio" ? "Envoi..." : "🎵 Ajouter un audio"}</Text>
                       </Pressable>
-                      {peutSupprimerMedia(m) && (
-                        <Pressable onPress={() => confirmerSuppressionMedia(m)} hitSlop={8}>
-                          <Text style={styles.supprimerMedia}>🗑️</Text>
-                        </Pressable>
-                      )}
+                      <Pressable style={styles.boutonMediaAjout} onPress={() => ajouterMedia("video")} disabled={envoiMediaEnCours !== null}>
+                        <Text style={styles.texteBoutonMediaAjout}>{envoiMediaEnCours === "video" ? "Envoi..." : "🎥 Ajouter une vidéo"}</Text>
+                      </Pressable>
                     </View>
-                  ))
+                  </>
                 )}
-                <View style={styles.rangeeMediaBoutons}>
-                  <Pressable style={styles.boutonMediaAjout} onPress={() => ajouterMedia("audio")} disabled={envoiMediaEnCours !== null}>
-                    <Text style={styles.texteBoutonMediaAjout}>{envoiMediaEnCours === "audio" ? "Envoi..." : "🎵 Ajouter un audio"}</Text>
-                  </Pressable>
-                  <Pressable style={styles.boutonMediaAjout} onPress={() => ajouterMedia("video")} disabled={envoiMediaEnCours !== null}>
-                    <Text style={styles.texteBoutonMediaAjout}>{envoiMediaEnCours === "video" ? "Envoi..." : "🎥 Ajouter une vidéo"}</Text>
-                  </Pressable>
-                </View>
 
                 <View style={styles.rangeeBoutons}>
                   <View style={styles.boutonMoitie}><Bouton titre="Fermer" variante="contour" onPress={onClose} /></View>
-                  {estSuperAdmin ? (
-                    <View style={styles.boutonMoitie}><Bouton titre="Modifier" onPress={() => setModeEdition(true)} /></View>
-                  ) : (
-                    <View style={styles.boutonMoitie}>
-                      <Bouton titre="Demander suppression" variante="contour" onPress={() => setModeDemandeSuppression(true)} />
-                    </View>
-                  )}
+                  <View style={styles.boutonMoitie}><Bouton titre="Modifier" onPress={() => setModeEdition(true)} /></View>
                 </View>
-                {estSuperAdmin && (
+                {(estSuperAdmin || choraleLocale) && (
                   <View style={styles.rangeeBoutons}>
                     <View style={styles.boutonMoitie}>
                       <Bouton
@@ -635,7 +624,7 @@ export default function SongDetailModal({
                       />
                     </View>
                     <View style={styles.boutonMoitie}>
-                      <Bouton titre="Supprimer définitivement" variante="contour" onPress={confirmerSuppressionSuper} enCours={enCours} />
+                      <Bouton titre="Supprimer définitivement" variante="contour" onPress={confirmerSuppression} enCours={enCours} />
                     </View>
                   </View>
                 )}
