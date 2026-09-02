@@ -18,6 +18,26 @@ export interface UniteNonMesuree {
    * "ENTRÉE", reste toujours à la taille normale, seul le contenu du
    * chant/texte lui-même grossit). */
   supplement: number;
+  /** Fragment intermédiaire d'un même bloc, sans marge de fin. */
+  continuation?: boolean;
+}
+
+function lignesDeTexte(texte: string): string[] {
+  const lignes = texte.split(/\r?\n/).map((ligne) => ligne.trim()).filter(Boolean);
+  return lignes.length > 0 ? lignes : [texte];
+}
+
+function ajouterFragments(
+  unites: UniteNonMesuree[], texte: string, section: Section, nomStyle: "refrain" | "couplet",
+  supplement: number, rendre: (ligne: string, index: number) => string,
+) {
+  const lignes = lignesDeTexte(texte);
+  lignes.forEach((ligne, index) => {
+    unites.push({
+      html: rendre(ligne, index), nomStyle, sectionOrdre: section.ordre, nature: nomStyle,
+      supplement, continuation: index < lignes.length - 1,
+    });
+  });
 }
 
 export function construireUnitesSection(section: Section): UniteNonMesuree[] {
@@ -43,17 +63,15 @@ export function construireUnitesSection(section: Section): UniteNonMesuree[] {
   }
 
   if (song.refrain) {
-    unites.push({
-      html: mettreEnGrasRefrain(song.refrain),
-      nomStyle: "refrain", sectionOrdre: section.ordre, nature: "refrain", supplement,
-    });
+    ajouterFragments(unites, song.refrain, section, "refrain", supplement, (ligne, index) => (
+      index === 0 ? mettreEnGrasRefrain(ligne) : `<b>${formaterTexteLiturgique(ligne)}</b>`
+    ));
   }
 
   song.couplets.forEach((couplet, i) => {
-    unites.push({
-      html: mettreEnGrasNumero(couplet, i + 1),
-      nomStyle: "couplet", sectionOrdre: section.ordre, nature: "couplet", supplement,
-    });
+    ajouterFragments(unites, couplet, section, "couplet", supplement, (ligne, index) => (
+      index === 0 ? mettreEnGrasNumero(ligne, i + 1) : formaterTexteLiturgique(ligne)
+    ));
   });
 
   return unites;

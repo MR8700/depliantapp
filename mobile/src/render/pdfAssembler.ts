@@ -71,7 +71,7 @@ const STYLE_COMMUN = `
      rien : une image plus petite que 20mm en taille naturelle s'affichait
      minuscule au lieu d'être mise à l'échelle jusqu'à 20mm. */
   .banniere-image { display: block; margin: 1mm auto; height: 20mm; width: auto; max-width: 100%; }
-  .banniere-sous-titre { text-align:center; color:#06f; font-family:cursive; font-weight:bold; font-size:12pt; line-height:13pt; border:.5pt solid #c06; margin:.5mm auto; padding:.5mm; width:82%; }
+  .banniere-sous-titre { position:relative; top:1.5mm; text-align:center; color:#06f; font-family:cursive; font-weight:bold; font-size:12pt; line-height:13pt; border:.5pt solid #c06; margin:.5mm auto; padding:.5mm; width:82%; }
   .banniere-contact { text-align: center; font-style: italic; font-size: 8pt; }
   .reference-liturgique { color:#06f; text-decoration:underline; }
 `;

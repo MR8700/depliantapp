@@ -1,4 +1,5 @@
 import { lireParagraphesDocx } from "./parseDocx";
+import { lireParagraphesPdf } from "./parsePdf";
 import { segmenterParagraphesDocx } from "./segmentation";
 import { lireCache } from "../storage/chantsCache";
 import { listerChantsLocaux } from "../storage/chantsLocal";
@@ -6,21 +7,20 @@ import { getLicenceLocale } from "../storage/secureStore";
 import { normaliserTitre } from "../utils/normaliserTitre";
 import { ChantExtrait, ReponseUpload } from "../api/import";
 
-/** Analyse un .docx ENTIÈREMENT en local (dézippage + segmentation portés
- * fidèlement depuis le moteur serveur, voir segmentation.ts) -- fonctionne
- * hors-ligne, contrairement au PDF qui reste analysé côté serveur (comme le
- * web : "L'analyse a besoin du réseau"). La détection de doublons ici est
+/** Analyse locale DOCX/PDF : dézippage ou extraction puis segmentation.
+ * La détection de doublons ici est
  * VOLONTAIREMENT plus simple que côté serveur (correspondance de titre
  * EXACTE après normalisation, pas une similarité floue) -- elle ne fait
  * que suggérer, la chorale reste libre de choisir "remplacer"/"ignorer"
  * comme pour un import en ligne ; une fois reconnectée, une synchronisation
  * normale recoupera de toute façon avec la bibliothèque complète. */
-export async function analyserDocxLocal(
-  uri: string,
+type ParametresAnalyse = { categorieDefaut: string; occasions: string; langue: string; auteur: string };
+
+async function analyserParagraphesLocaux(
+  paragraphes: string[],
   nomFichier: string,
-  params: { categorieDefaut: string; occasions: string; langue: string; auteur: string },
+  params: ParametresAnalyse,
 ): Promise<ReponseUpload> {
-  const paragraphes = await lireParagraphesDocx(uri);
   const chantsBruts = segmenterParagraphesDocx(paragraphes);
 
   const occasionsListe = params.occasions.split(",").map((o) => o.trim()).filter(Boolean);
@@ -50,4 +50,23 @@ export async function analyserDocxLocal(
   });
 
   return { fichier: nomFichier, chants };
+}
+
+export async function analyserDocxLocal(
+  uri: string,
+  nomFichier: string,
+  params: ParametresAnalyse,
+): Promise<ReponseUpload> {
+  return analyserParagraphesLocaux(await lireParagraphesDocx(uri), nomFichier, params);
+}
+
+/** Même segmentation locale que DOCX, après extraction du texte du PDF. */
+export async function analyserPdfLocal(
+  uri: string, nomFichier: string,
+  params: ParametresAnalyse,
+): Promise<ReponseUpload> {
+  const paragraphes = await lireParagraphesPdf(uri);
+  // On réutilise le pipeline DOCX : il ne dépend que d'une liste de lignes.
+  const temporaire = await analyserParagraphesLocaux(paragraphes, nomFichier, params);
+  return temporaire;
 }

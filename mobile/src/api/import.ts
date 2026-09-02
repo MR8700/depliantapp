@@ -1,18 +1,14 @@
 import { apiFetchForm, apiFetch, ApiError } from "./client";
-import { analyserDocxLocal } from "../import/analyserLocal";
+import { analyserDocxLocal, analyserPdfLocal } from "../import/analyserLocal";
 import { getLicenceLocale } from "../storage/secureStore";
 import { creerChantLocal, modifierChantLocal } from "../storage/chantsLocal";
 import { ChantCreate } from "../types";
 
-// Levée pour un compte chorale (licence locale) qui tente d'importer un
-// fichier sans équivalent d'analyse 100% locale (PDF, .doc) sans connexion
-// -- seul le .docx a un moteur d'analyse embarqué (voir
-// import/analyserLocal.ts, porté fidèlement depuis le serveur). Le PDF reste
-// analysé côté serveur (comme .doc, qui exige Word/COM et n'a jamais eu
-// d'équivalent local, même pour le compte super-admin).
+// Levée pour un format sans analyse locale. DOCX et PDF textuel sont pris en
+// charge sans réseau ; un PDF scanné nécessite un OCR, absent de l'application.
 export class ImportIndisponibleHorsLigne extends Error {
   constructor() {
-    super("L'analyse de ce format nécessite une connexion internet -- seul le .docx s'importe entièrement hors-ligne.");
+    super("Ce format n'est pas pris en charge hors ligne. Utilisez un DOCX ou un PDF contenant du texte sélectionnable.");
   }
 }
 
@@ -54,34 +50,25 @@ export function uploaderCarnetDistant(params: {
   return apiFetchForm<ReponseUpload>("/import/upload", form, { method: "POST" });
 }
 
-// Compte chorale (licence locale) : le .docx s'analyse toujours entièrement
-// en local (aucun appel réseau tenté). Le PDF n'a pas d'équivalent local
-// (voir ImportIndisponibleHorsLigne) -- ImportScreen.tsx ne propose de
-// toute façon que .docx/.pdf au sélecteur de fichiers pour ce rôle (.doc
-// retiré, sans équivalent local ni serveur viable sur mobile). Compte
-// super-admin : comportement réseau inchangé.
+// DOCX et PDF textuels sont analysés avant toute voie réseau, pour tous les
+// rôles : le contenu de ces carnets ne quitte jamais l'appareil.
 export async function uploaderCarnet(params: {
   uri: string; nom: string; mimeType: string;
   categorieDefaut: string; occasions: string; langue: string; auteur: string;
 }): Promise<ReponseUpload> {
   const extension = params.nom.toLowerCase().slice(params.nom.lastIndexOf("."));
+  const parametresLocaux = {
+    categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
+  };
+  if (extension === ".docx") return analyserDocxLocal(params.uri, params.nom, parametresLocaux);
+  if (extension === ".pdf") return analyserPdfLocal(params.uri, params.nom, parametresLocaux);
   if (await getLicenceLocale()) {
-    if (extension === ".docx") {
-      return analyserDocxLocal(params.uri, params.nom, {
-        categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
-      });
-    }
     throw new ImportIndisponibleHorsLigne();
   }
   try {
     return await uploaderCarnetDistant(params);
   } catch (erreur) {
     if (erreur instanceof ApiError) throw erreur;
-    if (extension === ".docx") {
-      return analyserDocxLocal(params.uri, params.nom, {
-        categorieDefaut: params.categorieDefaut, occasions: params.occasions, langue: params.langue, auteur: params.auteur,
-      });
-    }
     throw erreur;
   }
 }

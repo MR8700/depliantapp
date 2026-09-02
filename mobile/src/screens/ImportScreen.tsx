@@ -54,11 +54,8 @@ export default function ImportScreen() {
     getMeta().then((m) => setCategories(m.categories)).catch(() => {});
   }, []);
 
-  // .doc retiré du sélecteur : aucun équivalent d'analyse possible sur
-  // mobile (nécessite Word/COM, même côté serveur). PDF reste accepté --
-  // analysé côté serveur pour un compte super-admin, indisponible hors-ligne
-  // pour un compte chorale (voir api/import.ts::ImportIndisponibleHorsLigne),
-  // seul le .docx s'analysant entièrement en local.
+  // DOCX et PDF textuels sont analysés dans l'application. Un PDF scanné
+  // ne contient pas de texte : son import nécessiterait un OCR local.
   async function choisirFichier() {
     const resultat = await DocumentPicker.getDocumentAsync({
       type: ["application/pdf", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"],
@@ -317,7 +314,7 @@ export default function ImportScreen() {
         <Text style={styles.iconeFormat}>📄</Text>
         <View>
           <Text style={styles.titreFormat}>Formats acceptés</Text>
-          <Text style={styles.texteFormat}>DOCX (100% hors-ligne), PDF (connexion requise) -- max 50 Mo</Text>
+          <Text style={styles.texteFormat}>DOCX et PDF textuel (100 % hors-ligne) -- max 50 Mo</Text>
         </View>
       </View>
 

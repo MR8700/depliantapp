@@ -34,8 +34,8 @@ export const LARGEUR_COLONNE_P2_MM = (LARGEUR_UTILE_MM - 3 * ENTRE_COLONNES_MM) 
 export const X_GAUCHE_MM = X0_MM;
 export const X_DROITE_MM = X0_MM + LARGEUR_DEMI_MM + ENTRE_COLONNES_MM;
 
-// 2pt de padding ReportLab (Frame par défaut) converti en mm (1mm ≈ 2.8346pt).
-const PADDING_MM = 2.0 / 2.8346;
+// Retrait de sécurité entre le texte et chaque bordure : 0,5 pt.
+const PADDING_MM = 0.5 / 2.8346;
 
 export interface Zone {
   nom: string;

@@ -88,6 +88,7 @@ function stylesPourTaille(cache: Map<number, Record<NomStyle, StyleParagraphe>>,
 
 async function testerTaille(
   bridge: MeasurementBridgeHandle, unitesNonMesurees: UniteNonMesuree[], sections: Section[], grille: Grille, tailleTexteBase: number,
+  feuillet: Feuillet, config: Record<string, any>,
 ): Promise<{ stylesBase: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> }> {
   const cache = new Map<number, Record<NomStyle, StyleParagraphe>>();
   const stylesBase = stylesPourTaille(cache, tailleTexteBase);
@@ -96,7 +97,8 @@ async function testerTaille(
     // measure.ts) -- jamais au-delà du plafond, comme la taille de base
     // elle-même.
     const tailleEffective = u.supplement ? Math.min(TAILLE_TEXTE_PLAFOND, tailleTexteBase + u.supplement) : tailleTexteBase;
-    const style = stylesPourTaille(cache, tailleEffective)[u.nomStyle];
+    const styleBase = stylesPourTaille(cache, tailleEffective)[u.nomStyle];
+    const style = u.continuation ? { ...styleBase, marginTop: 0, marginBottom: 0 } : styleBase;
     return { html: u.html, style };
   });
   const hauteurs = await bridge.mesurer(demandes, LARGEUR_COLONNE_MM);
@@ -105,6 +107,20 @@ async function testerTaille(
   }));
   const engine = new LayoutEngine(grille.flowOrder);
   const assignation = engine.distribuer(unites, sections); // lève DepassementImpossible si ça ne rentre pas
+  if (feuillet.priere_active) {
+    const zonePriere = grille.toutes[feuillet.one_page_mode ? "C2" : "G2"];
+    const htmlPriere = construireContenuPriere(feuillet, stylesBase, config);
+    const [hauteurPriere] = await bridge.mesurer(
+      [{ html: htmlPriere, style: stylesBase.priere_corps }],
+      zonePriere.largeur - 2 * zonePriere.padding,
+    );
+    if (hauteurPriere > zonePriere.hauteur - 2 * zonePriere.padding) {
+      throw new DepassementImpossible(
+        "La prière pour le Burkina Faso ne tient pas dans sa colonne. Réduis la taille du texte ou raccourcis la prière.",
+        ["Prière pour le Burkina Faso"],
+      );
+    }
+  }
   return { stylesBase, assignation };
 }
 
@@ -143,7 +159,7 @@ export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: Measur
 
   if (feuillet.taille_texte_manuelle != null) {
     const taille = Math.max(TAILLE_TEXTE, Math.min(TAILLE_TEXTE_PLAFOND, feuillet.taille_texte_manuelle));
-    const { stylesBase, assignation } = await testerTaille(bridge, unitesNonMesurees, sections, grille, taille);
+    const { stylesBase, assignation } = await testerTaille(bridge, unitesNonMesurees, sections, grille, taille, feuillet, config);
     return assemblerEtEcrire(taille, stylesBase, assignation);
   }
 
@@ -151,7 +167,7 @@ export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: Measur
   for (const tailleTexte of ECHELLES_CORPS) {
     let resultat: { stylesBase: Record<NomStyle, StyleParagraphe>; assignation: Record<string, Unite[]> };
     try {
-      resultat = await testerTaille(bridge, unitesNonMesurees, sections, grille, tailleTexte);
+      resultat = await testerTaille(bridge, unitesNonMesurees, sections, grille, tailleTexte, feuillet, config);
     } catch (exc) {
       if (exc instanceof DepassementImpossible) { derniereErreur = exc; continue; }
       throw exc;

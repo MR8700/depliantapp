@@ -12,14 +12,13 @@ import AdministrationScreen from "../screens/AdministrationScreen";
 import AProposScreen from "../screens/AProposScreen";
 import DefinirPinScreen from "../screens/DefinirPinScreen";
 import { useIdentite } from "../context/IdentiteContext";
+import { useSession } from "../context/SessionContext";
 
 const Stack = createNativeStackNavigator();
 
-interface Props {
-  onDeconnecte: () => void;
-}
-
-export default function PlusStack({ onDeconnecte }: Props) {
+export default function PlusStack() {
+  const { estSuperAdmin } = useIdentite();
+  const { onDeconnecte } = useSession();
   // Même précaution qu'HomeTabs : une fonction fléchée inline ici
   // redémonterait l'écran Profil (et sa navigation interne) à chaque
   // re-rendu de PlusStack.
@@ -28,8 +27,6 @@ export default function PlusStack({ onDeconnecte }: Props) {
     ({ navigation }: any) => <DefinirPinScreen onTermine={() => navigation.goBack()} onAnnuler={() => navigation.goBack()} />,
     [],
   );
-  const { estSuperAdmin } = useIdentite();
-
   return (
     <Stack.Navigator>
       <Stack.Screen name="PlusMenu" component={PlusMenuScreen} options={{ title: "Plus" }} />

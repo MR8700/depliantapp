@@ -41,7 +41,11 @@ function resoudreChant(moment: MomentContenu, chantsParId: Map<number, Chant>): 
     const chant = chantsParId.get(moment.chant_id);
     if (chant) {
       let couplets = chant.couplets;
-      if (moment.couplet_limit != null) couplets = couplets.slice(0, moment.couplet_limit);
+      // Sans filtre, tous les couplets doivent être imprimés. Une valeur 0
+      // provenant d'un ancien brouillon représente aussi « sans filtre ».
+      if (typeof moment.couplet_limit === "number" && moment.couplet_limit > 0) {
+        couplets = couplets.slice(0, moment.couplet_limit);
+      }
       return { titre: chant.titre, refrain: chant.refrain, couplets, auteurCompositeur: chant.auteur || chant.compositeur || null, tailleTexteSupplement: supplement };
     }
     return {
