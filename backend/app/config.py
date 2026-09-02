@@ -332,18 +332,20 @@ def _lire_legacy_images_sqlite() -> dict:
 
 
 def _lire_legacy_config_postgres(conn) -> dict:
-    try:
-        row = conn.execute("SELECT donnees FROM parametres_legacy_singleton WHERE id = 1").fetchone()
-    except Exception:
+    # Ne jamais exécuter un SELECT sur une table absente : sous PostgreSQL,
+    # attraper l'exception en Python ne rétablit pas la transaction. Elle
+    # reste abortée et l'INSERT de migration qui suit échoue alors avec
+    # InFailedSqlTransaction. information_schema est sûr sur une base neuve.
+    if not db.table_columns(conn, "parametres_legacy_singleton"):
         return {}
+    row = conn.execute("SELECT donnees FROM parametres_legacy_singleton WHERE id = 1").fetchone()
     return json.loads(row["donnees"]) if row else {}
 
 
 def _lire_legacy_images_postgres(conn) -> dict:
-    try:
-        rows = conn.execute("SELECT slot, filename, content_type, donnees FROM medias_legacy_slot").fetchall()
-    except Exception:
+    if not db.table_columns(conn, "medias_legacy_slot"):
         return {}
+    rows = conn.execute("SELECT slot, filename, content_type, donnees FROM medias_legacy_slot").fetchall()
     return {r["slot"]: (bytes(r["donnees"]), r["content_type"], r["filename"]) for r in rows}
 
 

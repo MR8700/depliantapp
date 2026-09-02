@@ -162,7 +162,9 @@ CREATE TABLE IF NOT EXISTS chants (
 CREATE INDEX IF NOT EXISTS idx_chants_titre ON chants(titre);
 CREATE INDEX IF NOT EXISTS idx_chants_categorie ON chants(categorie);
 CREATE INDEX IF NOT EXISTS idx_chants_code_reference ON chants(code_reference);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chants_slug ON chants(slug);
+-- L'index slug est créé après l'ALTER TABLE plus bas : sur une ancienne
+-- base, CREATE TABLE IF NOT EXISTS ne rajoute pas la colonne et créer cet
+-- index ici annulerait toute la transaction de démarrage.
 
 -- Recherche plein texte (bien plus rapide que LIKE '%mot%' sur un gros volume de
 -- paroles) : table FTS5 tenue à jour automatiquement par triggers. N'existe que
@@ -501,7 +503,8 @@ CREATE TABLE IF NOT EXISTS chants (
 CREATE INDEX IF NOT EXISTS idx_chants_titre ON chants(titre);
 CREATE INDEX IF NOT EXISTS idx_chants_categorie ON chants(categorie);
 CREATE INDEX IF NOT EXISTS idx_chants_code_reference ON chants(code_reference);
-CREATE UNIQUE INDEX IF NOT EXISTS idx_chants_slug ON chants(slug);
+-- Même règle que ci-dessus pour l'ancien schéma Postgres : l'index est créé
+-- uniquement après l'ALTER TABLE qui garantit l'existence de `slug`.
 
 -- Comptes chorale : voir le commentaire équivalent dans SCHEMA_SQLITE.
 -- Définie avant `feuillets`/`medias`/`parametres` puisqu'ils la référencent.
@@ -715,6 +718,7 @@ ALTER TABLE feuillets ADD COLUMN IF NOT EXISTS visibilite TEXT NOT NULL DEFAULT 
 ALTER TABLE chant_medias ADD COLUMN IF NOT EXISTS statut TEXT NOT NULL DEFAULT 'validee';
 CREATE INDEX IF NOT EXISTS idx_chant_medias_statut ON chant_medias(statut);
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS slug TEXT;
+CREATE UNIQUE INDEX IF NOT EXISTS idx_chants_slug ON chants(slug);
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS mots_cles TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS references_bibliques TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS actif INTEGER NOT NULL DEFAULT 1;
