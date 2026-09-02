@@ -1,6 +1,7 @@
 import * as Crypto from "expo-crypto";
 import { apiFetch } from "./client";
-import { getAppareilId, setAppareilId } from "../storage/secureStore";
+import { getAppareilId, setAppareilId, getLicenceLocale, getAppareilsAutorises } from "../storage/secureStore";
+import { compterFeuilletsProduits } from "../storage/feuilletsLocal";
 
 export interface Licence {
   id: number;
@@ -84,4 +85,23 @@ export async function idAppareil(): Promise<string> {
   const nouveau = Crypto.randomUUID();
   await setAppareilId(nouveau);
   return nouveau;
+}
+
+/** Envoie uniquement les compteurs demandés pour les statistiques admin. */
+export async function synchroniserUsageChorale(nomAppareil?: string | null): Promise<void> {
+  const licence = await getLicenceLocale();
+  if (!licence) return;
+  const [feuillets, appareilId, autorises] = await Promise.all([
+    compterFeuilletsProduits(), idAppareil(), getAppareilsAutorises(),
+  ]);
+  await apiFetch("/licences/synchroniser-usage", {
+    method: "POST",
+    body: {
+      feuillets_produits: feuillets,
+      appareils: [
+        { appareil_id: appareilId, appareil_nom: nomAppareil ?? "Appareil maître" },
+        ...autorises.map((a) => ({ appareil_id: a.appareilId, appareil_nom: a.appareilNom })),
+      ],
+    },
+  });
 }

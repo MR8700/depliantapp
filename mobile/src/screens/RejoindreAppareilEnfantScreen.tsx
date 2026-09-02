@@ -45,7 +45,7 @@ export default function RejoindreAppareilEnfantScreen({ onRejoint, onAnnuler }: 
         Alert.alert("QR invalide", "Ce QR a été généré pour un autre appareil.");
         return;
       }
-      const payload = verifierLicenceBlob(retour.licenceBlob);
+      const payload = verifierLicenceBlob(retour.licenceBlob, retour.clePublique);
       if (!payload) {
         Alert.alert("Licence invalide", "La signature de la licence transmise par l'appareil maître n'est pas valide.");
         return;
@@ -60,7 +60,7 @@ export default function RejoindreAppareilEnfantScreen({ onRejoint, onAnnuler }: 
         Alert.alert("Horloge incohérente", "La date de cet appareil semble avoir reculé. Corrige-la avant de continuer.");
         return;
       }
-      await setLicenceLocale(retour.licenceBlob, "enfant");
+      await setLicenceLocale(retour.licenceBlob, "enfant", retour.clePublique ?? undefined);
       await setAutorisationAppareil(retour.autorisation);
       onRejoint();
     } finally {

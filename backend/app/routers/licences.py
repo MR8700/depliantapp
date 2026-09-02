@@ -62,9 +62,26 @@ class VerificationPayload(BaseModel):
     jeton: str
 
 
+class SynchronisationUsage(BaseModel):
+    feuillets_produits: int = 0
+    appareils: list[dict] = []
+
+
 @router.get("")
 def lister(chorale_id: int | None = None, _identite: auth.Identite = Depends(require_superadmin)):
     return licences_module.lister_licences(chorale_id)
+
+
+@router.post("/synchroniser-usage")
+def synchroniser_usage(payload: SynchronisationUsage, request: Request, identite: auth.Identite = Depends(identite_courante)):
+    if identite.type != "chorale":
+        raise HTTPException(status_code=403, detail="Réservé à une chorale")
+    try:
+        return licences_module.synchroniser_usage(
+            identite.compte_id, request.headers.get("x-licence-id", ""), payload.feuillets_produits, payload.appareils,
+        )
+    except licences_module.LicenceInvalide as erreur:
+        raise HTTPException(status_code=401, detail=str(erreur))
 
 
 @router.post("")

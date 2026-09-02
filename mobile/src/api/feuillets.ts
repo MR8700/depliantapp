@@ -8,6 +8,7 @@ import {
   compterFeuilletsProduits, incrementerFeuilletsProduits,
 } from "../storage/feuilletsLocal";
 import { getLicenceLocale } from "../storage/secureStore";
+import { synchroniserUsageChorale } from "./licences";
 
 // Miroir de backend/app/licences.py::QuotaFeuilletsAtteint -- avant ce
 // contrôle, quotaFeuillets (signé dans la licence, affiché en Réglages)
@@ -76,6 +77,7 @@ export async function creerFeuillet(payload: FeuilletCreate): Promise<Feuillet> 
     }
     const cree = await enregistrerCreationLocale(payload);
     await incrementerFeuilletsProduits();
+    synchroniserUsageChorale().catch(() => {});
     return cree;
   }
   try {

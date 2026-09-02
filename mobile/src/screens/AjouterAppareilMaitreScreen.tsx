@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import QRCode from "react-native-qrcode-svg";
-import { getLicenceLocale, ajouterAppareilAutorise, getAppareilsAutorises, AppareilAutorise } from "../storage/secureStore";
+import { getLicenceLocale, getLicenceClePublique, ajouterAppareilAutorise, getAppareilsAutorises, AppareilAutorise } from "../storage/secureStore";
 import { calculerAutorisationAppareil, decoderPaireAppareil, encoderRetourMaitre } from "../licence/appareils";
+import { synchroniserUsageChorale } from "../api/licences";
 import Carte from "../components/Carte";
 import LecteurQR from "../components/LecteurQR";
 
@@ -17,17 +18,19 @@ export default function AjouterAppareilMaitreScreen() {
   const [licenceUid, setLicenceUid] = useState<string | null>(null);
   const [seed, setSeed] = useState<string | null>(null);
   const [licenceBlob, setLicenceBlob] = useState<string | null>(null);
+  const [clePublique, setClePublique] = useState<string | null>(null);
   const [devMax, setDevMax] = useState(1);
   const [appareilsAutorises, setAppareilsAutorises] = useState<AppareilAutorise[]>([]);
   const [retourQr, setRetourQr] = useState<string | null>(null);
   const [scanTraite, setScanTraite] = useState(false);
 
   async function charger() {
-    const [licence, liste] = await Promise.all([getLicenceLocale(), getAppareilsAutorises()]);
+    const [licence, liste, cle] = await Promise.all([getLicenceLocale(), getAppareilsAutorises(), getLicenceClePublique()]);
     if (!licence) return;
     setLicenceUid(licence.payload.licenceUid);
     setSeed(licence.payload.seed);
     setLicenceBlob(licence.blob);
+    setClePublique(cle);
     setDevMax(licence.payload.devMax);
     setAppareilsAutorises(liste);
   }
@@ -55,8 +58,9 @@ export default function AjouterAppareilMaitreScreen() {
       if (!dejaAutorise) {
         await ajouterAppareilAutorise({ appareilId: paire.appareilId, appareilNom: paire.appareilNom, autoriseLe: Math.floor(Date.now() / 1000) });
         setAppareilsAutorises(await getAppareilsAutorises());
+        synchroniserUsageChorale().catch(() => {});
       }
-      setRetourQr(encoderRetourMaitre({ licenceBlob, appareilId: paire.appareilId, autorisation }));
+      setRetourQr(encoderRetourMaitre({ licenceBlob, clePublique, appareilId: paire.appareilId, autorisation }));
     } finally {
       setScanTraite(false);
     }

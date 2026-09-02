@@ -26,7 +26,7 @@ interface Options {
  */
 export async function verifierAccesReseau(path: string): Promise<void> {
   const licence = await getLicenceLocale();
-  if (licence && !path.startsWith("/messages")) {
+  if (licence && !path.startsWith("/messages") && path !== "/licences/synchroniser-usage") {
     throw new ApiError(0, "Cette fonction est disponible localement pour la chorale et ne contacte pas le serveur.");
   }
 }

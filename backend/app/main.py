@@ -81,7 +81,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
         # déclenché UNIQUEMENT par la présence de l'en-tête dédié -- toute
         # requête sans cet en-tête (web, ou mobile super-admin) retombe sur
         # la résolution identite_depuis_requete normale, sans aucun impact.
-        if path.startswith("/messages") and path != "/messages/chorales" and "x-chorale-proof" in request.headers:
+        if (path.startswith("/messages") and path != "/messages/chorales" or path == "/licences/synchroniser-usage") and "x-chorale-proof" in request.headers:
             from . import messages_auth
             identite_chorale = messages_auth.identite_depuis_preuve_chorale(request)
             if not identite_chorale:

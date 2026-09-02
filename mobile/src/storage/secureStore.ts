@@ -69,6 +69,10 @@ export async function setLicenceLocale(blob: string, role: RoleLicence, clePubli
   ]);
 }
 
+export async function getLicenceClePublique(): Promise<string | null> {
+  return SecureStore.getItemAsync(CLE_LICENCE_CLE_PUBLIQUE);
+}
+
 /** Ne touche PAS CLE_HORODATAGE_PLAFOND -- le plafond anti-recul d'horloge
  * doit survivre à une réactivation (voir horlogeGarde.ts), sinon il suffit
  * d'effacer/réactiver pour le contourner. */

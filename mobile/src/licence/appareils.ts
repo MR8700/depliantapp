@@ -27,6 +27,7 @@ export interface PaireQrAppareil {
 
 export interface RetourQrMaitre {
   licenceBlob: string;
+  clePublique?: string | null;
   appareilId: string;
   autorisation: string;
 }
@@ -55,7 +56,7 @@ export function decoderRetourMaitre(donnees: string): RetourQrMaitre | null {
     if (typeof objet?.licenceBlob !== "string" || typeof objet?.appareilId !== "string" || typeof objet?.autorisation !== "string") {
       return null;
     }
-    return { licenceBlob: objet.licenceBlob, appareilId: objet.appareilId, autorisation: objet.autorisation };
+    return { licenceBlob: objet.licenceBlob, clePublique: typeof objet.clePublique === "string" ? objet.clePublique : null, appareilId: objet.appareilId, autorisation: objet.autorisation };
   } catch {
     return null;
   }

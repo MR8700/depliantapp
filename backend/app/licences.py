@@ -225,6 +225,54 @@ def lister_activations(licence_id: int) -> list[dict]:
         return [dict(r) for r in rows]
 
 
+def synchroniser_usage(chorale_id: int, licence_uid: str, feuillets_produits: int, appareils: list[dict]) -> dict:
+    """Remonte les métriques d'administration sans transférer les données métier."""
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM licences WHERE chorale_id = ? AND licence_uid = ? AND statut = 'active'",
+            (chorale_id, licence_uid),
+        ).fetchone()
+        if not row:
+            raise LicenceInvalide("Licence inconnue ou révoquée")
+        licence = dict(row)
+        total = max(int(licence.get("feuillets_produits") or 0), max(0, feuillets_produits))
+        horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+        conn.execute(
+            f"UPDATE licences SET feuillets_produits = ?, updated_at = {horodatage} WHERE id = ?",
+            (total, licence["id"]),
+        )
+        for appareil in appareils[:50]:
+            appareil_id = str(appareil.get("appareil_id") or "").strip()
+            if not appareil_id or len(appareil_id) > 128:
+                continue
+            nom = appareil.get("appareil_nom")
+            existe = conn.execute(
+                "SELECT id, revoque_le FROM licence_activations WHERE licence_id = ? AND appareil_id = ?",
+                (licence["id"], appareil_id),
+            ).fetchone()
+            if existe:
+                # Une révocation décidée par l'admin ne doit jamais être annulée
+                # par une remontée automatique de statistiques.
+                if not existe["revoque_le"]:
+                    conn.execute(
+                        f"UPDATE licence_activations SET appareil_nom = ?, dernier_contact_le = {horodatage} WHERE id = ?",
+                        (str(nom)[:160] if nom else None, existe["id"]),
+                    )
+            else:
+                actifs = conn.execute(
+                    "SELECT COUNT(*) AS n FROM licence_activations WHERE licence_id = ? AND revoque_le IS NULL",
+                    (licence["id"],),
+                ).fetchone()["n"]
+                if actifs >= licence["max_appareils"]:
+                    continue
+                insert_returning_id(
+                    conn,
+                    "INSERT INTO licence_activations (licence_id, appareil_id, appareil_nom) VALUES (?, ?, ?)",
+                    (licence["id"], appareil_id, str(nom)[:160] if nom else None),
+                )
+    return {"feuillets_produits": total}
+
+
 def revoquer_licence(licence_id: int) -> None:
     """Marque la licence révoquée pour le bookkeeping/affichage admin
     uniquement -- SANS EFFET IMMÉDIAT sur un appareil chorale déjà activé,

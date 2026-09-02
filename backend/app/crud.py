@@ -1140,7 +1140,6 @@ def get_statistiques() -> dict:
     pures sur les tables existantes, aucune donnée dupliquée/mise en cache."""
     with get_connection() as conn:
         total_chants = conn.execute("SELECT COUNT(*) AS n FROM chants").fetchone()["n"]
-        total_feuillets = conn.execute("SELECT COUNT(*) AS n FROM feuillets").fetchone()["n"]
         total_chorales = conn.execute("SELECT COUNT(*) AS n FROM chorales").fetchone()["n"]
 
         chants_par_categorie = [
@@ -1149,13 +1148,27 @@ def get_statistiques() -> dict:
             ).fetchall()
         ]
 
-        feuillets_par_chorale = [
-            dict(r) for r in conn.execute(
-                "SELECT c.nom AS chorale_nom, COUNT(f.id) AS nombre, MAX(f.created_at) AS dernier "
-                "FROM chorales c LEFT JOIN feuillets f ON f.chorale_id = c.id "
-                "GROUP BY c.id, c.nom ORDER BY nombre DESC"
+        # Les feuillets d'une chorale sont produits et conservés localement.
+        # Le compteur monotone remonté via /licences/synchroniser-usage est
+        # donc la source statistique à comparer au nombre historique en base.
+        distants_par_chorale = {
+            r["chorale_id"]: dict(r) for r in conn.execute(
+                "SELECT chorale_id, COUNT(*) AS nombre, MAX(created_at) AS dernier FROM feuillets GROUP BY chorale_id"
             ).fetchall()
-        ]
+        }
+        produits_par_chorale = {
+            r["chorale_id"]: int(r["nombre"] or 0) for r in conn.execute(
+                "SELECT chorale_id, MAX(feuillets_produits) AS nombre FROM licences "
+                "WHERE chorale_id IS NOT NULL GROUP BY chorale_id"
+            ).fetchall()
+        }
+        feuillets_par_chorale = []
+        for chorale in conn.execute("SELECT id, nom FROM chorales ORDER BY nom").fetchall():
+            distant = distants_par_chorale.get(chorale["id"], {})
+            nombre = max(int(distant.get("nombre", 0)), produits_par_chorale.get(chorale["id"], 0))
+            feuillets_par_chorale.append({"chorale_nom": chorale["nom"], "nombre": nombre, "dernier": distant.get("dernier")})
+        feuillets_par_chorale.sort(key=lambda f: f["nombre"], reverse=True)
+        total_feuillets = sum(f["nombre"] for f in feuillets_par_chorale)
 
         demandes_en_attente = conn.execute(
             "SELECT COUNT(*) AS n FROM demandes_suppression WHERE statut = 'en_attente'"
