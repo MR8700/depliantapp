@@ -26,7 +26,10 @@ interface Options {
  */
 export async function verifierAccesReseau(path: string): Promise<void> {
   const licence = await getLicenceLocale();
-  if (licence && !path.startsWith("/messages") && path !== "/licences/synchroniser-usage") {
+  // Exception minimale : le numéro public de l'administrateur est demandé
+  // uniquement au tap sur « Contacter », puis mis en cache. Aucun contenu de
+  // chorale ni identifiant de licence ne quitte l'appareil.
+  if (licence && !path.startsWith("/messages") && path !== "/licences/synchroniser-usage" && path !== "/parametres/contact-admin") {
     throw new ApiError(0, "Cette fonction est disponible localement pour la chorale et ne contacte pas le serveur.");
   }
 }

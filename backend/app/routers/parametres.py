@@ -32,6 +32,12 @@ def read_global_parametres(identite: auth.Identite = Depends(identite_courante))
     return config.get_config(0)
 
 
+@router.get("/contact-admin")
+def read_contact_admin():
+    """Contact public minimal, nécessaire avant l'activation d'une licence."""
+    return {"whatsapp": config.get_config(0).get("contact_whatsapp_admin", "")}
+
+
 
 # --- Pool partagé de médias (logos, bannières) : voir config.py -----------
 

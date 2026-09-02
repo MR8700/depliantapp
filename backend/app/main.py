@@ -41,7 +41,7 @@ _CHEMINS_PUBLICS = {
     # Activation/vérification de licence mobile : appelées par l'app React
     # Native AVANT tout login (voir app/licences.py) -- protégées par leur
     # propre throttling anti brute-force, pas par la session web.
-    "/licences/activer", "/licences/verifier",
+    "/licences/activer", "/licences/verifier", "/parametres/contact-admin",
 }
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
 # doit encore être changé (sinon impossible de le changer...).

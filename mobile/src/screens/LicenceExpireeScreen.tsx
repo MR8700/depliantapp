@@ -1,13 +1,11 @@
 import { useState } from "react";
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
+import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import { verifierLicenceBlob } from "../licence/verification";
 import { licenceExpiree } from "../licence/expiration";
 import { setLicenceLocale, RoleLicence } from "../storage/secureStore";
 import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
-
-// Même numéro que ActivationScreen.tsx -- wa.me n'accepte pas le "+".
-const NUMERO_WHATSAPP_LICENCE = "22652045008";
+import { contacterAdminWhatsApp } from "../utils/contactAdmin";
 
 interface Props {
   /** Conserve le rôle (maitre/enfant) déjà établi sur cet appareil -- une
@@ -26,15 +24,7 @@ export default function LicenceExpireeScreen({ roleActuel, onRenouvelee }: Props
   const [enCours, setEnCours] = useState(false);
 
   async function contacterAdmin() {
-    const texte = encodeURIComponent("Bonjour, ma licence DepliantApp a expiré, je souhaite la renouveler.");
-    const urlApp = `whatsapp://send?phone=${NUMERO_WHATSAPP_LICENCE}&text=${texte}`;
-    const urlWeb = `https://wa.me/${NUMERO_WHATSAPP_LICENCE}?text=${texte}`;
-    try {
-      const supporteApp = await Linking.canOpenURL(urlApp);
-      await Linking.openURL(supporteApp ? urlApp : urlWeb);
-    } catch {
-      Alert.alert("WhatsApp indisponible", `Contacte l'administrateur directement au +${NUMERO_WHATSAPP_LICENCE}.`);
-    }
+    await contacterAdminWhatsApp("Bonjour, ma licence DepliantApp a expiré, je souhaite la renouveler.");
   }
 
   async function activerNouveauCode() {

@@ -590,7 +590,17 @@ export default function AdministrationScreen() {
       {onglet === "apropos" ? (
         gotChargement ? <ActivityIndicator /> : (
           <>
-            {Object.entries(gotConfig).filter(([cle]) => !["chorale", "paroisse", "contact", "annonce", "priere_defaut", "logo_gauche_media_id", "logo_droit_media_id", "banniere_bas_media_id", "chants_publication_auto"].includes(cle)).map(([cle, valeur]) => (
+            <Text style={styles.section}>Contact des chorales</Text>
+            <Text style={styles.sousTitre}>Ce numéro est synchronisé sur le serveur et utilisé par les boutons WhatsApp des chorales.</Text>
+            <Text style={styles.label}>Numéro WhatsApp administrateur (format international)</Text>
+            <TextInput
+              style={styles.champ}
+              value={String(gotConfig.contact_whatsapp_admin ?? "")}
+              onChangeText={(v) => majChampGot("contact_whatsapp_admin", v)}
+              keyboardType="phone-pad"
+              placeholder="Ex. 22652045008"
+            />
+            {Object.entries(gotConfig).filter(([cle]) => !["chorale", "paroisse", "contact", "annonce", "priere_defaut", "logo_gauche_media_id", "logo_droit_media_id", "banniere_bas_media_id", "chants_publication_auto", "contact_whatsapp_admin"].includes(cle)).map(([cle, valeur]) => (
               <View key={cle}>
                 <Text style={styles.label}>{cle}</Text>
                 <TextInput

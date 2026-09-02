@@ -4,7 +4,7 @@ import MeasurementBridge, { MeasurementBridgeHandle } from "../components/Measur
 import { genererPdfFeuilletLocal } from "../render/genererPdfLocal";
 import { lireFeuilletsLocaux, compterFeuilletsProduits } from "../storage/feuilletsLocal";
 import {
-  ActivityIndicator, Alert, FlatList, Image, Linking, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
+  ActivityIndicator, Alert, FlatList, Image, Modal, Pressable, RefreshControl, ScrollView, StyleSheet, Text, TextInput, View,
 } from "react-native";
 import * as ImagePicker from "expo-image-picker";
 import * as FileSystem from "expo-file-system/legacy";
@@ -24,10 +24,7 @@ import { pinDefini, effacerPin } from "../licence/pinChorale";
 import { useIdentite } from "../context/IdentiteContext";
 import PdfViewer from "../components/PdfViewer";
 import Bouton from "../components/Bouton";
-
-// Même numéro que le bouton "Payer une licence" de l'écran d'activation
-// (ActivationScreen.tsx) -- wa.me n'accepte pas le "+".
-const NUMERO_WHATSAPP_LICENCE = "22652045008";
+import { contacterAdminWhatsApp } from "../utils/contactAdmin";
 
 const SLOTS: { cle: ImageSlot; label: string }[] = [
   { cle: "logo_gauche", label: "Logo gauche" },
@@ -136,15 +133,7 @@ export default function ReglagesScreen() {
   }
 
   async function contacterAdminWhatsapp() {
-    const texte = encodeURIComponent("Bonjour, je souhaite gérer mon abonnement DepliantApp.");
-    const urlApp = `whatsapp://send?phone=${NUMERO_WHATSAPP_LICENCE}&text=${texte}`;
-    const urlWeb = `https://wa.me/${NUMERO_WHATSAPP_LICENCE}?text=${texte}`;
-    try {
-      const supporteApp = await Linking.canOpenURL(urlApp);
-      await Linking.openURL(supporteApp ? urlApp : urlWeb);
-    } catch {
-      Alert.alert("WhatsApp indisponible", `Contacte l'administrateur directement au +${NUMERO_WHATSAPP_LICENCE}.`);
-    }
+    await contacterAdminWhatsApp("Bonjour, je souhaite gérer mon abonnement DepliantApp.");
   }
 
   function gererMonAbonnement() {

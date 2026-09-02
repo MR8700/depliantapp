@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Alert, KeyboardAvoidingView, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
+import { Alert, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput } from "react-native";
 import * as Clipboard from "expo-clipboard";
 import { verifierLicenceBlob } from "../licence/verification";
 import { verifierHorlogeEtMettreAJour } from "../licence/horlogeGarde";
@@ -8,6 +8,7 @@ import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
 import LecteurQR from "../components/LecteurQR";
 import { validerLicenceBlob } from "../api/licences";
+import { contacterAdminWhatsApp } from "../utils/contactAdmin";
 
 interface Props {
   onActivee: () => void;
@@ -15,21 +16,10 @@ interface Props {
   onDemandeRejoindreAppareil: () => void;
 }
 
-// Numéro WhatsApp de vente de licences -- wa.me n'accepte pas le "+", juste
-// l'indicatif pays + numéro.
-const NUMERO_WHATSAPP_LICENCE = "22652045008";
 const MESSAGE_WHATSAPP_LICENCE = "Bonjour, je souhaite payer une licence DepliantApp pour ma chorale.";
 
 async function contacterPourLicence() {
-  const texte = encodeURIComponent(MESSAGE_WHATSAPP_LICENCE);
-  const urlApp = `whatsapp://send?phone=${NUMERO_WHATSAPP_LICENCE}&text=${texte}`;
-  const urlWeb = `https://wa.me/${NUMERO_WHATSAPP_LICENCE}?text=${texte}`;
-  try {
-    const supporteApp = await Linking.canOpenURL(urlApp);
-    await Linking.openURL(supporteApp ? urlApp : urlWeb);
-  } catch {
-    Alert.alert("WhatsApp indisponible", `Contactez-nous directement au +${NUMERO_WHATSAPP_LICENCE} pour payer une licence.`);
-  }
+  await contacterAdminWhatsApp(MESSAGE_WHATSAPP_LICENCE);
 }
 
 // Activation 100% locale ("essence vivante") : le code/QR fourni par l'admin

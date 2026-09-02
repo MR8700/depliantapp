@@ -70,6 +70,7 @@ _SLOT_TYPE = {"logo_gauche": "logo", "logo_droit": "logo", "banniere_bas": "bann
 # routers/chorales.py) plutôt que codé en dur ici, qui n'a plus de sens
 # unique dès lors que plusieurs chorales partagent l'application.
 DEFAULTS = {
+    "contact_whatsapp_admin": "22652045008",
     "chorale": "",
     "paroisse": "",
     "contact": "",
