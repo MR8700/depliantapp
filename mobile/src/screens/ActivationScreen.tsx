@@ -7,6 +7,7 @@ import { setLicenceLocale } from "../storage/secureStore";
 import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
 import LecteurQR from "../components/LecteurQR";
+import { validerLicenceBlob } from "../api/licences";
 
 interface Props {
   onActivee: () => void;
@@ -51,7 +52,14 @@ export default function ActivationScreen({ onActivee, onDemandeConnexionAdmin, o
     if (!nettoye) return;
     setEnCours(true);
     try {
-      const payload = verifierLicenceBlob(nettoye);
+      let clePublique: string | undefined;
+      let payload = verifierLicenceBlob(nettoye);
+      if (!payload) {
+        try {
+          clePublique = (await validerLicenceBlob(nettoye)).cle_publique;
+          payload = verifierLicenceBlob(nettoye, clePublique);
+        } catch {}
+      }
       if (!payload) {
         Alert.alert("Code invalide", "Ce code de licence n'est pas reconnu -- vérifie qu'il a été copié en entier, sans espace ajouté.");
         return;
@@ -64,7 +72,7 @@ export default function ActivationScreen({ onActivee, onDemandeConnexionAdmin, o
         );
         return;
       }
-      await setLicenceLocale(nettoye, "maitre");
+      await setLicenceLocale(nettoye, "maitre", clePublique);
       onActivee();
     } finally {
       setEnCours(false);

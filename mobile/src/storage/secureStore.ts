@@ -13,6 +13,7 @@ const CLE_JETON_SESSION = "depliantapp.jeton_session";
 
 const CLE_LICENCE_BLOB = "depliantapp.licence_blob";
 const CLE_LICENCE_ROLE = "depliantapp.licence_role";
+const CLE_LICENCE_CLE_PUBLIQUE = "depliantapp.licence_cle_publique";
 const CLE_AUTORISATION_APPAREIL = "depliantapp.autorisation_appareil";
 const CLE_APPAREILS_AUTORISES = "depliantapp.appareils_autorises";
 const CLE_HORODATAGE_PLAFOND = "depliantapp.horodatage_plafond";
@@ -49,20 +50,22 @@ export interface AppareilAutorise {
  * valeur corrompue ou falsifiée dans le stockage local doit être détectée
  * immédiatement, pas seulement à l'activation initiale. */
 export async function getLicenceLocale(): Promise<LicenceLocale | null> {
-  const [blob, role] = await Promise.all([
+  const [blob, role, clePublique] = await Promise.all([
     SecureStore.getItemAsync(CLE_LICENCE_BLOB),
     SecureStore.getItemAsync(CLE_LICENCE_ROLE),
+    SecureStore.getItemAsync(CLE_LICENCE_CLE_PUBLIQUE),
   ]);
   if (!blob || !role) return null;
-  const payload = verifierLicenceBlob(blob);
+  const payload = verifierLicenceBlob(blob, clePublique);
   if (!payload) return null;
   return { payload, blob, role: role as RoleLicence };
 }
 
-export async function setLicenceLocale(blob: string, role: RoleLicence): Promise<void> {
+export async function setLicenceLocale(blob: string, role: RoleLicence, clePublique?: string): Promise<void> {
   await Promise.all([
     SecureStore.setItemAsync(CLE_LICENCE_BLOB, blob),
     SecureStore.setItemAsync(CLE_LICENCE_ROLE, role),
+    ...(clePublique ? [SecureStore.setItemAsync(CLE_LICENCE_CLE_PUBLIQUE, clePublique)] : []),
   ]);
 }
 
@@ -73,6 +76,7 @@ export async function effacerLicenceLocale(): Promise<void> {
   await Promise.all([
     SecureStore.deleteItemAsync(CLE_LICENCE_BLOB),
     SecureStore.deleteItemAsync(CLE_LICENCE_ROLE),
+    SecureStore.deleteItemAsync(CLE_LICENCE_CLE_PUBLIQUE),
     SecureStore.deleteItemAsync(CLE_AUTORISATION_APPAREIL),
     SecureStore.deleteItemAsync(CLE_APPAREILS_AUTORISES),
   ]);

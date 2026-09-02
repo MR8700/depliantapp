@@ -20,6 +20,7 @@ from typing import Optional
 
 from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
+from .db import get_connection
 
 # Valeur par défaut à remplacer par la clé publique réellement générée sur
 # l'appareil admin (écran "Clé d'administration" côté mobile, rôle super) --
@@ -30,7 +31,33 @@ _CLE_PUBLIQUE_B64_PAR_DEFAUT = "REMPLACER_PAR_LA_CLE_PUBLIQUE_ADMIN_BASE64"
 
 
 def _cle_publique_b64() -> str:
-    return os.environ.get("DEPLIANTAPP_LICENCE_CLE_PUBLIQUE", _CLE_PUBLIQUE_B64_PAR_DEFAUT)
+    configured = os.environ.get("DEPLIANTAPP_LICENCE_CLE_PUBLIQUE")
+    if configured:
+        return configured
+    with get_connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS licence_cle_publique (id INTEGER PRIMARY KEY, cle_publique TEXT NOT NULL)")
+        row = conn.execute("SELECT cle_publique FROM licence_cle_publique WHERE id = 1").fetchone()
+    return row["cle_publique"] if row else _CLE_PUBLIQUE_B64_PAR_DEFAUT
+
+
+def enregistrer_cle_publique(cle_publique_b64: str) -> None:
+    """Ancre la clé de signature choisie par le super-admin dans la base."""
+    try:
+        if len(base64.b64decode(cle_publique_b64, validate=True)) != 32:
+            raise ValueError
+    except ValueError as exc:
+        raise ValueError("Clé publique Ed25519 invalide") from exc
+    with get_connection() as conn:
+        conn.execute("CREATE TABLE IF NOT EXISTS licence_cle_publique (id INTEGER PRIMARY KEY, cle_publique TEXT NOT NULL)")
+        row = conn.execute("SELECT cle_publique FROM licence_cle_publique WHERE id = 1").fetchone()
+        if row and row["cle_publique"] != cle_publique_b64:
+            raise ValueError("Une autre clé de licence est déjà enregistrée sur le serveur")
+        if not row:
+            conn.execute("INSERT INTO licence_cle_publique (id, cle_publique) VALUES (1, ?)", (cle_publique_b64,))
+
+
+def cle_publique_active() -> str:
+    return _cle_publique_b64()
 
 
 def _b64url_decode(valeur: str) -> bytes:

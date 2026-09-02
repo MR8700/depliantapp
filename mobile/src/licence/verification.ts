@@ -22,12 +22,13 @@ export const CLE_PUBLIQUE_ADMIN_B64 = "REMPLACER_PAR_LA_CLE_PUBLIQUE_ADMIN_BASE6
  * publique admin pas encore configurée) -- ne lève jamais d'exception, cet
  * appel doit pouvoir tourner à chaque ouverture de l'app sans jamais la
  * faire planter sur une donnée corrompue. */
-export function verifierLicenceBlob(blob: string): LicencePayload | null {
-  if (!CLE_PUBLIQUE_ADMIN_B64 || CLE_PUBLIQUE_ADMIN_B64 === "REMPLACER_PAR_LA_CLE_PUBLIQUE_ADMIN_BASE64") return null;
+export function verifierLicenceBlob(blob: string, clePubliqueRuntime?: string | null): LicencePayload | null {
+  const cleConfiguree = clePubliqueRuntime || CLE_PUBLIQUE_ADMIN_B64;
+  if (!cleConfiguree || cleConfiguree === "REMPLACER_PAR_LA_CLE_PUBLIQUE_ADMIN_BASE64") return null;
   const decompose = decomposerBlob(blob);
   if (!decompose) return null;
   try {
-    const clePublique = base64Decode(CLE_PUBLIQUE_ADMIN_B64);
+    const clePublique = base64Decode(cleConfiguree);
     if (clePublique.length !== 32) return null;
     if (!ed.verify(decompose.signature, decompose.payloadOctets, clePublique)) return null;
   } catch {

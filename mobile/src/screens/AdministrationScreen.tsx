@@ -310,7 +310,7 @@ export default function AdministrationScreen() {
       setConfigCible(null);
       setLicenceEmise(blob);
       try {
-        if (creation) await creerLicence(blob);
+        if (creation) await creerLicence(blob, (await genererCleAdmin()).clePubliqueB64);
         else await configurerLicence(configCible.licence!.id, blob);
         await charger();
       } catch {

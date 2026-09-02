@@ -38,8 +38,12 @@ export function listerLicences(choraleId?: number): Promise<Licence[]> {
 // rien, il vérifie (défense en profondeur) et enregistre le bookkeeping
 // (voir backend/app/licences.py::creer_licence). La validité de la licence
 // côté chorale ne dépend jamais de la réussite de cet appel réseau.
-export function creerLicence(code: string): Promise<Licence> {
-  return apiFetch<Licence>("/licences", { method: "POST", body: { code } });
+export function creerLicence(code: string, clePublique: string): Promise<Licence> {
+  return apiFetch<Licence>("/licences", { method: "POST", body: { code, cle_publique: clePublique } });
+}
+
+export function validerLicenceBlob(code: string): Promise<{ cle_publique: string }> {
+  return apiFetch<{ cle_publique: string }>("/licences/valider-blob", { method: "POST", body: { code }, authentifie: false });
 }
 
 // Reconfiguration complète d'une licence déjà créée : `code` est un NOUVEAU

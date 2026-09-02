@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
 
 from .. import auth
-from .. import licences as licences_module
+from .. import licences as licences_module, licence_signature
 from ..deps import identite_courante, require_superadmin
 
 router = APIRouter(prefix="/licences", tags=["licences"])
@@ -39,6 +39,7 @@ class LicenceCreation(BaseModel):
     # ce serveur ne fait que vérifier la signature et enregistrer le
     # bookkeeping (voir licences.py::creer_licence).
     code: str
+    cle_publique: str
 
 
 class LicenceConfiguration(BaseModel):
@@ -69,9 +70,21 @@ def lister(chorale_id: int | None = None, _identite: auth.Identite = Depends(req
 @router.post("")
 def creer(payload: LicenceCreation, _identite: auth.Identite = Depends(require_superadmin)):
     try:
+        licence_signature.enregistrer_cle_publique(payload.cle_publique)
         return licences_module.creer_licence(payload.code)
-    except licences_module.LicenceInvalide as erreur:
+    except (licences_module.LicenceInvalide, ValueError) as erreur:
         raise HTTPException(status_code=400, detail=str(erreur))
+
+
+class ValidationBlob(BaseModel):
+    code: str
+
+
+@router.post("/valider-blob")
+def valider_blob(payload: ValidationBlob):
+    if not licence_signature.verifier_blob(payload.code.strip()):
+        raise HTTPException(status_code=401, detail="Licence non reconnue ou non enregistrée")
+    return {"cle_publique": licence_signature.cle_publique_active()}
 
 
 @router.put("/{licence_id}")
