@@ -8,6 +8,6 @@
 // LAN. Sans adb reverse (Wi-Fi uniquement), remplace temporairement par l'IP
 // LAN de la machine qui fait tourner `uvicorn`.
 const URL_DEV = "http://localhost:8010";
-const URL_PRODUCTION = "https://depliantapp.onrender.com";
+const URL_PRODUCTION = "https://depliantapp-cig1.onrender.com";
 
 export const API_BASE_URL = __DEV__ ? URL_DEV : URL_PRODUCTION;
