@@ -38,17 +38,37 @@ function egalesTempsConstant(a: Uint8Array, b: Uint8Array): boolean {
   return diff === 0;
 }
 
+import { chargerMetaDisque, synchroniserPinDisque } from "./metaDisqueLicence";
+
 export async function pinDefini(): Promise<boolean> {
-  return (await getPinChoraleHash()) !== null;
+  const stocke = await getPinChoraleHash();
+  if (stocke !== null) return true;
+  const meta = await chargerMetaDisque().catch(() => null);
+  if (meta?.pinHash) {
+    await setPinChoraleHash(meta.pinHash);
+    return true;
+  }
+  return false;
 }
 
 export async function definirPin(pin: string): Promise<void> {
   const sel = Crypto.getRandomBytes(TAILLE_SEL);
-  await setPinChoraleHash(await hasherAvecSel(pin, sel));
+  const hash = await hasherAvecSel(pin, sel);
+  await Promise.all([
+    setPinChoraleHash(hash),
+    synchroniserPinDisque(hash).catch(() => {}),
+  ]);
 }
 
 export async function verifierPin(pin: string): Promise<boolean> {
-  const stocke = await getPinChoraleHash();
+  let stocke = await getPinChoraleHash();
+  if (!stocke) {
+    const meta = await chargerMetaDisque().catch(() => null);
+    if (meta?.pinHash) {
+      stocke = meta.pinHash;
+      await setPinChoraleHash(meta.pinHash);
+    }
+  }
   if (!stocke) return false;
   const [selHex, empreinteHex] = stocke.split("$");
   if (!selHex || !empreinteHex) return false;
@@ -57,7 +77,10 @@ export async function verifierPin(pin: string): Promise<boolean> {
 }
 
 export async function effacerPin(): Promise<void> {
-  await effacerPinChoraleHash();
+  await Promise.all([
+    effacerPinChoraleHash(),
+    synchroniserPinDisque(null).catch(() => {}),
+  ]);
 }
 
 /** Réinitialise le verrou en cas d'oubli, à condition que le code de

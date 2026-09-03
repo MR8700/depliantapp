@@ -8,6 +8,7 @@
 // effacé) -- limite acceptée, même catégorie que le tradeoff "confiance
 // locale" du plafond d'appareils (voir licence/appareils.ts).
 import { getHorodatagePlafond, setHorodatagePlafond } from "../storage/secureStore";
+import { chargerMetaDisque, synchroniserHorlogeDisque } from "./metaDisqueLicence";
 
 const TOLERANCE_SECONDES = 60;
 
@@ -19,15 +20,25 @@ export interface ResultatGardeHorloge {
 /** À appeler à chaque ouverture de l'app (et avant toute décision locale
  * d'expiration/quota) -- avance le plafond si l'horloge a avancé
  * normalement, ou signale un blocage si elle a reculé de plus de
- * TOLERANCE_SECONDES sous le plafond déjà connu. */
+ * TOLERANCE_SECONDES sous le plafond déjà connu (en SecureStore ET sur le disque caché). */
 export async function verifierHorlogeEtMettreAJour(): Promise<ResultatGardeHorloge> {
   const maintenant = Math.floor(Date.now() / 1000);
-  const plafond = await getHorodatagePlafond();
+  const [plafondStore, metaDisque] = await Promise.all([
+    getHorodatagePlafond(),
+    chargerMetaDisque().catch(() => null),
+  ]);
+
+  // Le plafond inviolable est le maximum observé entre SecureStore et le fichier caché sur disque
+  const plafond = Math.max(plafondStore || 0, metaDisque?.horodatagePlafond || 0);
+
   if (plafond && maintenant < plafond - TOLERANCE_SECONDES) {
     return { ok: false, bloque: true };
   }
   if (maintenant > plafond) {
-    await setHorodatagePlafond(maintenant);
+    await Promise.all([
+      setHorodatagePlafond(maintenant),
+      synchroniserHorlogeDisque(maintenant).catch(() => {}),
+    ]);
   }
   return { ok: true };
 }

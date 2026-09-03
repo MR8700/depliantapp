@@ -23,8 +23,20 @@ interface Options {
  * messagerie, authentifiée par sa preuve dédiée. Ce garde-fou central évite
  * qu'un nouvel écran (ou un appel oublié) ne réintroduise silencieusement
  * une dépendance au serveur.
+ *
+ * Exception : les routes /auth/* (connexion administrateur via le serveur,
+ * changement de mot de passe administrateur sur le serveur, statut de session)
+ * et les routes d'administration lorsqu'un jeton admin est actif.
  */
 export async function verifierAccesReseau(path: string): Promise<void> {
+  if (path.startsWith("/auth")) {
+    return;
+  }
+  const j = await getJetonSession();
+  if (j) {
+    // Session administrateur active : les requêtes d'administration serveur sont autorisées
+    return;
+  }
   const licence = await getLicenceLocale();
   // Exception minimale : le numéro public de l'administrateur est demandé
   // uniquement au tap sur « Contacter », puis mis en cache. Aucun contenu de
@@ -38,26 +50,30 @@ export async function verifierAccesReseau(path: string): Promise<void> {
 // seule la Messagerie appelle encore le réseau, prouvée par possession du
 // `seed` de la licence (voir licence/preuveMessagerie.ts et
 // backend/app/messages_auth.py). Compte super-admin : Bearer + X-Appareil-Id
-// classiques, inchangés.
+// classiques, géré avec le serveur.
 async function jeton(authentifie: boolean | undefined, chemin = "/messages", methode = "GET"): Promise<Record<string, string>> {
   if (authentifie === false) return {};
+  const j = await getJetonSession();
+  if (j && (chemin.startsWith("/auth") || !chemin.startsWith("/messages"))) {
+    const appareilId = await getAppareilId();
+    return {
+      Authorization: `Bearer ${j}`,
+      ...(appareilId ? { "X-Appareil-Id": appareilId } : {}),
+    };
+  }
   const licence = await getLicenceLocale();
-  if (licence) {
+  if (licence && chemin.startsWith("/messages")) {
     const horodatage = Math.floor(Date.now() / 1000);
     return calculerPreuveMessagerie(licence.payload.seed, licence.payload.choraleId, licence.payload.licenceUid, horodatage, methode, chemin.split("?")[0]);
   }
-  const j = await getJetonSession();
-  if (!j) return {};
-  // X-Appareil-Id : permet au backend de vérifier en CONTINU (à chaque
-  // requête, pas seulement à l'activation) que CET appareil précis est
-  // toujours autorisé sur la licence de la chorale -- voir main.py::
-  // AuthMiddleware côté serveur. Absent pour un compte super-admin (pas de
-  // notion d'appareil/licence) ou avant toute activation.
-  const appareilId = await getAppareilId();
-  return {
-    Authorization: `Bearer ${j}`,
-    ...(appareilId ? { "X-Appareil-Id": appareilId } : {}),
-  };
+  if (j) {
+    const appareilId = await getAppareilId();
+    return {
+      Authorization: `Bearer ${j}`,
+      ...(appareilId ? { "X-Appareil-Id": appareilId } : {}),
+    };
+  }
+  return {};
 }
 
 // Enregistré par App.tsx au démarrage : appelé dès qu'une réponse serveur

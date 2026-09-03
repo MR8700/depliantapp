@@ -1,11 +1,14 @@
 import { useEffect, useState } from "react";
-import { Alert, Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Alert, Image, Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as ImagePicker from "expo-image-picker";
 import { useIdentite } from "../context/IdentiteContext";
 import { getParametres, sauvegarderParametres } from "../api/parametres";
 import { apiFetch } from "../api/client";
 import { effacerJetonSession } from "../storage/secureStore";
+import { pinDefini, definirPin } from "../licence/pinChorale";
+import { synchroniserVerrouillageDisque } from "../licence/metaDisqueLicence";
+import { logoutAdminServeur, changerMotDePasseAdminServeur } from "../api/auth";
 import Bouton from "../components/Bouton";
 
 interface Props {
@@ -38,6 +41,12 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
   const [motDePasseActuel, setMotDePasseActuel] = useState("");
   const [nouveauMotDePasse, setNouveauMotDePasse] = useState("");
   const [confirmation, setConfirmation] = useState("");
+
+  // Modal de définition du mot de passe de connexion chorale
+  const [modalPinVisible, setModalPinVisible] = useState(false);
+  const [nouveauPin, setNouveauPin] = useState("");
+  const [confirmationPin, setConfirmationPin] = useState("");
+  const [enCoursPin, setEnCoursPin] = useState(false);
 
   useEffect(() => {
     rafraichirIdentite();
@@ -105,12 +114,9 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
       return;
     }
     try {
-      await apiFetch("/auth/change-password", {
-        method: "POST",
-        body: { mot_de_passe_actuel: motDePasseActuel, nouveau_mot_de_passe: nouveauMotDePasse },
-      });
+      await changerMotDePasseAdminServeur(motDePasseActuel, nouveauMotDePasse);
       setMotDePasseActuel(""); setNouveauMotDePasse(""); setConfirmation("");
-      Alert.alert("Mot de passe modifié");
+      Alert.alert("Succès", "Mot de passe administrateur modifié et enregistré sur le serveur.");
     } catch (erreur: any) {
       Alert.alert("Erreur", erreur?.message ?? "Mot de passe actuel incorrect");
     }
@@ -121,8 +127,84 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
   }
 
   async function seDeconnecter() {
-    await effacerJetonSession();
-    onDeconnecte();
+    if (identite?.type === "super") {
+      Alert.alert(
+        "Déconnexion administrateur",
+        "Voulez-vous vous déconnecter de votre session administrateur sur le serveur ?",
+        [
+          { text: "Annuler", style: "cancel" },
+          {
+            text: "Se déconnecter",
+            style: "destructive",
+            onPress: async () => {
+              await logoutAdminServeur();
+              onDeconnecte();
+            },
+          },
+        ],
+      );
+      return;
+    }
+
+    // Déconnexion Chorale :
+    // On demande à la chorale de définir un mot de passe de connexion si absent,
+    // puis on verrouille pour demander la connexion à l'ouverture de l'application.
+    const dejaDefini = await pinDefini();
+    if (!dejaDefini) {
+      setNouveauPin("");
+      setConfirmationPin("");
+      setModalPinVisible(true);
+    } else {
+      Alert.alert(
+        "Déconnexion de la chorale",
+        "L'application va être verrouillée. Votre mot de passe de connexion vous sera demandé pour y accéder à nouveau.",
+        [
+          { text: "Annuler", style: "cancel" },
+          {
+            text: "Modifier le mot de passe",
+            onPress: () => {
+              setNouveauPin("");
+              setConfirmationPin("");
+              setModalPinVisible(true);
+            },
+          },
+          {
+            text: "Se déconnecter",
+            style: "destructive",
+            onPress: async () => {
+              await synchroniserVerrouillageDisque(true);
+              onDeconnecte();
+            },
+          },
+        ],
+      );
+    }
+  }
+
+  async function validerNouveauPinEtDeconnecter() {
+    if (!nouveauPin || nouveauPin.length < 4) {
+      Alert.alert("Mot de passe trop court", "Le mot de passe de connexion doit comporter au moins 4 caractères.");
+      return;
+    }
+    if (nouveauPin !== confirmationPin) {
+      Alert.alert("Erreur", "La confirmation ne correspond pas au mot de passe saisi.");
+      return;
+    }
+    setEnCoursPin(true);
+    try {
+      await definirPin(nouveauPin);
+      await synchroniserVerrouillageDisque(true);
+      setModalPinVisible(false);
+      Alert.alert(
+        "Mot de passe configuré",
+        "Votre mot de passe de connexion a été enregistré. Il vous sera demandé à chaque ouverture de l'application.",
+        [{ text: "OK", onPress: () => onDeconnecte() }],
+      );
+    } catch {
+      Alert.alert("Erreur", "Impossible d'enregistrer le mot de passe de connexion.");
+    } finally {
+      setEnCoursPin(false);
+    }
   }
 
   return (
@@ -237,6 +319,51 @@ export default function ProfilScreen({ onDeconnecte }: Props) {
       <View style={{ marginTop: 24 }}>
         <Bouton titre="Se déconnecter" onPress={seDeconnecter} variante="contour" />
       </View>
+
+      <Modal visible={modalPinVisible} transparent animationType="slide">
+        <View style={styles.modalOverlay}>
+          <View style={styles.modalContent}>
+            <Text style={styles.modalTitre}>🔒 Mot de passe de connexion</Text>
+            <Text style={styles.modalSousTitre}>
+              Pour sécuriser l'accès à votre chorale avant la déconnexion, veuillez définir un mot de passe de connexion.
+              Il vous sera demandé à chaque ouverture de l'application.
+            </Text>
+            <Text style={styles.label}>Mot de passe de connexion</Text>
+            <TextInput
+              style={styles.champ}
+              placeholder="Minimum 4 caractères"
+              secureTextEntry
+              value={nouveauPin}
+              onChangeText={setNouveauPin}
+              editable={!enCoursPin}
+            />
+            <Text style={styles.label}>Confirmation du mot de passe</Text>
+            <TextInput
+              style={styles.champ}
+              placeholder="Répétez le mot de passe"
+              secureTextEntry
+              value={confirmationPin}
+              onChangeText={setConfirmationPin}
+              editable={!enCoursPin}
+            />
+            <View style={{ marginTop: 14 }}>
+              <Bouton
+                titre="Valider et se déconnecter"
+                onPress={validerNouveauPinEtDeconnecter}
+                enCours={enCoursPin}
+                desactive={!nouveauPin || nouveauPin.length < 4 || !confirmationPin}
+              />
+            </View>
+            <Pressable
+              style={styles.boutonAnnulerModal}
+              onPress={() => setModalPinVisible(false)}
+              disabled={enCoursPin}
+            >
+              <Text style={styles.texteAnnulerModal}>Annuler</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </ScrollView>
   );
 }
@@ -274,4 +401,10 @@ const styles = StyleSheet.create({
   labelCompte: { fontSize: 13, color: "#64748b" },
   valeurCompte: { fontSize: 13, fontWeight: "700", color: "#1F4A7C" },
   badgeVerifie: { fontSize: 11, backgroundColor: "#dcfce7", color: "#15803d", borderRadius: 999, paddingHorizontal: 10, paddingVertical: 4, fontWeight: "700" },
+  modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "center", padding: 20 },
+  modalContent: { backgroundColor: "#fff", borderRadius: 16, padding: 20, shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 8, elevation: 5 },
+  modalTitre: { fontSize: 18, fontWeight: "800", color: "#1F4A7C", textAlign: "center", marginBottom: 8 },
+  modalSousTitre: { fontSize: 13, color: "#64748b", textAlign: "center", marginBottom: 16, lineHeight: 18 },
+  boutonAnnulerModal: { marginTop: 12, alignItems: "center", paddingVertical: 8 },
+  texteAnnulerModal: { color: "#64748b", fontSize: 14, fontWeight: "600" },
 });

@@ -4,6 +4,7 @@ import * as Clipboard from "expo-clipboard";
 import { verifierLicenceBlob } from "../licence/verification";
 import { verifierHorlogeEtMettreAJour } from "../licence/horlogeGarde";
 import { setLicenceLocale } from "../storage/secureStore";
+import { verifierEtRestaurerEtatLicence } from "../licence/metaDisqueLicence";
 import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
 import LecteurQR from "../components/LecteurQR";
@@ -62,7 +63,9 @@ export default function ActivationScreen({ onActivee, onDemandeConnexionAdmin, o
         );
         return;
       }
-      await setLicenceLocale(nettoye, "maitre", clePublique);
+      // Vérification et restauration inviolable depuis le disque caché de l'appareil
+      const etatDisque = await verifierEtRestaurerEtatLicence(nettoye, "maitre");
+      await setLicenceLocale(nettoye, etatDisque.roleCorrige, clePublique);
       onActivee();
     } finally {
       setEnCours(false);

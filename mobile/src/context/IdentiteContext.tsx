@@ -30,12 +30,26 @@ export function IdentiteProvider({ children }: { children: React.ReactNode }) {
   const [identite, setIdentite] = useState<Identite | null>(null);
   const [avatarUri, setAvatarUriState] = useState<string | null>(null);
 
-  // Compte chorale : identité résolue ENTIÈREMENT en local depuis la licence
-  // signée (voir storage/secureStore.ts::getLicenceLocale) -- aucun appel
-  // réseau, aucune notion de session à revalider. Compte super-admin (pas de
-  // licence locale) : seul cas restant à dépendre encore d'une résolution
-  // serveur classique (voir api/meta.ts::getIdentite).
+  // Vérification de l'identité :
+  // Si un jeton admin existe, on valide avec le serveur (connexion admin via serveur).
+  // Sinon (ou si chorale), on résout l'identité locale depuis la licence signée.
   const rafraichirIdentite = useCallback(async () => {
+    const jetonAdmin = await getJetonSession();
+    if (jetonAdmin) {
+      try {
+        const fraiche = await getIdentite();
+        if (fraiche.authenticated && fraiche.type === "super") {
+          setIdentite(fraiche);
+          await AsyncStorage.setItem(CLE_CACHE_IDENTITE, JSON.stringify(fraiche));
+          return;
+        } else {
+          await effacerJetonSession();
+        }
+      } catch {
+        // Hors-ligne temporaire : si le cache local a l'admin, on peut le conserver
+      }
+    }
+
     const licenceLocale = await getLicenceLocale();
     if (licenceLocale) {
       const identiteLocale: Identite = {

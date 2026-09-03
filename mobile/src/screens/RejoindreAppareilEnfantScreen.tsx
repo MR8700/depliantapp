@@ -7,6 +7,7 @@ import { verifierLicenceBlob } from "../licence/verification";
 import { verifierHorlogeEtMettreAJour } from "../licence/horlogeGarde";
 import { calculerAutorisationAppareil, decoderRetourMaitre, encoderPaireAppareil } from "../licence/appareils";
 import { setAutorisationAppareil, setLicenceLocale } from "../storage/secureStore";
+import { sauvegarderMetaDisqueEnTempsReel } from "../licence/metaDisqueLicence";
 import Carte from "../components/Carte";
 import Bouton from "../components/Bouton";
 import LecteurQR from "../components/LecteurQR";
@@ -62,6 +63,15 @@ export default function RejoindreAppareilEnfantScreen({ onRejoint, onAnnuler }: 
       }
       await setLicenceLocale(retour.licenceBlob, "enfant", retour.clePublique ?? undefined);
       await setAutorisationAppareil(retour.autorisation);
+      // Mémorisation inviolable sur le disque du statut enfant pour cet appareil
+      await sauvegarderMetaDisqueEnTempsReel({
+        licenceBlob: retour.licenceBlob,
+        licenceUid: payload.licenceUid,
+        choraleId: payload.choraleId,
+        choraleNom: payload.choraleNom,
+        role: "enfant",
+        clePublique: retour.clePublique ?? null,
+      });
       onRejoint();
     } finally {
       setScanTraite(false);

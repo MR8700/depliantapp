@@ -19,6 +19,7 @@ import { LicenceLocale, getJetonSession, getLicenceLocale } from "./src/storage/
 import { verifierHorlogeEtMettreAJour } from "./src/licence/horlogeGarde";
 import { licenceExpiree } from "./src/licence/expiration";
 import { pinDefini } from "./src/licence/pinChorale";
+import { verifierSessionAdminServeur } from "./src/api/auth";
 import { configurerOrientation } from "./src/utils/orientation";
 
 // Durée minimale d'affichage du splash -- comme sur le web (voir
@@ -63,41 +64,42 @@ export default function App() {
   const [modeRejoindreAppareil, setModeRejoindreAppareil] = useState(false);
   const [splashMinimumEcoule, setSplashMinimumEcoule] = useState(false);
 
-  // Décision de l'écran de démarrage lue UNIQUEMENT en local : la licence
-  // chorale se vérifie entièrement sur l'appareil (signature Ed25519 +
-  // garde d'horloge, aucun appel réseau) -- seul le compte super-admin
-  // dépend encore d'un jeton de session serveur classique.
+  // Décision de l'écran de démarrage :
+  // - La session super-admin passe TOUJOURS par le serveur pour vérifier l'état
+  //   réel et valider les changements de mot de passe.
+  // - La licence chorale se vérifie avec signature Ed25519 + garde d'horloge + métadonnées disque.
   const rafraichirEtat = useCallback(async () => {
     const [licenceLocale, jetonSession] = await Promise.all([getLicenceLocale(), getJetonSession()]);
+    let adminConnecte = !!jetonSession;
+    if (jetonSession) {
+      // Vérification serveur en temps réel de la session administrateur
+      adminConnecte = await verifierSessionAdminServeur();
+    }
     if (licenceLocale) {
       const horloge = await verifierHorlogeEtMettreAJour();
       setHorlogeBloquee(!horloge.ok);
-      // payload.expireLe est signé, affiché en Réglages, mais ne bloquait
-      // rien avant ce contrôle -- une licence "expirée" continuait de
-      // fonctionner indéfiniment (voir licence/expiration.ts).
       setLicenceExpireeEtat(licenceExpiree(licenceLocale.payload));
     } else {
       setHorlogeBloquee(false);
       setLicenceExpireeEtat(false);
     }
     setLicence(licenceLocale ?? undefined);
-    setConnecte(!!jetonSession);
+    setConnecte(adminConnecte);
   }, []);
+
+  const gererDeconnexion = useCallback(async () => {
+    setModeConnexionAdmin(false);
+    const l = await getLicenceLocale();
+    if (l && (await pinDefini())) {
+      setPinVerrouille(true);
+    }
+    await rafraichirEtat();
+  }, [rafraichirEtat]);
 
   const demanderConnexionAdmin = useCallback(() => setModeConnexionAdmin(true), []);
   const demanderRejoindreAppareil = useCallback(() => setModeRejoindreAppareil(true), []);
   const annulerRejoindreAppareil = useCallback(() => setModeRejoindreAppareil(false), []);
 
-  // Les écrans ci-dessous utilisaient des fonctions fléchées inline comme
-  // `children` de Stack.Screen -- React Navigation ré-invoque ce render prop
-  // à chaque re-rendu du Stack.Navigator (pas seulement quand l'état de App
-  // change), et traite chaque nouvelle référence de fonction comme un
-  // composant différent : tout le sous-arbre (pour "Home", ça veut dire
-  // TOUTE l'appli une fois connecté, y compris PlusStack) était démonté et
-  // remonté, perdant sa navigation interne -- c'est ce qui rendait le menu
-  // "Plus" silencieux au clic une fois l'activation/connexion passée.
-  // useCallback garde des références stables tant que leurs dépendances
-  // (elles-mêmes stables) ne changent pas.
   const rendreActivation = useCallback(
     () => (
       <ActivationScreen
@@ -117,8 +119,14 @@ export default function App() {
     [rafraichirEtat, licence?.role],
   );
   const rendrePinVerrou = useCallback(
-    () => <PinVerrouScreen onDeverrouille={() => setPinVerrouille(false)} onOublie={() => setModePinOublie(true)} />,
-    [],
+    () => (
+      <PinVerrouScreen
+        onDeverrouille={() => setPinVerrouille(false)}
+        onOublie={() => setModePinOublie(true)}
+        onDemandeConnexionAdmin={demanderConnexionAdmin}
+      />
+    ),
+    [demanderConnexionAdmin],
   );
   const rendreReinitialiserPin = useCallback(
     () => <ReinitialiserPinScreen onReinitialise={() => setPinPretADefinir(true)} onAnnuler={() => setModePinOublie(false)} />,
@@ -134,16 +142,24 @@ export default function App() {
     [],
   );
   const rendreLogin = useCallback(
-    () => <LoginScreen onConnecte={rafraichirEtat} />,
+    () => (
+      <LoginScreen
+        onConnecte={() => {
+          setModeConnexionAdmin(false);
+          rafraichirEtat();
+        }}
+        onAnnuler={() => setModeConnexionAdmin(false)}
+      />
+    ),
     [rafraichirEtat],
   );
   const rendreHome = useCallback(
     () => (
       <IdentiteProvider>
-        <AccueilAuthentifie onDeconnecte={rafraichirEtat} />
+        <AccueilAuthentifie onDeconnecte={gererDeconnexion} />
       </IdentiteProvider>
     ),
-    [rafraichirEtat],
+    [gererDeconnexion],
   );
 
   useEffect(() => {
