@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getIdentite } from "../api/meta";
-import { getLicenceLocale } from "../storage/secureStore";
+import { getLicenceLocale, getJetonSession, effacerJetonSession } from "../storage/secureStore";
 import { Identite } from "../types";
 
 const CLE_CACHE_IDENTITE = "depliantapp.identite_cache";

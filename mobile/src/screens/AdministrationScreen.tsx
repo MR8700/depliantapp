@@ -1097,6 +1097,7 @@ const styles = StyleSheet.create({
   champ: { borderWidth: 1, borderColor: "#dbe2ea", borderRadius: 10, padding: 12, backgroundColor: "#fff", marginBottom: 8 },
   carte: { backgroundColor: "#fff", borderRadius: 12, padding: 14, marginBottom: 8 },
   titreCarte: { fontSize: 14, fontWeight: "700", color: "#1e293b" },
+  sousTitre: { fontSize: 12, color: "#64748b", marginBottom: 8 },
   sousTitreCarte: { fontSize: 12, color: "#64748b", marginTop: 2 },
   avertissement: { fontSize: 12, color: "#d97706", marginTop: 4 },
   raison: { fontSize: 12, color: "#334155", marginTop: 4, fontStyle: "italic" },

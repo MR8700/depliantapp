@@ -1,8 +1,8 @@
-﻿// Fichier de métadonnées de licence persistant et inviolable sur le disque.
+// Fichier de métadonnées de licence persistant et inviolable sur le disque.
 //
 // Objectif d'inviolabilité :
-// Même si un utilisateur va dans les Paramètres Android et effectue Effacer
-// les données de l'application (ce qui efface AsyncStorage et SecureStore),
+// Même si un utilisateur va dans les Paramètres Android et effectue "Effacer
+// les données" de l'application (ce qui efface AsyncStorage et SecureStore),
 // ce fichier caché et chiffré sur le disque de l'appareil permet à l'application
 // de se souvenir de l'état exact de la licence en temps réel :
 // 1. Plafond d'horloge anti-recul (impossible de reculer la date système pour rajeunir une licence).
@@ -15,11 +15,11 @@
 // de l'appareil + sel cryptographique interne) et obfusqué pour être inviolable
 // contre toute modification manuelle avec un gestionnaire de fichiers.
 
-import { Platform } from react-native;
-import * as FileSystem from expo-file-system/legacy;
-import { hmac } from @noble/hashes/hmac.js;
-import { sha256 } from @noble/hashes/sha2.js;
-import { encoderUtf8, hexEncode, hexDecode, base64Encode, base64Decode } from ./format;
+import { Platform } from "react-native";
+import * as FileSystem from "expo-file-system/legacy";
+import { hmac } from "@noble/hashes/hmac.js";
+import { sha256 } from "@noble/hashes/sha2.js";
+import { encoderUtf8, hexEncode, hexDecode, base64Encode, base64Decode } from "./format";
 import {
   getAppareilId,
   setAppareilId,
@@ -31,11 +31,11 @@ import {
   setPinChoraleHash,
   getAppareilsAutorises,
   RoleLicence,
-} from ../storage/secureStore;
-import { verifierLicenceBlob } from ./verification;
+} from "../storage/secureStore";
+import { verifierLicenceBlob } from "./verification";
 
-const NOM_FICHIER_CACHE = .sys_depliant_vault.dat;
-const SEL_VAULT = depliantapp_integrity_vault_v1_secure_seed;
+const NOM_FICHIER_CACHE = ".sys_depliant_vault.dat";
+const SEL_VAULT = "depliantapp_integrity_vault_v1_secure_seed";
 
 export interface MetaDisqueLicence {
   version: 1;
@@ -61,7 +61,7 @@ async function obtenirAppareilIdGaranti(): Promise<string> {
   let id = await getAppareilId();
   if (!id) {
     // Si absent (ex: après clear data), on en recrée un immédiatement
-    id = hexEncode(sha256(encoderUtf8(${Date.now()}__))).slice(0, 32);
+    id = hexEncode(sha256(encoderUtf8(`${Date.now()}_${Math.random()}`))).slice(0, 32);
     await setAppareilId(id);
   }
   return id;
@@ -69,7 +69,7 @@ async function obtenirAppareilIdGaranti(): Promise<string> {
 
 /** Clé HMAC dérivée de l'appareil et du sel interne */
 function deriverCleIntegrite(appareilId: string): Uint8Array {
-  return sha256(encoderUtf8(${SEL_VAULT}:));
+  return sha256(encoderUtf8(`${SEL_VAULT}:${appareilId}`));
 }
 
 /** Obfuscation réversible simple (XOR avec flux dérivé) */
@@ -86,17 +86,17 @@ function obtenirCheminsPotentiels(): string[] {
   const chemins: string[] = [];
 
   if (FileSystem.documentDirectory) {
-    chemins.push(${FileSystem.documentDirectory});
+    chemins.push(`${FileSystem.documentDirectory}${NOM_FICHIER_CACHE}`);
   }
   if (FileSystem.cacheDirectory) {
-    chemins.push(${FileSystem.cacheDirectory});
+    chemins.push(`${FileSystem.cacheDirectory}${NOM_FICHIER_CACHE}`);
   }
 
   // Emplacements persistants supplémentaires sur Android
-  if (Platform.OS === android) {
-    chemins.push(ile:///storage/emulated/0/Android/media/com.gotechnologie.depliantapp/);
-    chemins.push(ile:///storage/emulated/0/Documents/);
-    chemins.push(ile:///storage/emulated/0/);
+  if (Platform.OS === "android") {
+    chemins.push(`file:///storage/emulated/0/Android/media/com.gotechnologie.depliantapp/${NOM_FICHIER_CACHE}`);
+    chemins.push(`file:///storage/emulated/0/Documents/${NOM_FICHIER_CACHE}`);
+    chemins.push(`file:///storage/emulated/0/${NOM_FICHIER_CACHE}`);
   }
 
   return chemins;
@@ -114,9 +114,9 @@ export async function chargerMetaDisque(): Promise<MetaDisqueLicence | null> {
   for (const chemin of chemins) {
     try {
       const brut = await FileSystem.readAsStringAsync(chemin);
-      if (!brut || !brut.startsWith(DPLVAULT$)) continue;
+      if (!brut || !brut.startsWith("DPLVAULT$")) continue;
 
-      const morceaux = brut.split($);
+      const morceaux = brut.split("$");
       if (morceaux.length !== 3) continue;
 
       const [, hmacAttendu, donneesB64] = morceaux;
@@ -129,95 +129,95 @@ export async function chargerMetaDisque(): Promise<MetaDisqueLicence | null> {
         continue;
       }
 
-      let texteJson = ";
- for (let i = 0; i < payloadClairOctets.length; i++) {
- texteJson += String.fromCharCode(payloadClairOctets[i]);
- }
- const objet = JSON.parse(decodeURIComponent(escape(texteJson)));
- if (objet && objet.version === 1 && typeof objet.licenceUid === string) {
- return objet as MetaDisqueLicence;
- }
- } catch {
- // Chemin inaccessible ou absent, continuer
- }
- }
+      let texteJson = "";
+      for (let i = 0; i < payloadClairOctets.length; i++) {
+        texteJson += String.fromCharCode(payloadClairOctets[i]);
+      }
+      const objet = JSON.parse(decodeURIComponent(escape(texteJson)));
+      if (objet && objet.version === 1 && typeof objet.licenceUid === "string") {
+        return objet as MetaDisqueLicence;
+      }
+    } catch {
+      // Chemin inaccessible ou absent, continuer
+    }
+  }
 
- return null;
+  return null;
 }
 
 /**
  * Enregistre en temps réel l'état complet de la licence dans tous les emplacements cachés.
  */
 export async function sauvegarderMetaDisqueEnTempsReel(partiel?: Partial<MetaDisqueLicence>): Promise<void> {
- try {
- const appareilId = await obtenirAppareilIdGaranti();
- const cle = deriverCleIntegrite(appareilId);
+  try {
+    const appareilId = await obtenirAppareilIdGaranti();
+    const cle = deriverCleIntegrite(appareilId);
 
- const existant = await chargerMetaDisque();
- const licenceLocale = await getLicenceLocale();
- const horodatagePlafond = await getHorodatagePlafond();
- const pinHash = await getPinChoraleHash();
- const clePublique = await getLicenceClePublique();
- const appareilsAutorises = await getAppareilsAutorises();
+    const existant = await chargerMetaDisque();
+    const licenceLocale = await getLicenceLocale();
+    const horodatagePlafond = await getHorodatagePlafond();
+    const pinHash = await getPinChoraleHash();
+    const clePublique = await getLicenceClePublique();
+    const appareilsAutorises = await getAppareilsAutorises();
 
- const licenceUid = partiel?.licenceUid ?? licenceLocale?.payload.licenceUid ?? existant?.licenceUid;
- if (!licenceUid) {
- return;
- }
+    const licenceUid = partiel?.licenceUid ?? licenceLocale?.payload.licenceUid ?? existant?.licenceUid;
+    if (!licenceUid) {
+      return;
+    }
 
- const maintenant = Math.floor(Date.now() / 1000);
- const maintenantMs = Date.now();
+    const maintenant = Math.floor(Date.now() / 1000);
+    const maintenantMs = Date.now();
 
- const etatFinal: MetaDisqueLicence = {
- version: 1,
- licenceUid,
- choraleId: partiel?.choraleId ?? licenceLocale?.payload.choraleId ?? existant?.choraleId ?? 0,
- choraleNom: partiel?.choraleNom ?? licenceLocale?.payload.choraleNom ?? existant?.choraleNom ?? ,
- role: partiel?.role ?? licenceLocale?.role ?? existant?.role ?? maitre,
- licenceBlob: partiel?.licenceBlob ?? licenceLocale?.blob ?? existant?.licenceBlob ?? ,
- clePublique: partiel?.clePublique ?? clePublique ?? existant?.clePublique ?? null,
- datePremiereActivation: existant?.datePremiereActivation ?? partiel?.datePremiereActivation ?? maintenantMs,
- horodatagePlafond: Math.max(
- partiel?.horodatagePlafond ?? 0,
- horodatagePlafond ?? 0,
- existant?.horodatagePlafond ?? 0,
- maintenant,
- ),
- derniereMaj: maintenantMs,
- nombreFeuilletsGeneres: partiel?.nombreFeuilletsGeneres ?? existant?.nombreFeuilletsGeneres ?? 0,
- appareilsAutorises: partiel?.appareilsAutorises ?? appareilsAutorises ?? existant?.appareilsAutorises ?? [],
- pinHash: partiel?.pinHash !== undefined ? partiel.pinHash : (pinHash ?? existant?.pinHash ?? null),
- sessionVerrouillee: partiel?.sessionVerrouillee ?? existant?.sessionVerrouillee ?? false,
- expireLe: partiel?.expireLe ?? licenceLocale?.payload.expireLe ?? existant?.expireLe ?? null,
- estExpiree: partiel?.estExpiree ?? existant?.estExpiree ?? false,
- };
+    const etatFinal: MetaDisqueLicence = {
+      version: 1,
+      licenceUid,
+      choraleId: partiel?.choraleId ?? licenceLocale?.payload.choraleId ?? existant?.choraleId ?? 0,
+      choraleNom: partiel?.choraleNom ?? licenceLocale?.payload.choraleNom ?? existant?.choraleNom ?? "",
+      role: partiel?.role ?? licenceLocale?.role ?? existant?.role ?? "maitre",
+      licenceBlob: partiel?.licenceBlob ?? licenceLocale?.blob ?? existant?.licenceBlob ?? "",
+      clePublique: partiel?.clePublique ?? clePublique ?? existant?.clePublique ?? null,
+      datePremiereActivation: existant?.datePremiereActivation ?? partiel?.datePremiereActivation ?? maintenantMs,
+      horodatagePlafond: Math.max(
+        partiel?.horodatagePlafond ?? 0,
+        horodatagePlafond ?? 0,
+        existant?.horodatagePlafond ?? 0,
+        maintenant,
+      ),
+      derniereMaj: maintenantMs,
+      nombreFeuilletsGeneres: partiel?.nombreFeuilletsGeneres ?? existant?.nombreFeuilletsGeneres ?? 0,
+      appareilsAutorises: partiel?.appareilsAutorises ?? appareilsAutorises ?? existant?.appareilsAutorises ?? [],
+      pinHash: partiel?.pinHash !== undefined ? partiel.pinHash : (pinHash ?? existant?.pinHash ?? null),
+      sessionVerrouillee: partiel?.sessionVerrouillee ?? existant?.sessionVerrouillee ?? false,
+      expireLe: partiel?.expireLe ?? licenceLocale?.payload.expireLe ?? existant?.expireLe ?? null,
+      estExpiree: partiel?.estExpiree ?? existant?.estExpiree ?? false,
+    };
 
- const chaineJson = unescape(encodeURIComponent(JSON.stringify(etatFinal)));
- const octetsClairs = new Uint8Array(chaineJson.length);
- for (let i = 0; i < chaineJson.length; i++) {
- octetsClairs[i] = chaineJson.charCodeAt(i);
- }
+    const chaineJson = unescape(encodeURIComponent(JSON.stringify(etatFinal)));
+    const octetsClairs = new Uint8Array(chaineJson.length);
+    for (let i = 0; i < chaineJson.length; i++) {
+      octetsClairs[i] = chaineJson.charCodeAt(i);
+    }
 
- const hmacSignature = hexEncode(hmac(sha256, cle, octetsClairs));
- const octetsMasques = masquerDonnees(octetsClairs, cle);
- const donneesB64 = base64Encode(octetsMasques);
+    const hmacSignature = hexEncode(hmac(sha256, cle, octetsClairs));
+    const octetsMasques = masquerDonnees(octetsClairs, cle);
+    const donneesB64 = base64Encode(octetsMasques);
 
- const contenuFinal = DPLVAULT{hmacSignature}{donneesB64};
+    const contenuFinal = `DPLVAULT$${hmacSignature}$${donneesB64}`;
 
- const chemins = obtenirCheminsPotentiels();
- await Promise.allSettled(
- chemins.map(async (chemin) => {
- try {
- const dernierSlash = chemin.lastIndexOf(/);
- if (dernierSlash > 0) {
- const dossier = chemin.substring(0, dernierSlash);
- await FileSystem.makeDirectoryAsync(dossier, { intermediates: true }).catch(() => {});
- }
- await FileSystem.writeAsStringAsync(chemin, contenuFinal);
- } catch {}
- }),
- );
- } catch {}
+    const chemins = obtenirCheminsPotentiels();
+    await Promise.allSettled(
+      chemins.map(async (chemin) => {
+        try {
+          const dernierSlash = chemin.lastIndexOf("/");
+          if (dernierSlash > 0) {
+            const dossier = chemin.substring(0, dernierSlash);
+            await FileSystem.makeDirectoryAsync(dossier, { intermediates: true }).catch(() => {});
+          }
+          await FileSystem.writeAsStringAsync(chemin, contenuFinal);
+        } catch {}
+      }),
+    );
+  } catch {}
 }
 
 /**
@@ -226,75 +226,75 @@ export async function sauvegarderMetaDisqueEnTempsReel(partiel?: Partial<MetaDis
  * Restaure l'état exact pour rendre le système inviolable.
  */
 export async function verifierEtRestaurerEtatLicence(blob: string, roleVoulu: RoleLicence): Promise<{
- roleCorrige: RoleLicence;
- horodatagePlafond: number;
- pinHash: string | null;
- dejaConnue: boolean;
+  roleCorrige: RoleLicence;
+  horodatagePlafond: number;
+  pinHash: string | null;
+  dejaConnue: boolean;
 }> {
- const payload = verifierLicenceBlob(blob);
- if (!payload) {
- return { roleCorrige: roleVoulu, horodatagePlafond: 0, pinHash: null, dejaConnue: false };
- }
+  const payload = verifierLicenceBlob(blob);
+  if (!payload) {
+    return { roleCorrige: roleVoulu, horodatagePlafond: 0, pinHash: null, dejaConnue: false };
+  }
 
- const metaDisque = await chargerMetaDisque();
- if (!metaDisque || metaDisque.licenceUid !== payload.licenceUid) {
- const maintenant = Math.floor(Date.now() / 1000);
- await sauvegarderMetaDisqueEnTempsReel({
- licenceUid: payload.licenceUid,
- choraleId: payload.choraleId,
- choraleNom: payload.choraleNom,
- role: roleVoulu,
- licenceBlob: blob,
- horodatagePlafond: maintenant,
- datePremiereActivation: Date.now(),
- pinHash: null,
- sessionVerrouillee: false,
- });
- return { roleCorrige: roleVoulu, horodatagePlafond: maintenant, pinHash: null, dejaConnue: false };
- }
+  const metaDisque = await chargerMetaDisque();
+  if (!metaDisque || metaDisque.licenceUid !== payload.licenceUid) {
+    const maintenant = Math.floor(Date.now() / 1000);
+    await sauvegarderMetaDisqueEnTempsReel({
+      licenceUid: payload.licenceUid,
+      choraleId: payload.choraleId,
+      choraleNom: payload.choraleNom,
+      role: roleVoulu,
+      licenceBlob: blob,
+      horodatagePlafond: maintenant,
+      datePremiereActivation: Date.now(),
+      pinHash: null,
+      sessionVerrouillee: false,
+    });
+    return { roleCorrige: roleVoulu, horodatagePlafond: maintenant, pinHash: null, dejaConnue: false };
+  }
 
- // La licence était déjà présente sur ce disque
- const roleCorrige: RoleLicence = metaDisque.role;
- const plafondRestaure = Math.max(metaDisque.horodatagePlafond, Math.floor(Date.now() / 1000));
+  // La licence était déjà présente sur ce disque
+  const roleCorrige: RoleLicence = metaDisque.role;
+  const plafondRestaure = Math.max(metaDisque.horodatagePlafond, Math.floor(Date.now() / 1000));
 
- await setHorodatagePlafond(plafondRestaure);
- if (metaDisque.pinHash) {
- await setPinChoraleHash(metaDisque.pinHash);
- }
+  await setHorodatagePlafond(plafondRestaure);
+  if (metaDisque.pinHash) {
+    await setPinChoraleHash(metaDisque.pinHash);
+  }
 
- await sauvegarderMetaDisqueEnTempsReel({
- licenceBlob: blob,
- horodatagePlafond: plafondRestaure,
- role: roleCorrige,
- derniereMaj: Date.now(),
- });
+  await sauvegarderMetaDisqueEnTempsReel({
+    licenceBlob: blob,
+    horodatagePlafond: plafondRestaure,
+    role: roleCorrige,
+    derniereMaj: Date.now(),
+  });
 
- return {
- roleCorrige,
- horodatagePlafond: plafondRestaure,
- pinHash: metaDisque.pinHash,
- dejaConnue: true,
- };
+  return {
+    roleCorrige,
+    horodatagePlafond: plafondRestaure,
+    pinHash: metaDisque.pinHash,
+    dejaConnue: true,
+  };
 }
 
 export async function synchroniserHorlogeDisque(plafondSecondes: number): Promise<void> {
- const actuel = await chargerMetaDisque();
- if (actuel && plafondSecondes > actuel.horodatagePlafond) {
- await sauvegarderMetaDisqueEnTempsReel({ horodatagePlafond: plafondSecondes });
- }
+  const actuel = await chargerMetaDisque();
+  if (actuel && plafondSecondes > actuel.horodatagePlafond) {
+    await sauvegarderMetaDisqueEnTempsReel({ horodatagePlafond: plafondSecondes });
+  }
 }
 
 export async function synchroniserPinDisque(nouveauPinHash: string | null): Promise<void> {
- await sauvegarderMetaDisqueEnTempsReel({ pinHash: nouveauPinHash });
+  await sauvegarderMetaDisqueEnTempsReel({ pinHash: nouveauPinHash });
 }
 
 export async function synchroniserVerrouillageDisque(verrouillee: boolean): Promise<void> {
- await sauvegarderMetaDisqueEnTempsReel({ sessionVerrouillee: verrouillee });
+  await sauvegarderMetaDisqueEnTempsReel({ sessionVerrouillee: verrouillee });
 }
 
 export async function incrementerFeuilletsGeneresDisque(): Promise<number> {
- const meta = await chargerMetaDisque();
- const nouveauTotal = (meta?.nombreFeuilletsGeneres ?? 0) + 1;
- await sauvegarderMetaDisqueEnTempsReel({ nombreFeuilletsGeneres: nouveauTotal });
- return nouveauTotal;
+  const meta = await chargerMetaDisque();
+  const nouveauTotal = (meta?.nombreFeuilletsGeneres ?? 0) + 1;
+  await sauvegarderMetaDisqueEnTempsReel({ nombreFeuilletsGeneres: nouveauTotal });
+  return nouveauTotal;
 }
