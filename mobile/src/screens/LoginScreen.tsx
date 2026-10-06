@@ -33,13 +33,13 @@ export default function LoginScreen({ onConnecte, onAnnuler }: Props) {
     <KeyboardAvoidingView style={styles.fond} behavior={Platform.OS === "ios" ? "padding" : undefined}>
       <ScrollView contentContainerStyle={styles.scroll} keyboardShouldPersistTaps="handled">
         <Carte>
-          <Text style={styles.titre}>Connexion Administrateur</Text>
+          <Text style={styles.titre}>Connexion</Text>
           <Text style={styles.sousTitre}>
-            Connexion via le serveur DepliantApp. Vérification en direct et synchronisation des droits d'administration.
+            Connectez-vous à votre espace DepliantApp.
           </Text>
           <TextInput
             style={styles.champ}
-            placeholder="Identifiant (admin ou chorale)"
+            placeholder="Votre identifiant"
             placeholderTextColor="#9aa5b1"
             autoCapitalize="none"
             autoCorrect={false}
@@ -49,7 +49,7 @@ export default function LoginScreen({ onConnecte, onAnnuler }: Props) {
           />
           <TextInput
             style={styles.champ}
-            placeholder="Mot de passe"
+            placeholder="Votre mot de passe"
             placeholderTextColor="#9aa5b1"
             secureTextEntry
             value={password}
