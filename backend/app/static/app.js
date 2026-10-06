@@ -390,10 +390,14 @@ document.getElementById("btn-profil-enregistrer").addEventListener("click", asyn
 });
 
 function afficherVueDirect(nomVue) {
+  if (!nomVue) return;
   const btnBackToTop = document.getElementById("btn-back-to-top");
   if (btnBackToTop && nomVue !== "apropos") {
     btnBackToTop.classList.add("hidden");
   }
+
+  // Remonter immédiatement en haut pour un alignement propre et soigné
+  try { window.scrollTo({ top: 0, behavior: "instant" }); } catch (e) { window.scrollTo(0, 0); }
 
   document.querySelectorAll(".nav-btn").forEach((b) => b.classList.remove("active"));
   document.querySelectorAll(".view").forEach((v) => v.classList.remove("active"));
@@ -427,20 +431,32 @@ function afficherVueDirect(nomVue) {
     actualiserEditeur().catch(e => console.error("Error auto-refreshing editor:", e));
   }
   if (nomVue === "depliants") actualiserDepliants();
-  if (nomVue === "admin") actualiserAdmin();
-  if (nomVue === "statistiques") actualiserStatistiques();
+  if (nomVue === "admin") actualiserAdmin().catch(e => console.error("Error refreshing admin:", e));
+  if (nomVue === "statistiques") actualiserStatistiques().catch(e => console.error("Error refreshing stats:", e));
   if (nomVue === "apropos") chargerApropos();
   if (nomVue === "messagerie") demarrerMessagerie(); else arreterMessagerie();
 }
 
 function changerVue(nomVue) {
-  window.location.hash = "#/" + nomVue;
+  if (!nomVue) return;
+  const hashCible = "#/" + nomVue;
+
+  // Ferme menus et tiroirs volants
+  fermerMenu();
+  const sheetExtras = document.getElementById("bottom-sheet-extras");
+  if (sheetExtras) sheetExtras.classList.add("hidden");
+
+  bloqueNavigation = false;
+  afficherVueDirect(nomVue);
+
+  if (window.location.hash !== hashCible) {
+    window.location.hash = hashCible;
+  }
 }
 
 document.querySelectorAll(".nav-btn[data-view]").forEach((btn) => {
   btn.addEventListener("click", () => {
     changerVue(btn.dataset.view);
-    fermerMenu();
   });
 });
 
@@ -7530,7 +7546,7 @@ FIN DU RAPPORT TECHNIQUE - HORODATAGE VALIDÉ : ${timestamp}
 
 // Bind button listener
 document.addEventListener("click", (e) => {
-  if (e.target && e.target.id === "btn-export-stats") {
+  if (e.target && e.target.closest("#btn-export-stats")) {
     exporterPVStatistiques();
   }
 });
@@ -8751,7 +8767,8 @@ function initMobileLayout() {
     sheetExtras.querySelector(".btn-close-extras").addEventListener("click", closeExtras);
 
     sheetExtras.querySelectorAll(".extra-menu-item[data-target-view]").forEach(btn => {
-      btn.addEventListener("click", () => {
+      btn.addEventListener("click", (e) => {
+        e.preventDefault();
         const view = btn.getAttribute("data-target-view");
         closeExtras();
         changerVue(view);
@@ -8760,7 +8777,8 @@ function initMobileLayout() {
 
     const logoutBtn = sheetExtras.querySelector(".btn-logout-action");
     if (logoutBtn) {
-      logoutBtn.addEventListener("click", () => {
+      logoutBtn.addEventListener("click", (e) => {
+        e.preventDefault();
         closeExtras();
         const mainLogout = document.getElementById("btn-deconnexion");
         if (mainLogout) mainLogout.click();
@@ -8801,13 +8819,6 @@ function initMobileLayout() {
   if (btnClosePv && pvCol) {
     btnClosePv.addEventListener("click", () => {
       pvCol.classList.remove("active");
-    });
-  }
-
-  // Admin and super roles sync in extras grid
-  if (IDENTITE) {
-    document.querySelectorAll(".id-admin-only").forEach(el => {
-      el.classList.toggle("hidden", IDENTITE.type !== "super");
     });
   }
 }
@@ -9456,9 +9467,10 @@ async function init() {
     actualiserBanniereSuppression();
     updateHeaderAndProfileAvatar();
 
-    const canSeeAdminAndStats = IDENTITE && (IDENTITE.type === "super" || IDENTITE.type === "chorale");
-    document.getElementById("nav-admin").classList.toggle("hidden", !canSeeAdminAndStats);
-    document.getElementById("nav-statistiques").classList.toggle("hidden", !canSeeAdminAndStats);
+    const navAdm = document.getElementById("nav-admin");
+    const navStat = document.getElementById("nav-statistiques");
+    if (navAdm) navAdm.classList.remove("hidden");
+    if (navStat) navStat.classList.remove("hidden");
 
     MOMENTS = meta.moments;
     CATEGORIES = meta.categories;

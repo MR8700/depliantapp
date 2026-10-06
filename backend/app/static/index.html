@@ -927,8 +927,8 @@
   <button data-view="reglages" class="nav-btn">Réglages</button>
   <button data-view="apropos" class="nav-btn">À propos</button>
   <button data-view="messagerie" id="nav-messagerie" class="nav-btn">Messagerie <span id="badge-messagerie" class="badge-non-lus hidden"></span></button>
-  <button data-view="statistiques" id="nav-statistiques" class="nav-btn hidden">Statistiques</button>
-  <button data-view="admin" id="nav-admin" class="nav-btn hidden">Administration</button>
+  <button data-view="statistiques" id="nav-statistiques" class="nav-btn">Statistiques</button>
+  <button data-view="admin" id="nav-admin" class="nav-btn">Administration</button>
   <button id="btn-deconnexion" class="nav-btn nav-btn-deconnexion">Se déconnecter</button>
 </nav>
 
@@ -2612,7 +2612,7 @@
       </div>
 
       <!-- Carte 3 : Mes demandes auprès de l'administrateur -->
-      <div class="settings-card" style="background: white; border-radius: 16px;">
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
         <div class="settings-card-header">
           <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">📋 Mes demandes auprès de l'administrateur</h4>
           <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Suivi de vos demandes de suppression, catégories personnalisées ou partitions soumises.</p>
@@ -2620,6 +2620,31 @@
         <div class="settings-card-body" style="padding-top: 16px;">
           <div id="liste-demandes-chorale" style="display: flex; flex-direction: column; gap: 10px;">
             <p class="hint">Chargement de vos demandes…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carte 4 : Gestion des choristes (Membres de la chorale) - Espace autonome chorale -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+        <div class="settings-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">
+              👥 Gestion des choristes
+              <span style="background: #e0f2fe; color: #0284c7; font-size: 0.72rem; font-weight: 700; padding: 2px 8px; border-radius: 12px;">Espace Chorale</span>
+            </h4>
+            <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Gestion autonome de vos membres, pupitres (Soprano, Alto, Ténor, Basse) et présences liturgiques.</p>
+          </div>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <div style="background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 12px; padding: 20px; text-align: center;">
+            <div style="font-size: 2rem; margin-bottom: 8px;">🎼</div>
+            <h5 style="margin: 0 0 6px 0; color: #1e293b; font-size: 1rem;">Registre des choristes &amp; pupitres</h5>
+            <p style="margin: 0 auto 16px auto; max-width: 520px; font-size: 0.85rem; color: #64748b; line-height: 1.5;">
+              Cet espace permet à votre chorale de gérer directement vos membres choristes, d'organiser les pupitres et de préparer les partitions pour les répétitions et célébrations. Les administrateurs gèrent la plateforme et les chorales, tandis que vous pilotez vos choristes en toute indépendance.
+            </p>
+            <div style="display: inline-flex; align-items: center; gap: 8px; background: #eff6ff; color: #2563eb; font-weight: 600; font-size: 0.8rem; padding: 6px 14px; border-radius: 20px;">
+              <span>✨</span> Module de suivi des choristes prêt pour le déploiement
+            </div>
           </div>
         </div>
       </div>
@@ -3349,11 +3374,11 @@
         <span class="extra-icon">ℹ️</span>
         <span class="extra-label">À propos</span>
       </button>
-      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="statistiques">
+      <button type="button" class="extra-menu-item" data-target-view="statistiques">
         <span class="extra-icon">📊</span>
         <span class="extra-label">Stats</span>
       </button>
-      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="admin">
+      <button type="button" class="extra-menu-item" data-target-view="admin">
         <span class="extra-icon">🔑</span>
         <span class="extra-label">Administration</span>
       </button>
@@ -3395,6 +3420,6 @@
 
 <!-- Import workspace rendered inline in view-importer -->
 
-<script src="/app.js?v=23"></script>
+<script src="/app.js?v=24"></script>
 </body>
 </html>
