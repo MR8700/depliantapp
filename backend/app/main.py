@@ -53,6 +53,17 @@ _CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password", "/auth/statu
 _CHEMINS_ACCES_REFUSE_CHORALE = {"/acces-refuse-chorale.html", "/auth/logout", "/favicon.ico"}
 
 
+_db_initialized = False
+
+def _ensure_db():
+    global _db_initialized
+    if not _db_initialized:
+        _db_initialized = True
+        try:
+            init_db()
+        except Exception as e:
+            print("DB init error:", e)
+
 class AuthMiddleware(BaseHTTPMiddleware):
     """Verrouille tout le site derrière une authentification obligatoire —
     soit un compte chorale, soit le compte super-admin unique. Le mot de
@@ -63,6 +74,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
     cookie eux-mêmes."""
 
     async def dispatch(self, request, call_next):
+        _ensure_db()
         path = request.url.path
         if path in _CHEMINS_PUBLICS:
             return await call_next(request)
