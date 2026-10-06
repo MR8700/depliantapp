@@ -1,12 +1,12 @@
-"""Classifieur de catégorie liturgique, entraîné sur les chants déjà catalogués.
+"""Classifieur de catégorie liturgique robuste (modèle hybride : règles liturgiques expertes
++ Naive Bayes multinomial enrichi de n-grammes + corpus de référence initial).
 
-Volontairement pas de dépendance ML externe (scikit-learn, etc.) : avec quelques
-milliers de chants seulement, un Naive Bayes multinomial "from scratch" (comptage
-de mots + lissage de Laplace) est largement suffisant, reste explicable, et colle
-à l'objectif "application légère". Le modèle est ré-entraîné à la demande
-(POST /ml/train) à partir des chants dont la confiance a été validée (>= 0.7,
-catégorie != "Autre") — donc il s'améliore au fur et à mesure que l'utilisateur
-corrige/valide des chants dans l'éditeur : c'est la boucle d'apprentissage.
+Ce modèle est résistant au problème de "démarrage à froid" (cold-start) lorsque la base
+de données est vide ou contient peu de chants validés. Il combine :
+1. Une base de connaissances liturgiques canoniques (seed corpus de prières et chants catholiques)
+2. Des règles expertes de détection de formules canoniques (Kyrie, Gloria, Sanctus, etc.)
+3. Le ré-entraînement continu à partir des chants validés en base (POST /ml/train)
+4. La tokenisation avancée avec n-grammes (unigrammes + bigrammes) et normalisation sans accent.
 """
 import json
 import math
@@ -22,13 +22,154 @@ STOPWORDS = {
     "je", "tu", "il", "elle", "nous", "vous", "ils", "elles", "ce", "ces", "ton",
     "ta", "tes", "mon", "ma", "mes", "son", "sa", "ses", "au", "aux", "pour",
     "par", "sur", "dans", "est", "sont", "avec", "ne", "pas", "plus", "bis", "ter",
+    "qui", "que", "a", "d", "l", "s", "se", "qu", "ont", "nos", "vos", "leurs",
 }
+
+SEED_DOCUMENTS = [
+    # Entrée
+    ("Peuple de Dieu en marche, chantons au Seigneur notre Dieu", "Entree"),
+    ("Chantez au Seigneur un chant nouveau, bénissez son saint nom", "Entree"),
+    ("Nous marchons vers toi, Seigneur, dans la joie et la paix", "Entree"),
+    ("Jubilez, criez de joie, le Seigneur est au milieu de nous", "Entree"),
+    ("Que vive mon âme à te louer, ô Seigneur mon Dieu rassemble-nous", "Entree"),
+    ("Rassemblement, venez à la maison du Père, entrons dans sa présence", "Entree"),
+    ("Dieu nous accueille en sa maison, Dieu nous invite à son festin", "Entree"),
+    ("Approchons-nous de la table sainte pour célébrer le Seigneur", "Entree"),
+    ("Acclamez le Seigneur terre entière, servez le Seigneur dans l'allégresse", "Entree"),
+    
+    # Kyrie / Pénitence
+    ("Kyrie eleison, Christe eleison, Kyrie eleison", "Kyrie"),
+    ("Seigneur prends pitié de nous, Ô Christ prends pitié de nous", "Kyrie"),
+    ("Prends pitié de nous Seigneur car nous avons péché contre toi", "Kyrie"),
+    ("Pardonne-nous Seigneur nos fautes et nos offenses, lave nos péchés", "Kyrie"),
+    ("Seigneur Jésus envoyé par le Père pour guérir les cœurs blessés", "Kyrie"),
+    ("Mendiez la paix du cœur, réconciliation et miséricorde, prends pitié", "Kyrie"),
+    
+    # Gloria
+    ("Gloire à Dieu au plus haut des cieux et paix sur la terre aux hommes qu'il aime", "Gloria"),
+    ("Gloria in excelsis Deo, et in terra pax hominibus bonae voluntatis", "Gloria"),
+    ("Nous te louons, nous te bénissons, nous t'adorons, nous te glorifions", "Gloria"),
+    ("Seigneur Dieu, Roi du ciel, Dieu le Père tout-puissant, gloire à Dieu", "Gloria"),
+    ("Agneau de Dieu, le Fils du Père, toi qui enlèves le péché du monde, reçois notre prière", "Gloria"),
+    
+    # Psaume
+    ("Psaume responsorial, le Seigneur est mon berger rien ne saurait me manquer", "Psaume"),
+    ("Garde-moi mon Dieu, j'ai fait de toi mon refuge, psaume de David", "Psaume"),
+    ("Le Seigneur est tendresse et pitié, lent à la colère et plein d'amour", "Psaume"),
+    ("Chantez au Seigneur un cantique nouveau, car il a fait des merveilles", "Psaume"),
+    
+    # Acclamation
+    ("Alléluia alléluia alléluia, parole de Dieu vivante et efficace", "Acclamation"),
+    ("Alleluia, ta parole est la lumière sur ma route, acclamation de l'évangile", "Acclamation"),
+    ("Gloire et louange à toi, Seigneur Jésus, parole éternelle du Père", "Acclamation"),
+    ("Cherchez d'abord le royaume de Dieu et sa justice, alleluia", "Acclamation"),
+    ("Acclamez la parole du salut, acclamation évangélique réjouis-toi", "Acclamation"),
+    
+    # Credo
+    ("Je crois en un seul Dieu, le Père tout-puissant, créateur du ciel et de la terre", "Credo"),
+    ("Credo in unum Deum, Patrem omnipotentem, factorem caeli et terrae", "Credo"),
+    ("Profession de foi, je crois en Jésus Christ son Fils unique notre Seigneur", "Credo"),
+    ("Je crois en l'Esprit Saint qui donne la vie, je crois en l'Église une sainte catholique", "Credo"),
+    
+    # Prière universelle
+    ("Seigneur écoute-nous, Seigneur exauce-nous, prière universelle", "Priere_universelle"),
+    ("O Seigneur, entends la prière qui monte de nos cœurs vers toi", "Priere_universelle"),
+    ("Notre prière monte vers toi Seigneur, exauce tes enfants qui t'implorent", "Priere_universelle"),
+    ("Pour le monde, pour l'Église, pour les malades et les affligés, nous te prions Seigneur", "Priere_universelle"),
+    
+    # Offertoire
+    ("Voici nos dons, voici notre offrande, reçois Seigneur le pain et le vin", "Offertoire"),
+    ("Fruit de la terre et du travail des hommes, nous te présentons ce pain", "Offertoire"),
+    ("Reçois Seigneur les dons de ton peuple rassemblé, offrande sainte", "Offertoire"),
+    ("Qu'exulte la terre, apportons nos présents à l'autel du Seigneur", "Offertoire"),
+    ("Tu es béni, Dieu de l'univers, toi qui nous donnes ce pain et ce vin", "Offertoire"),
+    ("Seigneur, nous t'offrons nos vies, notre travail, nos joies et nos peines", "Offertoire"),
+    
+    # Sanctus
+    ("Saint, Saint, Saint, le Seigneur Dieu de l'univers", "Sanctus"),
+    ("Sanctus, Sanctus, Sanctus Dominus Deus Sabaoth", "Sanctus"),
+    ("Le ciel et la terre sont remplis de ta gloire, hosanna au plus haut des cieux", "Sanctus"),
+    ("Béni soit celui qui vient au nom du Seigneur, hosanna au plus haut des cieux", "Sanctus"),
+    
+    # Anamnèse
+    ("Il est grand le mystère de la foi, anamnèse eucharistique", "Anamnese"),
+    ("Nous proclamons ta mort, Seigneur Jésus, nous célébrons ta résurrection", "Anamnese"),
+    ("Christ est venu, Christ est mort, Christ est ressuscité, Christ reviendra", "Anamnese"),
+    ("Gloire à toi qui étais mort, gloire à toi qui es vivant, notre Sauveur et notre Dieu", "Anamnese"),
+    
+    # Notre Père
+    ("Notre Père qui es aux cieux, que ton nom soit sanctifié", "Notre_Pere"),
+    ("Pater noster, qui es in caelis, sanctificetur nomen tuum", "Notre_Pere"),
+    ("Que ton règne vienne, que ta volonté soit faite sur la terre comme au ciel", "Notre_Pere"),
+    ("Donne-nous aujourd'hui notre pain de ce jour, pardonne-nous nos offenses", "Notre_Pere"),
+    
+    # Agnus
+    ("Agneau de Dieu qui enlèves le péché du monde, prends pitié de nous", "Agnus"),
+    ("Agnus Dei, qui tollis peccata mundi, miserere nobis, dona nobis pacem", "Agnus"),
+    ("Donne-nous la paix Seigneur, Agneau immolé pour le salut des hommes", "Agnus"),
+    
+    # Communion
+    ("Venez à la table du banquet, recevez le corps et le sang du Christ", "Communion"),
+    ("Pain vivant descendu du ciel, celui qui mange de ce pain vivra éternellement", "Communion"),
+    ("Prenez et mangez, ceci est mon corps livré pour vous", "Communion"),
+    ("Prenez et buvez, ceci est la coupe de mon sang versé pour la multitude", "Communion"),
+    ("Ô pain de vie, corps très saint de Jésus, nourriture céleste", "Communion"),
+    ("Recevez le corps du Seigneur, source vivante de notre foi", "Communion"),
+    ("Demeurez en mon amour, comme le Père m'a aimé, mangez ma chair", "Communion"),
+    
+    # Action de grâce
+    ("Action de grâce, béni soit Dieu qui nous a comblés de ses biens", "Action_de_grace"),
+    ("Rendons grâce au Seigneur notre Dieu, car il est bon et sa miséricorde est éternelle", "Action_de_grace"),
+    ("Magnificat mon âme exalte le Seigneur, mon esprit exulte en Dieu mon Sauveur", "Action_de_grace"),
+    ("Merci Seigneur pour tous tes bienfaits, louange à toi pour ton grand amour", "Action_de_grace"),
+    
+    # Sortie
+    ("Allez dans la paix du Christ, annoncer l'Évangile à toute la création", "Sortie"),
+    ("Envoyés dans le monde pour témoigner de ton amour et de ta paix", "Sortie"),
+    ("Marchons ensemble dans la joie, témoins vivants de la résurrection", "Sortie"),
+    ("Portez la bonne nouvelle aux pauvres, chant d'envoi et de mission", "Sortie"),
+    ("Allez par toute la terre porter la lumière du Christ", "Sortie"),
+    
+    # Marie / Chants mariaux
+    ("Je vous salue Marie pleine de grâce, le Seigneur est avec vous", "Marie"),
+    ("Ave Maria gratia plena, Dominus tecum, benedicta tu in mulieribus", "Marie"),
+    ("Sainte Vierge Marie, Mère de Dieu, priez pour nous pauvres pécheurs", "Marie"),
+    ("Reine du ciel réjouis-toi, sous ton voile de tendresse nous cherchons refuge", "Marie"),
+    ("Couronnée d'étoiles, Vierge immaculée, Mère de l'espérance", "Marie"),
+]
+
+LITURGICAL_RULES = [
+    (re.compile(r"\b(kyrie\s+eleison|prends\s+pitie|christe\s+eleison)\b"), "Kyrie", 15.0),
+    (re.compile(r"\b(gloria\s+in\s+excelsis|gloire\s+a\s+dieu)\b"), "Gloria", 15.0),
+    (re.compile(r"\b(sanctus|saint\s+le\s+seigneur|dieu\s+de\s+l\s*univers|hosanna\s+au\s+plus\s+haut)\b"), "Sanctus", 15.0),
+    (re.compile(r"\b(anamnese|mystere\s+de\s+la\s+foi|proclamons\s+ta\s+mort|christ\s+est\s+venu)\b"), "Anamnese", 15.0),
+    (re.compile(r"\b(notre\s+pere|pater\s+noster|qui\s+es\s+aux\s+cieux)\b"), "Notre_Pere", 15.0),
+    (re.compile(r"\b(agneau\s+de\s+dieu|agnus\s+dei|qui\s+enleves\s+le\s+peche)\b"), "Agnus", 15.0),
+    (re.compile(r"\b(alleluia|all[eé]luia|acclamation)\b"), "Acclamation", 10.0),
+    (re.compile(r"\b(credo|je\s+crois\s+en\s+un\s+seul\s+dieu|profession\s+de\s+foi)\b"), "Credo", 15.0),
+    (re.compile(r"\b(priere\s+universelle|entends\s+nos\s+prieres|exauce[\s\-]nous)\b"), "Priere_universelle", 12.0),
+    (re.compile(r"\b(offrande|voici\s+nos\s+dons|recois\s+seigneur|pain\s+et\s+le?\s*vin|fruit\s+de\s+la\s+terre)\b"), "Offertoire", 10.0),
+    (re.compile(r"\b(pain\s+vivant|pain\s+de\s+vie|corps\s+du\s+christ|mangez\s+et\s+buvez|table\s+du\s+banquet|communion)\b"), "Communion", 10.0),
+    (re.compile(r"\b(action\s+de\s+grace|rendons\s+grace|merci\s+seigneur)\b"), "Action_de_grace", 10.0),
+    (re.compile(r"\b(allez\s+dans\s+la\s+paix|envoyes\s+dans\s+le\s+monde|chant\s+d\s*envoi|bonne\s+nouvelle)\b"), "Sortie", 10.0),
+    (re.compile(r"\b(ave\s+maria|je\s+vous\s+salue\s+marie|vierge\s+marie|sainte\s+mere|reine\s+du\s+ciel|magnificat)\b"), "Marie", 12.0),
+    (re.compile(r"\b(psaume|le\s+seigneur\s+est\s+mon\s+berger)\b"), "Psaume", 10.0),
+    (re.compile(r"\b(peuple\s+de\s+dieu|chantez\s+au\s+seigneur|nous\s+marchons|entrons\s+dans\s+sa\s+maison)\b"), "Entree", 8.0),
+]
+
+
+def normaliser_texte(texte: str) -> str:
+    """Supprime les accents, ponctuation superflue et met en minuscules."""
+    texte = unicodedata.normalize("NFKD", texte or "").encode("ascii", "ignore").decode("ascii").lower()
+    return re.sub(r"[^a-z0-9\s]", " ", texte)
 
 
 def tokenize(text: str) -> list[str]:
-    text = unicodedata.normalize("NFKD", text or "").encode("ascii", "ignore").decode("ascii").lower()
-    words = re.findall(r"[a-z]{3,}", text)
-    return [w for w in words if w not in STOPWORDS]
+    """Extrait unigrammes significatifs et bigrammes pertinents."""
+    clean = normaliser_texte(text)
+    words = [w for w in re.findall(r"[a-z]{3,}", clean) if w not in STOPWORDS]
+    bigrams = [f"{words[i]}_{words[i+1]}" for i in range(len(words) - 1)]
+    return words + bigrams
 
 
 def _chant_text(titre: str, refrain: Optional[str], couplets: list[str]) -> str:
@@ -52,9 +193,9 @@ class NaiveBayesClassifier:
             self.vocab.update(tokens)
         self.n_docs = len(documents)
 
-    def predict(self, text: str, top_n: int = 3) -> list[tuple[str, float]]:
+    def predict(self, text: str) -> dict[str, float]:
         if self.n_docs == 0 or not self.class_doc_counts:
-            return []
+            return {}
         tokens = tokenize(text)
         v = max(len(self.vocab), 1)
         log_scores: dict[str, float] = {}
@@ -66,45 +207,86 @@ class NaiveBayesClassifier:
                 log_prob += math.log((counts.get(token, 0) + 1) / (total + v))
             log_scores[label] = log_prob
 
-        # softmax pour un score 0-1 lisible côté interface
+        # Softmax pour normaliser entre 0 et 1
         max_log = max(log_scores.values())
         exp_scores = {label: math.exp(score - max_log) for label, score in log_scores.items()}
-        total_exp = sum(exp_scores.values())
-        ranked = sorted(
-            ((label, exp_score / total_exp) for label, exp_score in exp_scores.items()),
-            key=lambda kv: kv[1],
-            reverse=True,
-        )
-        return ranked[:top_n]
+        total_exp = sum(exp_scores.values()) or 1.0
+        return {label: exp_score / total_exp for label, exp_score in exp_scores.items()}
 
 
 _model = NaiveBayesClassifier()
 _trained = False
 
 
+def _init_seed_model() -> None:
+    global _model, _trained
+    _model = NaiveBayesClassifier()
+    _model.train(SEED_DOCUMENTS)
+    _trained = True
+
+
+# Initialise le modèle immédiatement avec le corpus de semence
+_init_seed_model()
+
+
 def train_from_db() -> dict:
-    """Ré-entraîne le modèle à partir des chants validés (confiance >= 0.7, hors 'Autre')."""
+    """Ré-entraîne le modèle à partir du corpus de semence + chants validés (confiance >= 0.7, hors 'Autre')."""
     global _model, _trained
     with get_connection() as conn:
         rows = conn.execute(
             "SELECT titre, refrain, couplets, categorie FROM chants WHERE confiance >= 0.7 AND categorie != 'Autre'"
         ).fetchall()
 
-    documents = [
+    db_documents = [
         (_chant_text(row["titre"], row["refrain"], json.loads(row["couplets"])), row["categorie"])
         for row in rows
     ]
+    tous_documents = SEED_DOCUMENTS + db_documents
     _model = NaiveBayesClassifier()
-    _model.train(documents)
+    _model.train(tous_documents)
     _trained = True
     return {
-        "exemples": len(documents),
+        "exemples_db": len(db_documents),
+        "exemples_totaux": len(tous_documents),
         "categories": sorted(_model.class_doc_counts.keys()),
     }
 
 
-def suggest_categorie(titre: str, refrain: Optional[str], couplets: list[str]) -> list[tuple[str, float]]:
-    if not _trained:
-        train_from_db()
+def suggest_categorie(titre: str, refrain: Optional[str], couplets: list[str], top_n: int = 3) -> list[tuple[str, float]]:
+    """Prédit les catégories liturgiques les plus probables avec scores hybrides (Règles + Bayes)."""
     text = _chant_text(titre, refrain, couplets)
-    return _model.predict(text)
+    clean_text = normaliser_texte(text)
+
+    # 1. Scores des règles expertes
+    rule_scores: dict[str, float] = defaultdict(float)
+    rule_hit = False
+    for pattern, categorie, weight in LITURGICAL_RULES:
+        if pattern.search(clean_text):
+            rule_scores[categorie] += weight
+            rule_hit = True
+
+    # 2. Scores Naive Bayes
+    bayes_scores = _model.predict(text)
+
+    # 3. Fusion hybride
+    toutes_categories = set(bayes_scores.keys()) | set(rule_scores.keys())
+    scores_finaux: dict[str, float] = {}
+
+    for cat in toutes_categories:
+        b_score = bayes_scores.get(cat, 0.0)
+        r_score = rule_scores.get(cat, 0.0)
+        if rule_hit:
+            # Si une règle experte forte s'est déclenchée, elle a une influence prépondérante
+            score_combine = (b_score * 0.3) + (min(r_score / 15.0, 1.0) * 0.7)
+        else:
+            score_combine = b_score
+        scores_finaux[cat] = score_combine
+
+    # Normalisation finale
+    total = sum(scores_finaux.values()) or 1.0
+    ranked = sorted(
+        ((cat, round(score / total, 3)) for cat, score in scores_finaux.items()),
+        key=lambda kv: kv[1],
+        reverse=True,
+    )
+    return ranked[:top_n]

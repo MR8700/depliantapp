@@ -1,3 +1,4 @@
+import { Platform } from "react-native";
 import * as FileSystem from "expo-file-system/legacy";
 import { API_BASE_URL } from "../config";
 import { apiFetch, ApiError, jetonAuthorizationHeader, verifierAccesReseau } from "./client";
@@ -152,9 +153,28 @@ export interface PdfLocal {
 // simplement, et l'erreur de rendu local d'origine est celle affichée).
 export async function telechargerFeuilletPdf(id: number): Promise<PdfLocal> {
   await verifierAccesReseau(`/feuillets/${id}/pdf`);
-  const dest = `${FileSystem.cacheDirectory}feuillet_${id}_${Date.now()}.pdf`;
   const headers = await jetonAuthorizationHeader();
   const url = `${API_BASE_URL}/feuillets/${id}/pdf`;
+
+  if (Platform.OS === "web") {
+    const res = await fetch(url, { headers });
+    if (res.status === 409) {
+      let detail: DepassementPdf = { message: "Le contenu dépasse la place disponible", moments_en_cause: [] };
+      try {
+        const errJson = await res.json();
+        if (errJson.detail) detail = errJson.detail;
+      } catch {}
+      throw new ApiError(409, detail.message, detail);
+    }
+    if (!res.ok) {
+      throw new ApiError(res.status, `Erreur ${res.status} lors de la génération du PDF`);
+    }
+    const blob = await res.blob();
+    const uri = URL.createObjectURL(blob);
+    return { uri };
+  }
+
+  const dest = `${FileSystem.cacheDirectory}feuillet_${id}_${Date.now()}.pdf`;
   let resultat: FileSystem.FileSystemDownloadResult;
   try {
     resultat = await FileSystem.downloadAsync(url, dest, { headers });

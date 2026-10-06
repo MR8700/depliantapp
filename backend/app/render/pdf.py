@@ -191,4 +191,9 @@ def render_feuillet_pdf_auto(feuillet: schemas.Feuillet, config: dict, images: O
             # incomplet.
             derniere_erreur = exc
             continue
-    raise derniere_erreur
+    if derniere_erreur is not None:
+        raise derniere_erreur
+    raise DepassementImpossible(
+        "Impossible d'ajuster le contenu dans les zones disponibles.",
+        moments_en_cause=[s.moment for s in sections],
+    )

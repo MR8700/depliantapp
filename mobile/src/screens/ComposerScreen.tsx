@@ -8,6 +8,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { getMeta } from "../api/meta";
 import { creerFeuillet, mettreAJourFeuillet, getFeuillet, supprimerFeuillet, DepassementPdf } from "../api/feuillets";
 import { getChant } from "../api/chants";
+import { getLecturesAelf, extraireLecturesLiturgiques } from "../api/aelf";
 import { ApiError } from "../api/client";
 import { getLicenceLocale } from "../storage/secureStore";
 import { useIdentite } from "../context/IdentiteContext";
@@ -110,6 +111,7 @@ export default function ComposerScreen({ route, navigation }: Props) {
   const [deuxiemeLecture, setDeuxiemeLecture] = useState("");
   const [evangile, setEvangile] = useState("");
   const [lectureCiblee, setLectureCiblee] = useState<null | "premiere" | "psaume" | "deuxieme" | "evangile">(null);
+  const [chargementAelf, setChargementAelf] = useState(false);
 
   const [priereActive, setPriereActive] = useState(false);
   const [widgetInfoChorale, setWidgetInfoChorale] = useState(false);
@@ -307,6 +309,34 @@ export default function ComposerScreen({ route, navigation }: Props) {
       refrain: chant.refrain, couplets: chant.couplets, couplet_limit: null, taille_texte_supplement: null,
     });
     setLigneCiblee(null);
+  }
+
+  async function chargerLecturesAelf(dateOptionnelle?: string) {
+    const d = dateOptionnelle || date;
+    if (!d) {
+      Alert.alert("Date requise", "Sélectionne d'abord une date pour récupérer les lectures.");
+      return;
+    }
+    setChargementAelf(true);
+    try {
+      const reponse = await getLecturesAelf(d);
+      const extrait = extraireLecturesLiturgiques(reponse);
+      let modifie = false;
+      if (extrait.premiereLecture) { setPremiereLecture(extrait.premiereLecture); modifie = true; }
+      if (extrait.psaume) { setPsaume(extrait.psaume); modifie = true; }
+      if (extrait.deuxiemeLecture) { setDeuxiemeLecture(extrait.deuxiemeLecture); modifie = true; }
+      if (extrait.evangile) { setEvangile(extrait.evangile); modifie = true; }
+      if (extrait.celebrationTitre && !typeCelebration) { setTypeCelebration(extrait.celebrationTitre); modifie = true; }
+      if (modifie) {
+        Alert.alert("Lectures AELF chargées", `Lectures liturgiques trouvées et remplies pour le ${d}${extrait.celebrationTitre ? " (" + extrait.celebrationTitre + ")" : ""}.`);
+      } else {
+        Alert.alert("AELF", "Aucune lecture trouvée pour cette date.");
+      }
+    } catch (err: any) {
+      Alert.alert("Information AELF", err?.message || "Impossible de récupérer les lectures pour cette date (mode hors-ligne ou service temporairement indisponible).");
+    } finally {
+      setChargementAelf(false);
+    }
   }
 
   function construirePayload(): FeuilletCreate {
@@ -636,24 +666,55 @@ export default function ComposerScreen({ route, navigation }: Props) {
         )}
 
         <Text style={styles.section}>ℹ️ Informations de la célébration</Text>
-        <Pressable style={styles.champ} onPress={() => setPickerDateVisible(true)}>
-          <Text style={date ? styles.texteChampDate : styles.texteChampDatePlaceholder}>{formaterDateLisible(date)}</Text>
-        </Pressable>
-        {pickerDateVisible && (
-          <DateTimePicker
-            value={date ? dateIsoVersDate(date) : new Date()}
-            mode="date"
-            display={Platform.OS === "ios" ? "inline" : "default"}
-            onChange={(event, selectionne) => {
-              if (Platform.OS !== "ios") setPickerDateVisible(false);
-              if (event.type === "set" && selectionne) setDate(dateVersIso(selectionne));
-            }}
-          />
-        )}
-        {Platform.OS === "ios" && pickerDateVisible && (
-          <Pressable style={styles.boutonValiderDate} onPress={() => setPickerDateVisible(false)}>
-            <Text style={styles.texteBoutonValiderDate}>OK</Text>
-          </Pressable>
+        {Platform.OS === "web" ? (
+          <View style={styles.champ}>
+            <input
+              type="date"
+              value={date}
+              onChange={(e) => {
+                const nouvelleDate = (e.target as HTMLInputElement).value;
+                setDate(nouvelleDate);
+                if (nouvelleDate) {
+                  chargerLecturesAelf(nouvelleDate);
+                }
+              }}
+              style={{
+                width: "100%",
+                border: "none",
+                outline: "none",
+                fontSize: "14px",
+                color: "#1e293b",
+                backgroundColor: "transparent",
+                fontFamily: "inherit",
+              }}
+            />
+          </View>
+        ) : (
+          <>
+            <Pressable style={styles.champ} onPress={() => setPickerDateVisible(true)}>
+              <Text style={date ? styles.texteChampDate : styles.texteChampDatePlaceholder}>{formaterDateLisible(date)}</Text>
+            </Pressable>
+            {pickerDateVisible && (
+              <DateTimePicker
+                value={date ? dateIsoVersDate(date) : new Date()}
+                mode="date"
+                display={Platform.OS === "ios" ? "inline" : "default"}
+                onChange={(event, selectionne) => {
+                  if (Platform.OS !== "ios") setPickerDateVisible(false);
+                  if (event.type === "set" && selectionne) {
+                    const nouvelleDate = dateVersIso(selectionne);
+                    setDate(nouvelleDate);
+                    chargerLecturesAelf(nouvelleDate);
+                  }
+                }}
+              />
+            )}
+            {Platform.OS === "ios" && pickerDateVisible && (
+              <Pressable style={styles.boutonValiderDate} onPress={() => setPickerDateVisible(false)}>
+                <Text style={styles.texteBoutonValiderDate}>OK</Text>
+              </Pressable>
+            )}
+          </>
         )}
         <TextInput style={styles.champ} placeholder="Lieu (Paroisse Saint Pierre…)" value={lieu} onChangeText={setLieu} />
         <TextInput style={styles.champ} placeholder="Célébration (Temps ordinaire…)" value={typeCelebration} onChangeText={setTypeCelebration} />
@@ -661,7 +722,18 @@ export default function ComposerScreen({ route, navigation }: Props) {
         <TextInput style={styles.champ} placeholder="Animateur" value={animateur} onChangeText={setAnimateur} />
         <TextInput style={styles.champ} placeholder="Chorale" value={choraleInfo} onChangeText={setChoraleInfo} />
 
-        <Text style={styles.section}>📖 Lecture du jour</Text>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 18, marginBottom: 8 }}>
+          <Text style={[styles.section, { marginTop: 0, marginBottom: 0 }]}>📖 Lecture du jour</Text>
+          <Pressable
+            style={{ flexDirection: "row", alignItems: "center", backgroundColor: "#eff6ff", borderColor: "#bfdbfe", borderWidth: 1, borderRadius: 8, paddingHorizontal: 10, paddingVertical: 5 }}
+            onPress={() => chargerLecturesAelf()}
+            disabled={chargementAelf}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "600", color: "#2563eb" }}>
+              {chargementAelf ? "⏳ Chargement..." : "⚡ Remplir depuis l'AELF"}
+            </Text>
+          </Pressable>
+        </View>
         <View style={styles.rangeeLecture}>
           <TextInput style={[styles.champ, styles.champLecture]} placeholder="1ère lecture (Ex: Actes 15,1-2.22-29)" value={premiereLecture} onChangeText={setPremiereLecture} />
           <Pressable style={styles.boutonRecherche} onPress={() => setLectureCiblee("premiere")}><Text>📚</Text></Pressable>

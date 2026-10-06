@@ -19,8 +19,8 @@ export interface RawChant {
   categorieDetectee: string | null;
 }
 
-const REF_RE = /^\s*(R[ée]f(?:rain)?\.?\s*\d*|R)\s*[:;]\s*(.*)$/i;
-const VERSE_RE = /^\s*(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[.\-)–—:]\s*(.+)$/;
+const REF_RE = /^\s*(?:(R[ée]f(?:rain)?\.?\s*\d*|R\b|\(R[ée]f(?:rain)?\s*\)|\(R\)|Ch[oœ]ur|Tous))\s*[:;/.\-)]?\s*(.*)$/i;
+const VERSE_RE = /^\s*(?:(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[.\-)–—:/]\s*|(?:v\.|couplet)\s*(\d+)\s*[:.\-]?\s*)(.*)$/i;
 const CODE_REFERENCE_RE = /^([A-Z]{1,2}\s?\d{1,3}\s?[a-z]?)\s+(.+)$/;
 const SECTION_HEAD_RE = /^[A-Z]\.?\s*([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ ]{3,30})$/;
 const CODED_TITLE_RE = /^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,25})\s*(\d{0,3})\s*(?:[:.\-]\s*(.*))?$/i;
@@ -29,7 +29,7 @@ const SECTION_KEYWORDS = new Set([
   "ENTREE", "ENTRÉE", "KYRIE", "PRENDS PITIE", "PRENDS PITIÉ", "GLORIA", "PSAUME",
   "ALLELUIA", "ALLÉLUIA", "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE",
   "PU", "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE",
-  "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE",
+  "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE", "ENVOI",
   "CHANTS MARIAUX", "MARIAUX",
 ]);
 
@@ -39,7 +39,7 @@ const CODED_TITLE_CATEGORIES: Record<string, string> = {
   CREDO: "Credo", "PRIERE UNIVERSELLE": "Priere_universelle", PU: "Priere_universelle",
   PRIERE: "Priere_universelle", OFFERTOIRE: "Offertoire", SANCTUS: "Sanctus",
   ANAMNESE: "Anamnese", "NOTRE PERE": "Notre_Pere", PATER: "Notre_Pere", AGNUS: "Agnus",
-  COMMUNION: "Communion", "ACTION DE GRACE": "Action_de_grace", SORTIE: "Sortie",
+  COMMUNION: "Communion", "ACTION DE GRACE": "Action_de_grace", SORTIE: "Sortie", ENVOI: "Sortie",
   NOEL: "Noel", CAREME: "Careme", AVENT: "Avent", PAQUES: "Paques", MARIAGE: "Mariage",
   DEFUNTS: "Defunts", BAPTEME: "Bapteme_Confirmation",
 };
@@ -219,11 +219,14 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
 
     if (refM) {
       if (currentBlock) blocks.push(currentBlock);
-      currentBlock = { type: "ref", num: null, lignes: [refM[2].trim()] };
+      const texteRef = refM[2]?.trim();
+      currentBlock = { type: "ref", num: null, lignes: texteRef ? [texteRef] : [] };
       blockFinished = false;
     } else if (verseM) {
       if (currentBlock) blocks.push(currentBlock);
-      currentBlock = { type: "couplet", num: verseM[1], lignes: [verseM[2].trim()] };
+      const numCouplet = verseM[1] || verseM[2];
+      const texteCouplet = verseM[3]?.trim();
+      currentBlock = { type: "couplet", num: numCouplet, lignes: texteCouplet ? [texteCouplet] : [] };
       blockFinished = false;
     } else if (currentBlock && !blockFinished) {
       currentBlock.lignes.push(pClean);

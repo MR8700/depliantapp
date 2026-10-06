@@ -6,6 +6,7 @@
 // balaie ECHELLES_CORPS du plus grand au plus petit, teste (mesure + essaie
 // de distribuer) avant de dessiner, jamais de réduction chant par chant,
 // jamais de 3e page.
+import { Platform } from "react-native";
 import * as Print from "expo-print";
 import * as FileSystem from "expo-file-system/legacy";
 import { MeasurementBridgeHandle } from "../components/MeasurementBridge";
@@ -194,6 +195,11 @@ export async function genererPdfFeuilletLocal(feuillet: Feuillet, bridge: Measur
  * Compte super-admin (toujours en ligne) : repli sur le serveur conservé,
  * comportement inchangé. */
 export async function obtenirPdfAvecRepliLocal(feuilletId: number, bridge: MeasurementBridgeHandle): Promise<PdfLocal> {
+  // Sur le Web, expo-print (printToFileAsync) n'est pas disponible dans le navigateur.
+  // On télécharge directement le rendu PDF ReportLab haute fidélité du serveur.
+  if (Platform.OS === "web") {
+    return telechargerFeuilletPdf(feuilletId);
+  }
   const licenceLocale = await getLicenceLocale();
   try {
     const feuilletActuel = await getFeuillet(feuilletId);

@@ -1,5 +1,5 @@
 import { forwardRef, useImperativeHandle, useRef } from "react";
-import { StyleSheet, View } from "react-native";
+import { Platform, StyleSheet, View } from "react-native";
 import { WebView, WebViewMessageEvent } from "react-native-webview";
 import { StyleParagraphe } from "../render/typography";
 
@@ -92,6 +92,9 @@ const MeasurementBridge = forwardRef<MeasurementBridgeHandle>((_props, ref) => {
 
   useImperativeHandle(ref, () => ({
     async mesurer(unites, largeurColonneMm) {
+      if (Platform.OS === "web") {
+        return unites.map(() => 20);
+      }
       await pret.current;
       return new Promise((resolve, reject) => {
         const id = ++compteurRequete;
@@ -113,6 +116,10 @@ const MeasurementBridge = forwardRef<MeasurementBridgeHandle>((_props, ref) => {
       // Message non conforme -- ignoré, la requête en attente finira par
       // expirer côté appelant si elle ne reçoit jamais de réponse valide.
     }
+  }
+
+  if (Platform.OS === "web") {
+    return null;
   }
 
   return (

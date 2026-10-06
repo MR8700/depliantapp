@@ -1,5 +1,5 @@
 import { useState, ReactNode } from "react";
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { PdfView } from "@kishannareshpal/expo-pdf";
 import * as Sharing from "expo-sharing";
@@ -36,6 +36,10 @@ export default function PdfViewer({
 
   async function ouvrirAvec() {
     if (!uri) return;
+    if (Platform.OS === "web") {
+      window.open(uri, "_blank");
+      return;
+    }
     const disponible = await Sharing.isAvailableAsync();
     if (!disponible) {
       Alert.alert("Indisponible", "Le partage n'est pas disponible sur cet appareil.");
@@ -46,6 +50,11 @@ export default function PdfViewer({
 
   async function imprimer() {
     if (!uri) return;
+    if (Platform.OS === "web") {
+      const fenetre = window.open(uri, "_blank");
+      fenetre?.focus();
+      return;
+    }
     setImpressionEnCours(true);
     try {
       await Print.printAsync({ uri });
@@ -98,6 +107,16 @@ export default function PdfViewer({
         <Text style={styles.texteChargement}>
           L'aperçu intégré n'a pas pu s'afficher ({erreurAffichage}) -- utilise "Ouvrir le PDF" ci-dessous.
         </Text>
+      </View>
+    );
+  } else if (Platform.OS === "web") {
+    contenuCentral = (
+      <View style={{ flex: 1, width: "100%", height: "100%", backgroundColor: "#525659" }}>
+        <iframe
+          src={uri}
+          style={{ width: "100%", height: "100%", border: "none" }}
+          title="Aperçu du feuillet PDF"
+        />
       </View>
     );
   } else {

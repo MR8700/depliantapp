@@ -22,7 +22,7 @@ from typing import Optional
 
 # --- Marqueurs structurels ---------------------------------------------
 
-REF_RE = re.compile(r"^\s*(R[ée]f(?:rain)?\.?\s*\d*|R)\s*[:;]\s*(.*)$", re.IGNORECASE)
+REF_RE = re.compile(r"^\s*(?:R[ée]f(?:rain)?\.?\s*\d*|R\b|\(R[ée]f(?:rain)?\s*\)|\(R\)|Ch[oœ]ur|Tous)\s*[:;/.\-)]?\s*(.*)$", re.IGNORECASE)
 # Numérotation : "1.", "1-", "1)", "1:", "1&3-", "1&2&3.", chiffres romains —
 # le séparateur inclut le tiret cadratin/demi-cadratin ("1 — Texte..."),
 # très fréquent en PDF (mise en page Word qui convertit "-" en "—").
@@ -69,7 +69,7 @@ SECTION_KEYWORDS = {
     "ENTREE", "ENTRÉE", "KYRIE", "PRENDS PITIE", "PRENDS PITIÉ", "GLORIA", "PSAUME", 
     "ALLELUIA", "ALLÉLUIA", "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE", 
     "PU", "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE", 
-    "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE",
+    "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE", "ENVOI",
     "CHANTS MARIAUX", "MARIAUX"
 }
 
@@ -104,6 +104,7 @@ _CODED_TITLE_CATEGORIES = {
     "COMMUNION": "Communion",
     "ACTION DE GRACE": "Action_de_grace",
     "SORTIE": "Sortie",
+    "ENVOI": "Sortie",
     "NOEL": "Noel",
     "CAREME": "Careme",
     "AVENT": "Avent",
