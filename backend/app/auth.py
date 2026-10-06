@@ -354,6 +354,17 @@ def verify_session_token(token: str) -> Optional[Identite]:
         return None
     if type_compte not in ("super", "chorale"):
         return None
+
+    # Contrôle de révocation de session
+    try:
+        token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        with get_connection() as conn:
+            row_sess = conn.execute("SELECT is_active FROM sessions WHERE token_hash = ?", (token_hash,)).fetchone()
+            if row_sess and row_sess["is_active"] == 0:
+                return None
+    except Exception:
+        pass
+
     return Identite(type=type_compte, compte_id=compte_id, username=username)
 
 
@@ -426,3 +437,105 @@ def annuler_suppression_chorale(chorale_id: int, raison_annulation: str) -> None
         from . import crud
         texte_message = f"📢 [Annulation de planification de suppression]\nMotif d'annulation : {raison_annulation}"
         crud.creer_message(chorale_id, "super", texte_message)
+
+
+# --- Gestion des sessions ouvertes (multi-appareils libre) -------------------
+
+def parse_device_name(user_agent: str) -> str:
+    ua = (user_agent or "").lower()
+    if "iphone" in ua:
+        return "iPhone (Apple iOS)"
+    if "ipad" in ua:
+        return "iPad (Apple iPadOS)"
+    if "android" in ua:
+        return "Smartphone Android"
+    if "reactnative" in ua or "expo" in ua:
+        return "Application Mobile DepliantApp"
+    if "windows" in ua:
+        navigateur = "Chrome" if "chrome" in ua and "edg" not in ua else "Edge" if "edg" in ua else "Firefox" if "firefox" in ua else "Navigateur"
+        return f"{navigateur} sur Windows"
+    if "macintosh" in ua or "mac os" in ua:
+        navigateur = "Safari" if "safari" in ua and "chrome" not in ua else "Chrome" if "chrome" in ua else "Firefox" if "firefox" in ua else "Navigateur"
+        return f"{navigateur} sur macOS"
+    if "linux" in ua:
+        return "Navigateur Web sur Linux"
+    return "Appareil connecté"
+
+
+def enregistrer_session(identite: Identite, token: str, ip: str, user_agent: str) -> str:
+    session_id = secrets.token_hex(16)
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    device_nom = parse_device_name(user_agent)
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                f"INSERT INTO sessions (id, compte_type, compte_id, username, token_hash, ip_address, user_agent, device_nom, created_at, last_active, is_active) "
+                f"VALUES (?, ?, ?, ?, ?, ?, ?, ?, {horodatage}, {horodatage}, 1)",
+                (session_id, identite.type, identite.compte_id, identite.username, token_hash, ip, (user_agent or "")[:255], device_nom),
+            )
+    except Exception:
+        pass
+    return session_id
+
+
+def lister_sessions(identite: Identite, current_token: Optional[str] = None) -> list[dict]:
+    current_hash = hashlib.sha256(current_token.encode("utf-8")).hexdigest() if current_token else ""
+    try:
+        with get_connection() as conn:
+            rows = conn.execute(
+                "SELECT id, device_nom, ip_address, created_at, last_active, token_hash "
+                "FROM sessions WHERE compte_type = ? AND compte_id = ? AND is_active = 1 "
+                "ORDER BY last_active DESC",
+                (identite.type, identite.compte_id),
+            ).fetchall()
+            result = []
+            for r in rows:
+                row_dict = dict(r)
+                row_dict["est_actuelle"] = bool(current_hash and row_dict.get("token_hash") == current_hash)
+                row_dict.pop("token_hash", None)
+                result.append(row_dict)
+            return result
+    except Exception:
+        return []
+
+
+def revoquer_session(identite: Identite, session_id: str) -> bool:
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE sessions SET is_active = 0 WHERE id = ? AND compte_type = ? AND compte_id = ?",
+                (session_id, identite.type, identite.compte_id),
+            )
+            return True
+    except Exception:
+        return False
+
+
+def revoquer_autres_sessions(identite: Identite, current_token: str) -> int:
+    current_hash = hashlib.sha256(current_token.encode("utf-8")).hexdigest() if current_token else ""
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                "UPDATE sessions SET is_active = 0 WHERE compte_type = ? AND compte_id = ? AND token_hash != ? AND is_active = 1",
+                (identite.type, identite.compte_id, current_hash),
+            )
+            return 1
+    except Exception:
+        return 0
+
+
+def touch_session(token: Optional[str]) -> None:
+    if not token:
+        return
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    try:
+        with get_connection() as conn:
+            conn.execute(
+                f"UPDATE sessions SET last_active = {horodatage} WHERE token_hash = ? AND is_active = 1",
+                (token_hash,),
+            )
+    except Exception:
+        pass
+

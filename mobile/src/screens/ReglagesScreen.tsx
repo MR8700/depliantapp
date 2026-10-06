@@ -430,67 +430,33 @@ export default function ReglagesScreen() {
 
       {!estSuperAdmin && (
         <>
-          <Text style={styles.section}>💳 Licence</Text>
-          {!licenceInfo ? (
-            <Text style={styles.hint}>Aucune licence locale valide.</Text>
-          ) : (() => {
-            const { payload } = licenceInfo;
-            const joursAvantExpiration = payload.expireLe
-              ? Math.ceil((new Date(payload.expireLe).getTime() - Date.now()) / (24 * 3600 * 1000))
-              : null;
-            const expiree = joursAvantExpiration != null && joursAvantExpiration < 0;
-            const expireBientot = joursAvantExpiration != null && joursAvantExpiration >= 0 && joursAvantExpiration <= 14;
-            const quotaAtteint = payload.quotaFeuillets != null && feuilletsProduits >= payload.quotaFeuillets;
-            return (
-              <>
-                <View style={styles.carteAbonnement}>
-                  <View style={styles.ligneAbonnement}>
-                    <Text style={styles.labelAbonnement}>Chorale</Text>
-                    <Text style={styles.valeurAbonnement}>{payload.choraleNom}</Text>
-                  </View>
-                  <View style={styles.ligneAbonnement}>
-                    <Text style={styles.labelAbonnement}>Appareils autorisés</Text>
-                    <Text style={styles.valeurAbonnement}>{payload.devMax}</Text>
-                  </View>
-                  <View style={styles.ligneAbonnement}>
-                    <Text style={styles.labelAbonnement}>Feuillets produits</Text>
-                    <Text style={[styles.valeurAbonnement, quotaAtteint && { color: "#dc2626" }]}>
-                      {feuilletsProduits}{payload.quotaFeuillets != null ? ` / ${payload.quotaFeuillets}` : " (illimité)"}
-                    </Text>
-                  </View>
-                  <View style={styles.ligneAbonnement}>
-                    <Text style={styles.labelAbonnement}>Expiration</Text>
-                    <Text style={[styles.valeurAbonnement, (expiree || expireBientot) && { color: expiree ? "#dc2626" : "#d97706" }]}>
-                      {payload.expireLe ?? "Aucune"}
-                    </Text>
-                  </View>
-                </View>
-                {expiree && (
-                  <Text style={styles.avertissementAbonnement}>
-                    ⛔ Votre licence a expiré -- contactez l'administrateur pour la renouveler.
-                  </Text>
-                )}
-                {quotaAtteint && (
-                  <Text style={styles.avertissementAbonnement}>
-                    ⛔ Quota de feuillets atteint -- contactez l'administrateur pour l'augmenter.
-                  </Text>
-                )}
-                {!expiree && expireBientot && (
-                  <Text style={styles.avertissementAbonnementAttention}>
-                    ⏳ Votre licence expire dans {joursAvantExpiration} jour{joursAvantExpiration !== 1 ? "s" : ""} -- pensez à la renouveler pour ne
-                    pas perdre l'accès.
-                  </Text>
-                )}
-              </>
-            );
-          })()}
-          <Bouton titre="📱 Gérer les appareils" variante="contour" onPress={() => navigation.navigate("GestionAppareils")} />
-          <Bouton titre="💬 Contacter l'administrateur" onPress={gererMonAbonnement} />
+          <Text style={styles.section}>🏛️ Compte chorale</Text>
+          <View style={styles.carteAbonnement}>
+            <View style={styles.ligneAbonnement}>
+              <Text style={styles.labelAbonnement}>Chorale</Text>
+              <Text style={styles.valeurAbonnement}>{identite?.nom || chorale || "Ma Chorale"}</Text>
+            </View>
+            <View style={styles.ligneAbonnement}>
+              <Text style={styles.labelAbonnement}>Accès multi-appareils</Text>
+              <Text style={[styles.valeurAbonnement, { color: "#16a34a" }]}>Illimité (sans restriction)</Text>
+            </View>
+            <View style={styles.ligneAbonnement}>
+              <Text style={styles.labelAbonnement}>Feuillets produits</Text>
+              <Text style={styles.valeurAbonnement}>{feuilletsProduits} (illimité)</Text>
+            </View>
+            <View style={styles.ligneAbonnement}>
+              <Text style={styles.labelAbonnement}>Statut du compte</Text>
+              <Text style={[styles.valeurAbonnement, { color: "#2563eb" }]}>Actif &amp; Permanent</Text>
+            </View>
+          </View>
+          <View style={{ gap: 8, marginTop: 12, marginBottom: 12 }}>
+            <Bouton titre="📱 Gérer mes sessions & appareils" variante="contour" onPress={() => navigation.navigate("Administration")} />
+            <Bouton titre="💬 Contacter l'administrateur" onPress={gererMonAbonnement} />
+          </View>
 
-          <Text style={styles.section}>🔒 Sécurité</Text>
+          <Text style={styles.section}>🔒 Sécurité locale</Text>
           <Text style={styles.hint}>
-            Un code de verrouillage local protège l'accès à l'application sur cet appareil -- il n'est jamais transmis ni connu
-            de l'administrateur. En cas d'oubli, il se réinitialise avec le code de licence de la chorale.
+            Un code de verrouillage local optionnel peut protéger l'accès à l'application sur cet appareil.
           </Text>
           {pinActif ? (
             <>

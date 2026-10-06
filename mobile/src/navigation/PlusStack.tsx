@@ -41,16 +41,8 @@ export default function PlusStack() {
       <Stack.Screen name="DefinirPin" options={{ title: "Code de verrouillage" }}>
         {rendreDefinirPin}
       </Stack.Screen>
-      {/* Équivalent mobile du garde de routage web (VUES_SUPERADMIN_UNIQUEMENT,
-          app.js) : ces écrans ne sont même pas enregistrés dans le navigateur
-          pour un compte chorale, donc injoignables par un deep link ou un bug
-          de navigation ailleurs -- pas seulement masqués du menu. */}
-      {estSuperAdmin && (
-        <Stack.Screen name="Statistiques" component={StatistiquesScreen} options={{ title: "Statistiques" }} />
-      )}
-      {estSuperAdmin && (
-        <Stack.Screen name="Administration" component={AdministrationScreen} options={{ title: "Administration" }} />
-      )}
+      <Stack.Screen name="Statistiques" component={StatistiquesScreen} options={{ title: "Statistiques" }} />
+      <Stack.Screen name="Administration" component={AdministrationScreen} options={{ title: "Administration" }} />
       <Stack.Screen name="APropos" component={AProposScreen} options={{ title: "À propos" }} />
     </Stack.Navigator>
   );

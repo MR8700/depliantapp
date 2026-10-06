@@ -62,20 +62,40 @@ def login(identifiants: Identifiants, request: Request, response: Response):
         auth.COOKIE_NAME, token,
         max_age=auth.SESSION_DUREE_SECONDES, httponly=True, samesite="lax",
     )
+    # Enregistrement de la session active (multi-appareils libre)
+    user_agent = request.headers.get("user-agent", "")
+    session_id = auth.enregistrer_session(identite, token, ip, user_agent)
+
     if identite.type == "super":
         compte = auth.get_account()
     else:
         compte = auth.get_chorale(identite.compte_id)
-    # `jeton` en plus du cookie : l'app mobile React Native (offline-first,
-    # voir memory project_depliantapp_mobile_licence) ne peut pas compter sur
-    # la persistance du cookie entre deux lancements -- elle stocke ce jeton
-    # elle-même (SecureStore) et le renvoie via `Authorization: Bearer` (voir
-    # AuthMiddleware dans main.py). Inoffensif pour le client web, qui l'ignore.
-    return {"ok": True, "must_change_password": bool(compte["must_change_password"]), "jeton": token}
+    return {
+        "ok": True,
+        "must_change_password": bool(compte["must_change_password"]),
+        "jeton": token,
+        "session_id": session_id,
+    }
 
 
 @router.post("/logout")
-def logout(response: Response):
+def logout(request: Request, response: Response):
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        entete = request.headers.get("authorization", "")
+        if entete.lower().startswith("bearer "):
+            token = entete[7:].strip()
+    identite = auth.identite_depuis_requete(request)
+    if identite and token:
+        # Révoque cette session spécifique
+        import hashlib
+        thash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+        try:
+            with auth.get_connection() as conn:
+                conn.execute("UPDATE sessions SET is_active = 0 WHERE token_hash = ?", (thash,))
+        except Exception:
+            pass
+
     response.delete_cookie(auth.COOKIE_NAME)
     return {"ok": True}
 
@@ -88,15 +108,31 @@ def status(request: Request):
     if identite.type == "super":
         compte = auth.get_account()
         nom = "Super-admin"
+        permissions = {
+            "admin_complet": True,
+            "gestion_chorales": True,
+            "moderation": True,
+            "multi_appareils": True,
+        }
     else:
         compte = auth.get_chorale(identite.compte_id)
         nom = compte["nom"] if compte else identite.username
+        permissions = {
+            "creer_depliants": True,
+            "proposer_chants": True,
+            "acces_bibliotheque": True,
+            "multi_appareils": True,
+            "messagerie": True,
+            "importer_fichiers": True,
+        }
     return {
         "authenticated": True,
         "type": identite.type,
         "compte_id": identite.compte_id,
         "nom": nom,
         "username": identite.username,
+        "created_at": compte.get("created_at") if compte else None,
+        "permissions": permissions,
         "must_change_password": bool(compte["must_change_password"]) if compte else False,
         "suppression_date_butoir": compte.get("suppression_date_butoir") if identite.type == "chorale" and compte else None,
         "suppression_raison": compte.get("suppression_raison") if identite.type == "chorale" and compte else None,
@@ -104,6 +140,44 @@ def status(request: Request):
         "suppression_demande_revision": compte.get("suppression_demande_revision", 0) if identite.type == "chorale" and compte else 0,
         "suppression_revision_raison": compte.get("suppression_revision_raison") if identite.type == "chorale" and compte else None,
     }
+
+
+@router.get("/sessions")
+def get_sessions(request: Request):
+    identite = auth.identite_depuis_requete(request)
+    if not identite:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        entete = request.headers.get("authorization", "")
+        if entete.lower().startswith("bearer "):
+            token = entete[7:].strip()
+    return auth.lister_sessions(identite, current_token=token)
+
+
+@router.delete("/sessions/{session_id}")
+def delete_session(session_id: str, request: Request):
+    identite = auth.identite_depuis_requete(request)
+    if not identite:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    ok = auth.revoquer_session(identite, session_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Session introuvable")
+    return {"ok": True}
+
+
+@router.post("/sessions/revoke-others")
+def revoke_others(request: Request):
+    identite = auth.identite_depuis_requete(request)
+    if not identite:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    token = request.cookies.get(auth.COOKIE_NAME)
+    if not token:
+        entete = request.headers.get("authorization", "")
+        if entete.lower().startswith("bearer "):
+            token = entete[7:].strip()
+    nb = auth.revoquer_autres_sessions(identite, current_token=token)
+    return {"ok": True, "revoquees": nb}
 
 
 @router.post("/change-password")

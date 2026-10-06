@@ -44,8 +44,7 @@ _CHEMINS_PUBLICS = {
     "/licences/activer", "/licences/verifier", "/parametres/contact-admin",
 }
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
-# doit encore être changé (sinon impossible de le changer...).
-_CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password", "/acces-refuse-chorale.html"}
+_CHEMINS_CHANGEMENT_MDP = {"/auth/logout", "/auth/change-password", "/auth/status", "/acces-refuse-chorale.html"}
 # Seuls chemins qu'une chorale garde sur le web (voir le blocage plus bas) :
 # la page qui explique la situation, la déconnexion pour repartir sur
 # login.html, et les quelques fichiers statiques dont cette page a besoin --
@@ -109,12 +108,12 @@ class AuthMiddleware(BaseHTTPMiddleware):
         if compte and compte["must_change_password"]:
             return self._refuser(request)
 
-        if identite.type == "chorale":
-            from . import licences as licences_module
-            appareil_id = request.headers.get("x-appareil-id") or None
-            erreur_licence = licences_module.verifier_licence_appareil(identite.compte_id, appareil_id)
-            if erreur_licence:
-                return self._refuser_licence(request, erreur_licence)
+        token = request.cookies.get(auth.COOKIE_NAME)
+        if not token:
+            entete = request.headers.get("authorization", "")
+            if entete.lower().startswith("bearer "):
+                token = entete[7:].strip()
+        auth.touch_session(token)
 
         return await call_next(request)
 

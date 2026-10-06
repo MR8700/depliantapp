@@ -4,9 +4,43 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import auth, config
-from ..deps import require_superadmin, require_chorale
+from ..deps import require_superadmin, require_chorale, identite_courante
 
 router = APIRouter(prefix="/chorales", tags=["chorales"])
+
+
+@router.get("/me")
+def get_mon_profil_chorale(identite: auth.Identite = Depends(identite_courante)):
+    if identite.type == "super":
+        return {
+            "type": "super",
+            "nom": "Super-administrateur",
+            "username": auth.DEFAULT_USERNAME,
+            "created_at": None,
+            "permissions": {
+                "admin_complet": True,
+                "gestion_chorales": True,
+                "moderation": True,
+                "multi_appareils": True,
+            },
+        }
+    chorale = auth.get_chorale(identite.compte_id)
+    if not chorale:
+        raise HTTPException(status_code=404, detail="Chorale introuvable")
+    return {
+        "id": chorale["id"],
+        "nom": chorale["nom"],
+        "username": chorale["username"],
+        "created_at": chorale.get("created_at"),
+        "permissions": {
+            "creer_depliants": True,
+            "proposer_chants": True,
+            "acces_bibliotheque": True,
+            "multi_appareils": True,
+            "messagerie": True,
+            "importer_fichiers": True,
+        },
+    }
 
 
 class ChoraleCreation(BaseModel):

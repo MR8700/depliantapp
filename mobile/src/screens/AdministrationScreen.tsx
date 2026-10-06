@@ -29,6 +29,9 @@ import {
   listerLicences, creerLicence, configurerLicence, listerActivationsLicence, revoquerLicence, reactiverLicence,
   regenererCode, revoquerActivationAppareil, Licence, ActivationAppareil,
 } from "../api/licences";
+import { useIdentite } from "../context/IdentiteContext";
+import { listerSessions, revoquerSession, revoquerAutresSessions, SessionInfo } from "../api/auth";
+import { apiFetch } from "../api/client";
 import Bouton from "../components/Bouton";
 import SelectModal from "../components/SelectModal";
 
@@ -89,6 +92,11 @@ function LienAction({
 }
 
 export default function AdministrationScreen() {
+  const { estSuperAdmin, identite } = useIdentite();
+  const [sessionsChorale, setSessionsChorale] = useState<SessionInfo[]>([]);
+  const [demandesChorale, setDemandesChorale] = useState<DemandeSuppression[]>([]);
+  const [actionSessionEnCours, setActionSessionEnCours] = useState(false);
+
   const [onglet, setOnglet] = useState<OngletAdmin>("chorales");
   const [gotConfig, setGotConfig] = useState<Record<string, any>>({});
   const [gotChargement, setGotChargement] = useState(true);
@@ -198,6 +206,16 @@ export default function AdministrationScreen() {
   }
 
   const charger = useCallback(async () => {
+    if (!estSuperAdmin) {
+      const [sess, dem] = await Promise.all([
+        listerSessions().catch(() => []),
+        apiFetch<DemandeSuppression[]>("/moderation/mes-demandes").catch(() => []),
+      ]);
+      setSessionsChorale(sess);
+      setDemandesChorale(dem);
+      setChargement(false);
+      return;
+    }
     const [c, d, m, cat, lic, cp, fv, mv, da, pv] = await Promise.all([
       listerChoralesDetail().catch(() => []),
       listerDemandes().catch(() => []),
@@ -213,7 +231,58 @@ export default function AdministrationScreen() {
     setChorales(c); setDemandes(d); setMasques(m); setCategoriesEnAttente(cat); setLicences(lic);
     setChantsPrives(cp); setFeuilletsAValider(fv); setMediasAValider(mv);
     setDemandesArchivees(da); setPartitionsAValider(pv);
-  }, []);
+    setChargement(false);
+  }, [estSuperAdmin]);
+
+  async function gererRevoquerSession(id: number, nom: string) {
+    Alert.alert(
+      "Déconnecter l'appareil",
+      `Êtes-vous sûr de vouloir déconnecter "${nom || 'cet appareil'}" ?`,
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Déconnecter",
+          style: "destructive",
+          onPress: async () => {
+            setActionSessionEnCours(true);
+            try {
+              await revoquerSession(id);
+              await charger();
+            } catch (err: any) {
+              Alert.alert("Erreur", err?.message ?? "Impossible de déconnecter la session");
+            } finally {
+              setActionSessionEnCours(false);
+            }
+          },
+        },
+      ]
+    );
+  }
+
+  async function gererRevoquerAutresSessions() {
+    Alert.alert(
+      "Déconnecter les autres appareils",
+      "Voulez-vous déconnecter toutes les autres sessions ouvertes sur les autres appareils ?",
+      [
+        { text: "Annuler", style: "cancel" },
+        {
+          text: "Déconnecter",
+          style: "destructive",
+          onPress: async () => {
+            setActionSessionEnCours(true);
+            try {
+              await revoquerAutresSessions();
+              await charger();
+            } catch (err: any) {
+              Alert.alert("Erreur", err?.message ?? "Impossible de déconnecter les sessions");
+            } finally {
+              setActionSessionEnCours(false);
+            }
+          },
+        },
+      ]
+    );
+  }
 
   // Enveloppe générique pour toute action déclenchée par un LienAction :
   // marque `cle` comme en cours (affiche le spinner, désactive le lien) le
@@ -569,6 +638,148 @@ export default function AdministrationScreen() {
   }
 
   if (chargement) return <ActivityIndicator style={{ flex: 1 }} size="large" />;
+
+  if (!estSuperAdmin) {
+    return (
+      <ScrollView
+        style={styles.conteneur}
+        contentContainerStyle={{ padding: 16 }}
+        refreshControl={<RefreshControl refreshing={rafraichissement} onRefresh={onRafraichir} tintColor="#2563eb" />}
+      >
+        <Text style={styles.filDAriane}>Espace Chorale {">"} Administration</Text>
+        <Text style={styles.titrePage}>Administration &amp; Sessions</Text>
+        <Text style={styles.sousTitrePage}>Gestion de vos sessions ouvertes, permissions et demandes.</Text>
+
+        {/* Profil Chorale */}
+        <View style={styles.carteChoraleInfo}>
+          <View style={styles.carteChoraleHeader}>
+            <View style={styles.iconeChorale}>
+              <Text style={{ fontSize: 24 }}>🏛️</Text>
+            </View>
+            <View style={{ flex: 1, marginLeft: 12 }}>
+              <Text style={styles.nomChoraleTitre}>{identite?.nom || "Ma Chorale"}</Text>
+              <Text style={styles.usernameChoraleTexte}>@{identite?.username || "chorale"}</Text>
+            </View>
+            <View style={styles.badgeActif}>
+              <Text style={styles.texteBadgeActif}>Actif</Text>
+            </View>
+          </View>
+          <View style={styles.separateur} />
+          <Text style={styles.infoLigne}>
+            <Text style={{ fontWeight: "700", color: "#334155" }}>Accès multi-appareils : </Text>
+            Libre et illimité. Vos membres peuvent se connecter sur smartphones, tablettes ou ordinateurs avec vos identifiants.
+          </Text>
+        </View>
+
+        {/* Sessions ouvertes */}
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginTop: 16, marginBottom: 8 }}>
+          <Text style={styles.sectionTitre}>📱 Sessions ouvertes ({sessionsChorale.length})</Text>
+          {sessionsChorale.filter((s) => !s.est_actuelle).length > 0 && (
+            <Pressable
+              onPress={gererRevoquerAutresSessions}
+              disabled={actionSessionEnCours}
+              style={styles.btnDeconnecterAutres}
+            >
+              <Text style={styles.texteBtnDeconnecterAutres}>Tout déconnecter sauf ceci</Text>
+            </Pressable>
+          )}
+        </View>
+
+        {sessionsChorale.length === 0 ? (
+          <Text style={styles.vide}>Aucune session active détectée</Text>
+        ) : (
+          sessionsChorale.map((s) => (
+            <View key={s.id} style={styles.carteSession}>
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                <View style={{ flexDirection: "row", alignItems: "center", flex: 1 }}>
+                  <Text style={{ fontSize: 22, marginRight: 10 }}>
+                    {s.device_nom.toLowerCase().includes("phone") || s.device_nom.toLowerCase().includes("android") ? "📱" : "💻"}
+                  </Text>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={styles.nomAppareil}>{s.device_nom || "Appareil"}</Text>
+                      {s.est_actuelle && (
+                        <View style={styles.badgeCetAppareil}>
+                          <Text style={styles.texteBadgeCetAppareil}>Cet appareil</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.metaSession}>
+                      IP : {s.ip_address || "—"} &bull; Vu : {s.last_active ? formaterDateCourte(s.last_active) : "Récemment"}
+                    </Text>
+                  </View>
+                </View>
+
+                {!s.est_actuelle && (
+                  <Pressable
+                    style={styles.btnRevoquer}
+                    onPress={() => gererRevoquerSession(s.id, s.device_nom)}
+                    disabled={actionSessionEnCours}
+                  >
+                    <Text style={styles.texteBtnRevoquer}>Déconnecter</Text>
+                  </Pressable>
+                )}
+              </View>
+            </View>
+          ))
+        )}
+
+        {/* Paramètres & permissions */}
+        <Text style={[styles.sectionTitre, { marginTop: 20 }]}>🛡️ Paramètres &amp; Permissions accordés</Text>
+        <View style={styles.cartePermissions}>
+          {[
+            { titre: "Composition liturgique", desc: "Création, modification et génération de livrets et dépliants." },
+            { titre: "Bibliothèque générale", desc: "Consultation et recherche libre parmi tous les chants enregistrés." },
+            { titre: "Proposition de chants", desc: "Possibilité de soumettre de nouveaux chants au répertoire partagé." },
+            { titre: "Masquage privé", desc: "Masquer discrètement certains chants pour votre seule chorale." },
+            { titre: "Multi-appareils libre & illimité", desc: "Aucune limite de postes ni licence requise sur vos appareils." },
+          ].map((perm, idx) => (
+            <View key={idx} style={styles.lignePermission}>
+              <Text style={styles.checkIcon}>✅</Text>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.titrePermission}>{perm.titre}</Text>
+                <Text style={styles.descPermission}>{perm.desc}</Text>
+              </View>
+            </View>
+          ))}
+        </View>
+
+        {/* Demandes auprès de l'administrateur */}
+        <Text style={[styles.sectionTitre, { marginTop: 20 }]}>📨 Mes demandes auprès de l'administrateur</Text>
+        {demandesChorale.length === 0 ? (
+          <View style={styles.carteVide}>
+            <Text style={{ fontSize: 28, marginBottom: 6 }}>✨</Text>
+            <Text style={styles.texteCarteVide}>Aucune demande en cours</Text>
+            <Text style={styles.sousTexteCarteVide}>
+              Lorsque vous demandez la suppression d'un chant, le suivi apparaît ici.
+            </Text>
+          </View>
+        ) : (
+          demandesChorale.map((d) => (
+            <View key={d.id} style={styles.carteDemande}>
+              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+                <Text style={styles.titreDemandeChant}>{d.chant_titre || `Chant #${d.chant_id}`}</Text>
+                <View style={[
+                  styles.badgeStatut,
+                  d.statut === "validee" ? styles.badgeValidee : d.statut === "rejetee" ? styles.badgeRejetee : styles.badgeEnAttente,
+                ]}>
+                  <Text style={[
+                    styles.texteBadgeStatut,
+                    d.statut === "validee" ? styles.texteValidee : d.statut === "rejetee" ? styles.texteRejetee : styles.texteEnAttente,
+                  ]}>
+                    {d.statut === "validee" ? "Acceptée" : d.statut === "rejetee" ? "Refusée" : "En attente"}
+                  </Text>
+                </View>
+              </View>
+              <Text style={styles.raisonDemande}>{d.raison}</Text>
+              <Text style={styles.dateDemande}>Soumise le {d.created_at ? formaterDateCourte(d.created_at) : "—"}</Text>
+            </View>
+          ))
+        )}
+
+      </ScrollView>
+    );
+  }
 
   return (
     <ScrollView
@@ -1111,4 +1322,70 @@ const styles = StyleSheet.create({
   codeLicence: { fontFamily: "monospace", color: "#1F4A7C", fontWeight: "800" },
   carteAvertissement: { borderWidth: 1, borderColor: "#f59e0b", backgroundColor: "#fffbeb" },
   conteneurQrLicence: { alignItems: "center", marginVertical: 16 },
+  carteChoraleInfo: {
+    backgroundColor: "#ffffff", borderRadius: 14, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: "#e2e8f0",
+  },
+  carteChoraleHeader: { flexDirection: "row", alignItems: "center" },
+  iconeChorale: {
+    width: 48, height: 48, borderRadius: 24, backgroundColor: "#eff6ff",
+    alignItems: "center", justifyContent: "center",
+  },
+  nomChoraleTitre: { fontSize: 17, fontWeight: "700", color: "#1e293b" },
+  usernameChoraleTexte: { fontSize: 13, color: "#64748b", marginTop: 2 },
+  badgeActif: {
+    backgroundColor: "#dcfce7", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12,
+  },
+  texteBadgeActif: { color: "#166534", fontSize: 12, fontWeight: "700" },
+  separateur: { height: 1, backgroundColor: "#f1f5f9", marginVertical: 12 },
+  infoLigne: { fontSize: 13, color: "#475569", lineHeight: 18 },
+  sectionTitre: { fontSize: 15, fontWeight: "700", color: "#1e293b", marginBottom: 8 },
+  btnDeconnecterAutres: {
+    backgroundColor: "#fee2e2", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 8,
+  },
+  texteBtnDeconnecterAutres: { color: "#b91c1c", fontSize: 12, fontWeight: "600" },
+  carteSession: {
+    backgroundColor: "#ffffff", borderRadius: 12, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: "#e2e8f0",
+  },
+  nomAppareil: { fontSize: 14, fontWeight: "700", color: "#1e293b" },
+  badgeCetAppareil: {
+    backgroundColor: "#dbeafe", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 6,
+  },
+  texteBadgeCetAppareil: { color: "#1d4ed8", fontSize: 11, fontWeight: "600" },
+  metaSession: { fontSize: 12, color: "#64748b", marginTop: 3 },
+  btnRevoquer: {
+    backgroundColor: "#fef2f2", borderWidth: 1, borderColor: "#fecaca",
+    paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8,
+  },
+  texteBtnRevoquer: { color: "#dc2626", fontSize: 12, fontWeight: "600" },
+  cartePermissions: {
+    backgroundColor: "#ffffff", borderRadius: 14, padding: 16, marginBottom: 16,
+    borderWidth: 1, borderColor: "#e2e8f0",
+  },
+  lignePermission: { flexDirection: "row", alignItems: "flex-start", marginBottom: 12 },
+  checkIcon: { fontSize: 16, marginRight: 10, marginTop: 1 },
+  titrePermission: { fontSize: 14, fontWeight: "700", color: "#1e293b" },
+  descPermission: { fontSize: 12, color: "#64748b", marginTop: 2 },
+  carteVide: {
+    backgroundColor: "#ffffff", borderRadius: 12, padding: 24, alignItems: "center",
+    justifyContent: "center", borderWidth: 1, borderColor: "#e2e8f0", marginBottom: 16,
+  },
+  texteCarteVide: { fontSize: 15, fontWeight: "700", color: "#334155" },
+  sousTexteCarteVide: { fontSize: 12, color: "#64748b", textAlign: "center", marginTop: 4 },
+  carteDemande: {
+    backgroundColor: "#ffffff", borderRadius: 12, padding: 14, marginBottom: 8,
+    borderWidth: 1, borderColor: "#e2e8f0",
+  },
+  titreDemandeChant: { fontSize: 14, fontWeight: "700", color: "#1e293b", flex: 1, marginRight: 8 },
+  badgeStatut: { paddingHorizontal: 8, paddingVertical: 3, borderRadius: 6 },
+  badgeValidee: { backgroundColor: "#dcfce7" },
+  badgeRejetee: { backgroundColor: "#fee2e2" },
+  badgeEnAttente: { backgroundColor: "#fef3c7" },
+  texteBadgeStatut: { fontSize: 11, fontWeight: "700" },
+  texteValidee: { color: "#166534" },
+  texteRejetee: { color: "#991b1b" },
+  texteEnAttente: { color: "#92400e" },
+  raisonDemande: { fontSize: 13, color: "#475569", marginTop: 6 },
+  dateDemande: { fontSize: 11, color: "#94a3b8", marginTop: 4 },
 });

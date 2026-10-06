@@ -4,9 +4,16 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
 from .. import auth, crud
-from ..deps import require_chorale, require_superadmin
+from ..deps import require_chorale, require_superadmin, identite_courante
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
+
+
+@router.get("/mes-demandes")
+def get_mes_demandes(identite: auth.Identite = Depends(identite_courante)):
+    if identite.type == "super":
+        return {"demandes": [], "categories": [], "partitions": []}
+    return crud.get_demandes_chorale(identite.compte_id)
 
 
 class DemandeSuppressionCreation(BaseModel):

@@ -123,25 +123,8 @@ class QuotaFeuilletsAtteint(Exception):
 
 
 def consommer_quota_feuillet(chorale_id: int) -> None:
-    """Incrémente feuillets_produits pour la licence active de `chorale_id`
-    après vérification du quota (None = illimité, voir schéma). Sans effet
-    si la chorale n'a pas (ou plus) de licence active -- comptes créés avant
-    l'introduction du système de licences, ou super-admin (chorale_id=0,
-    jamais rattaché à une licence)."""
-    if not chorale_id:
-        return
-    licence = get_licence_active_pour_chorale(chorale_id)
-    if not licence:
-        return
-    quota = licence["quota_feuillets"]
-    if quota is not None and licence["feuillets_produits"] >= quota:
-        raise QuotaFeuilletsAtteint(quota)
-    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
-    with get_connection() as conn:
-        conn.execute(
-            f"UPDATE licences SET feuillets_produits = feuillets_produits + 1, updated_at = {horodatage} WHERE id = ?",
-            (licence["id"],),
-        )
+    """Quotas de licence supprimés : libre utilisation pour toutes les chorales."""
+    return
 
 
 def _derniere_licence_pour_chorale(chorale_id: int) -> Optional[dict]:
@@ -158,44 +141,7 @@ def _derniere_licence_pour_chorale(chorale_id: int) -> Optional[dict]:
 
 
 def verifier_licence_appareil(chorale_id: int, appareil_id: Optional[str]) -> Optional[str]:
-    """DEVENUE INUTILISÉE (plus jamais appelée par AuthMiddleware) depuis le
-    passage au modèle de licence 100% hors-ligne -- un appareil chorale ne
-    présente plus jamais de session/Bearer classique, donc plus jamais ce
-    contrôle par requête. Conservée sans appelant, comme le reste du flux
-    HMAC devenu mort avec ce chantier (activer/verifier_activation), au cas
-    où elle redeviendrait utile. Contrôle CONTINU (pas seulement à
-    l'activation) du droit d'accès d'un appareil mobile déjà connecté --
-    appelé par AuthMiddleware à CHAQUE requête d'un compte chorale portant un
-    en-tête X-Appareil-Id (voir
-    main.py). Sans ce contrôle, le jeton de SESSION classique (30 jours,
-    voir auth.py::create_session_token) restait valide même après que
-    l'admin révoque la licence, la laisse expirer, ou révoque cet appareil
-    précis : le device count/l'expiration n'étaient alors vérifiés qu'une
-    seule fois, au moment de l'activation.
-
-    Renvoie None si l'accès reste autorisé (pas de licence associée à cette
-    chorale -- comptes antérieurs au système de licences -- ou licence
-    valide et cet appareil toujours actif), sinon un message d'erreur clair
-    à afficher à l'utilisateur.
-
-    appareil_id=None (web, ou vieille version de l'app qui n'envoie pas
-    encore l'en-tête) : seul l'état de la licence est vérifié, jamais la
-    liste des appareils -- le web n'a pas de notion d'appareil."""
-    licence = _derniere_licence_pour_chorale(chorale_id)
-    if not licence:
-        return None  # jamais eu de licence -- système pas utilisé pour cette chorale
-    if licence["statut"] != "active":
-        return "Licence révoquée. Contactez l'administrateur pour la réactiver."
-    if _licence_expiree(licence):
-        return "Licence expirée. Contactez l'administrateur pour la renouveler."
-    if appareil_id:
-        with get_connection() as conn:
-            row = conn.execute(
-                "SELECT revoque_le FROM licence_activations WHERE licence_id = ? AND appareil_id = ?",
-                (licence["id"], appareil_id),
-            ).fetchone()
-        if not row or row["revoque_le"]:
-            return "Cet appareil n'est plus autorisé sur cette licence. Contactez l'administrateur."
+    """Contrôle de licence et d'appareils supprimé : accès illimité et libre."""
     return None
 
 

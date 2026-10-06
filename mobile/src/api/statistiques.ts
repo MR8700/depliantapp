@@ -2,16 +2,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 import { apiFetch, ApiError } from "./client";
 
 export interface Statistiques {
+  is_chorale?: boolean;
+  chorale_nom?: string;
+  chorale_id?: number;
   total_chants: number;
   total_feuillets: number;
-  total_chorales: number;
+  total_chorales?: number;
+  sessions_ouvertes?: number;
   chants_par_categorie: { categorie: string; nombre: number }[];
-  feuillets_par_chorale: { chorale_nom: string; nombre: number; dernier: string | null }[];
+  feuillets_par_chorale?: { chorale_nom: string; nombre: number; dernier: string | null }[];
   demandes_en_attente: number;
   demandes_validees: number;
   masques_actifs: number;
-  feuillets_recents: { date: string; lieu: string | null; chorale_nom: string | null; created_at: string }[];
-  chants_recents: { titre: string; categorie: string; created_at: string }[];
+  feuillets_recents: { date: string; lieu: string | null; chorale_nom?: string | null; created_at?: string }[];
+  chants_recents: { titre: string; categorie: string; created_at?: string }[];
 }
 
 const CLE_CACHE = "depliantapp.statistiques_cache";

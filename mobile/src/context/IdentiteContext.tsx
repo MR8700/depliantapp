@@ -38,7 +38,7 @@ export function IdentiteProvider({ children }: { children: React.ReactNode }) {
     if (jetonAdmin) {
       try {
         const fraiche = await getIdentite();
-        if (fraiche.authenticated && fraiche.type === "super") {
+        if (fraiche.authenticated) {
           setIdentite(fraiche);
           await AsyncStorage.setItem(CLE_CACHE_IDENTITE, JSON.stringify(fraiche));
           return;

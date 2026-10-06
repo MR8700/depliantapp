@@ -461,6 +461,23 @@ CREATE TABLE IF NOT EXISTS licence_activations (
     revoque_le TEXT
 );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licence_activations_unique ON licence_activations(licence_id, appareil_id);
+
+-- Sessions actives (multi-appareils libre pour les chorales et l'admin)
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    compte_type TEXT NOT NULL,
+    compte_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    device_nom TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    last_active TEXT NOT NULL DEFAULT (datetime('now')),
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_compte ON sessions(compte_type, compte_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
 """
 
 # Équivalent Postgres : mêmes tables/colonnes, mais SERIAL (pas AUTOINCREMENT),
@@ -740,6 +757,23 @@ ALTER TABLE messages ADD COLUMN IF NOT EXISTS supprime INTEGER NOT NULL DEFAULT 
 ALTER TABLE licences ADD COLUMN IF NOT EXISTS seed TEXT;
 ALTER TABLE licences ADD COLUMN IF NOT EXISTS licence_uid TEXT;
 CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_uid ON licences(licence_uid);
+
+-- Sessions actives (multi-appareils libre pour les chorales et l'admin)
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    compte_type TEXT NOT NULL,
+    compte_id INTEGER NOT NULL,
+    username TEXT NOT NULL,
+    token_hash TEXT NOT NULL,
+    ip_address TEXT,
+    user_agent TEXT,
+    device_nom TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    last_active TIMESTAMP NOT NULL DEFAULT now(),
+    is_active INTEGER NOT NULL DEFAULT 1
+);
+CREATE INDEX IF NOT EXISTS idx_sessions_compte ON sessions(compte_type, compte_id, is_active);
+CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
 """
 
 

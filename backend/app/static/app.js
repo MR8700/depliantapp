@@ -452,11 +452,8 @@ function verifierModalesOuvertes() {
   return ceOuvert || iwOuvert;
 }
 
-// Vues réservées au super-admin : le bouton correspondant est déjà masqué
-// pour les comptes chorale (voir init()), mais un accès direct par hash
-// (URL tapée à la main, favori, bouton précédent) doit être bloqué ici
-// aussi — masquer le bouton seul ne suffit pas à protéger la vue.
-const VUES_SUPERADMIN_UNIQUEMENT = new Set(["admin", "statistiques"]);
+// Les vues admin et statistiques sont désormais accessibles à tous (adaptées au rôle chorale ou super-admin)
+const VUES_SUPERADMIN_UNIQUEMENT = new Set();
 
 function gererNavigationHash() {
   if (!IDENTITE || bloqueNavigation) return;
@@ -6877,12 +6874,20 @@ async function actualiserAdminPartitions() {
 }
 
 async function actualiserAdmin() {
-  // En parallèle plutôt qu'enchaînés : 5 sections indépendantes qui n'ont
-  // aucune raison d'attendre l'une sur l'autre -- enchaînés, un simple aller-
-  // retour un peu lent sur l'une d'elles retardait l'affichage de TOUTES les
-  // autres (ex. les Chorales, censées être immédiates). allSettled plutôt
-  // que all : l'échec d'une section (ex. Partitions) n'empêche jamais les
-  // autres de s'afficher normalement.
+  const superView = document.getElementById("admin-vue-super");
+  const choraleView = document.getElementById("admin-vue-chorale");
+
+  if (IDENTITE && IDENTITE.type === "chorale") {
+    if (superView) superView.classList.add("hidden");
+    if (choraleView) choraleView.classList.remove("hidden");
+    await actualiserAdminChorale();
+    return;
+  }
+
+  if (superView) superView.classList.remove("hidden");
+  if (choraleView) choraleView.classList.add("hidden");
+
+  // En parallèle pour le super-admin : 5 sections indépendantes
   const resultats = await Promise.allSettled([
     actualiserAdminChorales(),
     actualiserAdminDemandes(),
@@ -6891,6 +6896,145 @@ async function actualiserAdmin() {
     actualiserAdminCategories(),
   ]);
   resultats.forEach((r) => { if (r.status === "rejected") console.error("Erreur section admin:", r.reason); });
+}
+
+async function actualiserAdminChorale() {
+  const nomEl = document.getElementById("admin-chorale-nom-titre");
+  const paramNom = document.getElementById("param-chorale-nom");
+  const paramUser = document.getElementById("param-chorale-username");
+  const sessionsEl = document.getElementById("liste-sessions-chorale");
+  const demandesEl = document.getElementById("liste-demandes-chorale");
+
+  const [resProfil, resSessions, resDemandes] = await Promise.allSettled([
+    api("/chorales/me"),
+    api("/auth/sessions"),
+    api("/moderation/mes-demandes"),
+  ]);
+
+  const profil = resProfil.status === "fulfilled" ? resProfil.value : { nom: IDENTITE.nom, username: IDENTITE.username };
+  const sessions = resSessions.status === "fulfilled" ? resSessions.value : [];
+  const mesDemandes = resDemandes.status === "fulfilled" ? resDemandes.value : { demandes: [], categories: [], partitions: [] };
+
+  if (nomEl) nomEl.textContent = `Administration — ${profil.nom || "Ma chorale"}`;
+  if (paramNom) paramNom.textContent = profil.nom || "—";
+  if (paramUser) paramUser.textContent = profil.username || "—";
+
+  // Rendu des sessions ouvertes
+  if (sessionsEl) {
+    if (!sessions || !sessions.length) {
+      sessionsEl.innerHTML = `<p class="hint">Aucune session enregistrée.</p>`;
+    } else {
+      sessionsEl.innerHTML = sessions.map((s) => `
+        <div style="display: flex; align-items: center; justify-content: space-between; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; gap: 12px; flex-wrap: wrap;">
+          <div style="display: flex; align-items: center; gap: 12px;">
+            <div style="font-size: 1.6rem;">${s.device_nom && (s.device_nom.includes("Phone") || s.device_nom.includes("Mobile") || s.device_nom.includes("Android")) ? "📱" : "💻"}</div>
+            <div>
+              <div style="font-weight: 700; color: #1e293b; font-size: 0.95rem; display: flex; align-items: center; gap: 8px;">
+                ${escapeHtml(s.device_nom || "Appareil")}
+                ${s.est_actuelle ? '<span style="background: #dcfce7; color: #166534; font-size: 0.7rem; font-weight: 700; padding: 2px 8px; border-radius: 12px;">Session actuelle</span>' : ''}
+              </div>
+              <div style="font-size: 0.8rem; color: #64748b; margin-top: 2px;">
+                IP : ${escapeHtml(s.ip_address || "—")} • Connexion : ${s.created_at ? formaterDateAffichage(s.created_at.slice(0, 10)) : "Récemment"}
+              </div>
+            </div>
+          </div>
+          <div>
+            ${s.est_actuelle
+              ? `<span style="font-size: 0.8rem; color: #166534; font-weight: 600;">En cours d'utilisation</span>`
+              : `<button type="button" class="btn-deconnecter-session" data-session-id="${escapeHtml(s.id)}" style="background: #fee2e2; color: #dc2626; border: 1px solid #fca5a5; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">Déconnecter</button>`
+            }
+          </div>
+        </div>
+      `).join("");
+
+      sessionsEl.querySelectorAll(".btn-deconnecter-session").forEach((btn) => {
+        btn.addEventListener("click", async () => {
+          const sessId = btn.dataset.sessionId;
+          if (!confirm("Voulez-vous déconnecter cet appareil ?")) return;
+          try {
+            await api(`/auth/sessions/${sessId}`, { method: "DELETE" });
+            await actualiserAdminChorale();
+          } catch (err) {
+            alert("Erreur lors de la déconnexion : " + err.message);
+          }
+        });
+      });
+    }
+  }
+
+  // Rendu des demandes soumises par la chorale
+  if (demandesEl) {
+    const listTotal = [];
+    (mesDemandes.demandes || []).forEach(d => {
+      listTotal.push({
+        titre: `Demande de suppression (${d.type_cible === "chant" ? "Chant" : "Dépliants"} #${d.cible_id})`,
+        motif: d.raison,
+        statut: d.statut,
+        date: d.created_at,
+      });
+    });
+    (mesDemandes.categories || []).forEach(c => {
+      listTotal.push({
+        titre: `Catégorie personnalisée : ${c.nom}`,
+        motif: c.motif_rejet || "En attente de validation",
+        statut: c.statut,
+        date: c.created_at,
+      });
+    });
+    (mesDemandes.partitions || []).forEach(p => {
+      listTotal.push({
+        titre: `Partition : ${p.chant_titre || "Chant #" + p.chant_id}`,
+        motif: "Vérification de lisibilité liturgique",
+        statut: p.statut,
+        date: p.created_at,
+      });
+    });
+
+    if (!listTotal.length) {
+      demandesEl.innerHTML = `<p class="hint" style="margin: 0; padding: 8px 0;">Aucune demande en cours auprès de l'administrateur. Toutes vos requêtes sont traitées.</p>`;
+    } else {
+      demandesEl.innerHTML = listTotal.map(it => {
+        const statutLabel = it.statut === "validee" ? "✓ Validée" : it.statut === "rejetee" || it.statut === "annulee" ? "✕ Non retenue" : "⏳ En cours d'examen";
+        const statutStyle = it.statut === "validee" ? "background:#dcfce7; color:#15803d;" : it.statut === "rejetee" || it.statut === "annulee" ? "background:#fee2e2; color:#b91c1c;" : "background:#fef3c7; color:#b45309;";
+        return `
+          <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; flex-wrap: wrap; gap: 8px;">
+            <div>
+              <div style="font-weight: 600; color: #1e293b; font-size: 0.9rem;">${escapeHtml(it.titre)}</div>
+              ${it.motif ? `<div style="font-size: 0.8rem; color: #64748b; margin-top: 2px;">${escapeHtml(it.motif)}</div>` : ''}
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="${statutStyle} font-size: 0.75rem; font-weight: 700; padding: 3px 10px; border-radius: 12px;">${statutLabel}</span>
+              <span style="font-size: 0.75rem; color: #94a3b8;">${it.date ? formaterDateAffichage(it.date.slice(0, 10)) : ''}</span>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+  }
+
+  // Révocation autres sessions
+  const btnRevokeOthers = document.getElementById("btn-revoquer-autres-sessions");
+  if (btnRevokeOthers) {
+    btnRevokeOthers.onclick = async () => {
+      if (!confirm("Voulez-vous déconnecter tous les autres appareils connectés à votre compte ?")) return;
+      try {
+        await api("/auth/sessions/revoke-others", { method: "POST" });
+        alert("Tous les autres appareils ont été déconnectés avec succès.");
+        await actualiserAdminChorale();
+      } catch (err) {
+        alert("Erreur : " + err.message);
+      }
+    };
+  }
+
+  // Bouton changer mot de passe
+  const btnChgMdp = document.getElementById("btn-admin-chorale-chg-mdp");
+  if (btnChgMdp) {
+    btnChgMdp.onclick = () => {
+      const btnProfil = document.getElementById("btn-mon-profil");
+      if (btnProfil) btnProfil.click();
+    };
+  }
 }
 
 function adminCategorieCardHtml(cat) {
@@ -6958,6 +7102,146 @@ async function actualiserStatistiques() {
   try {
     const s = await api("/statistiques");
     dernieresStats = s;
+
+    // Si l'utilisateur est une chorale, afficher uniquement son tableau de bord dédié
+    if (s.is_chorale || (IDENTITE && IDENTITE.type === "chorale")) {
+      const totalFeuillets = s.total_feuillets || 0;
+      const totalChants = s.total_chants || 0;
+      const sessionsOuvertes = s.sessions_ouvertes || 1;
+      const demandesEnAttente = s.demandes_en_attente || 0;
+      const masquesActifs = s.masques_actifs || 0;
+      const demandesValidees = s.demandes_validees || 0;
+      const choraleNom = s.chorale_nom || (IDENTITE && IDENTITE.nom) || "Ma Chorale";
+
+      const categoriesLignes = (s.chants_par_categorie || []).map((c) => `
+        <tr>
+          <td><span class="chant-categorie-pill" style="font-size:0.8rem; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${categorieLabel(c.categorie)}</span></td>
+          <td style="font-weight:700; color:#1e293b;">${c.nombre} chants</td>
+        </tr>
+      `).join("");
+
+      const feuilletsRecentsLignes = (s.feuillets_recents || []).map((f) => `
+        <tr>
+          <td style="font-weight:600; color:#1e293b;">${escapeHtml(formaterDateAffichage(f.date))}${f.lieu ? " — " + escapeHtml(f.lieu) : ""}</td>
+          <td style="color:#64748b; font-size:0.8rem;">${f.created_at ? formaterDateAffichage(f.created_at.slice(0, 10)) : "—"}</td>
+        </tr>
+      `).join("");
+
+      const chantsRecentsLignes = (s.chants_recents || []).map((c) => `
+        <tr>
+          <td style="font-weight:600; color:#1e293b;">${escapeHtml(c.titre)}</td>
+          <td><span class="chant-categorie-pill" style="font-size:0.8rem; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${categorieLabel(c.categorie)}</span></td>
+        </tr>
+      `).join("");
+
+      el.innerHTML = `
+        <!-- En-tête chorale -->
+        <div style="background: linear-gradient(135deg, #1E4A7C 0%, #2563EB 100%); color: white; padding: 20px 24px; border-radius: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; box-shadow: 0 4px 12px rgba(37,99,235,0.15);">
+          <div>
+            <div style="font-size: 0.8rem; opacity: 0.85; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600;">Espace Statistiques</div>
+            <h3 style="margin: 4px 0 0 0; font-size: 1.4rem; font-weight: 700; color: white;">${escapeHtml(choraleNom)}</h3>
+          </div>
+          <div style="font-size: 0.85rem; background: rgba(255,255,255,0.18); padding: 6px 14px; border-radius: 20px; font-weight: 500;">
+            Compte actif &bull; Multi-appareils illimité
+          </div>
+        </div>
+
+        <!-- Cards grid chorale -->
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px;">
+          <div class="stat-metric-card" style="border-left: 4px solid #2563eb;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Mes dépliants</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${totalFeuillets}</div>
+            <div style="font-size: 0.7rem; color:#10B981;">Célébrations créées</div>
+          </div>
+          <div class="stat-metric-card" style="border-left: 4px solid #10b981;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Sessions ouvertes</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${sessionsOuvertes}</div>
+            <div style="font-size: 0.7rem; color:#64748b;">Appareils connectés</div>
+          </div>
+          <div class="stat-metric-card" style="border-left: 4px solid #f59e0b;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Chants accessibles</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${totalChants}</div>
+            <div style="font-size: 0.7rem; color:#64748b;">Répertoire commun</div>
+          </div>
+          <div class="stat-metric-card" style="border-left: 4px solid #ef4444;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Demandes en cours</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${demandesEnAttente}</div>
+            <div style="font-size: 0.7rem; color:#ef4444; font-weight:600;">En attente de l'admin</div>
+          </div>
+          <div class="stat-metric-card" style="border-left: 4px solid #6366f1;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Chants masqués</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${masquesActifs}</div>
+            <div style="font-size: 0.7rem; color:#64748b;">Ressources privées</div>
+          </div>
+          <div class="stat-metric-card" style="border-left: 4px solid #8b5cf6;">
+            <div style="font-size: 0.75rem; color:#64748B; font-weight:600; text-transform:uppercase;">Demandes traitées</div>
+            <div style="font-size: 1.8rem; font-weight:800; color:#0F172A; margin: 4px 0;">${demandesValidees}</div>
+            <div style="font-size: 0.7rem; color:#64748b;">Validées par l'admin</div>
+          </div>
+        </div>
+
+        <!-- Main statistics layout chorale -->
+        <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 24px;">
+          <div class="settings-card" style="background: white; border-radius:16px;">
+            <div class="settings-card-header">
+              <h4 style="margin:0; font-size:1rem; color:#1F4A7C;">Mes derniers dépliants créés</h4>
+            </div>
+            <div class="settings-card-body" style="padding-top: 16px;">
+              <table class="saas-table">
+                <thead>
+                  <tr>
+                    <th>Date &amp; Lieu</th>
+                    <th>Date d'enregistrement</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${feuilletsRecentsLignes || '<tr><td colspan="2" style="text-align:center; color:#64748b;">Aucun dépliant créé pour le moment</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settings-card" style="background: white; border-radius:16px;">
+            <div class="settings-card-header">
+              <h4 style="margin:0; font-size:1rem; color:#1F4A7C;">Répartition du répertoire liturgique</h4>
+            </div>
+            <div class="settings-card-body" style="padding-top: 16px;">
+              <table class="saas-table">
+                <thead>
+                  <tr>
+                    <th>Catégorie liturgique</th>
+                    <th>Nombre de chants</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${categoriesLignes || '<tr><td colspan="2" style="text-align:center; color:#64748b;">Aucune donnée disponible</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="settings-card" style="background: white; border-radius:16px; grid-column: 1 / -1;">
+            <div class="settings-card-header">
+              <h4 style="margin:0; font-size:1rem; color:#1F4A7C;">Derniers chants ajoutés au répertoire commun</h4>
+            </div>
+            <div class="settings-card-body" style="padding-top: 16px;">
+              <table class="saas-table">
+                <thead>
+                  <tr>
+                    <th>Titre du chant</th>
+                    <th>Catégorie</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  ${chantsRecentsLignes || '<tr><td colspan="2" style="text-align:center; color:#64748b;">Aucune donnée disponible</td></tr>'}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      `;
+      return;
+    }
 
     // Render modern UI
     const totalChorales = s.total_chorales;
@@ -7134,6 +7418,53 @@ function exporterPVStatistiques() {
   const s = dernieresStats;
   const timestamp = new Date().toLocaleString("fr-FR");
   const isoDate = new Date().toISOString().slice(0, 10);
+
+  if (s.is_chorale || (IDENTITE && IDENTITE.type === "chorale")) {
+    const choraleNom = s.chorale_nom || (IDENTITE && IDENTITE.nom) || "Chorale";
+    let report = `================================================================================
+RAPPORT D'ACTIVITÉ LITURGIQUE - CHORALE : ${choraleNom}
+================================================================================
+Généré le : ${timestamp}
+Compte : Chorale (${choraleNom})
+Statut : Opérationnel - Multi-appareils illimité
+--------------------------------------------------------------------------------
+
+1. RÉSUMÉ DE VOTRE ACTIVITÉ
+--------------------------------------------------------------------------------
+- Dépliants créés : ${s.total_feuillets || 0}
+- Sessions / appareils actifs : ${s.sessions_ouvertes || 1}
+- Chants accessibles au répertoire commun : ${s.total_chants || 0}
+- Demandes auprès de l'administrateur en attente : ${s.demandes_en_attente || 0}
+- Chants masqués de votre vue : ${s.masques_actifs || 0}
+- Demandes validées par l'administrateur : ${s.demandes_validees || 0}
+
+2. VOS DERNIERS DÉPLIANTS
+--------------------------------------------------------------------------------
+${(s.feuillets_recents || []).map(f => {
+  const dateStr = f.date ? f.date.slice(0, 10) : '—';
+  return `* Le ${dateStr} à ${f.lieu || '—'}`;
+}).join('\n') || 'Aucun dépliant créé pour le moment.'}
+
+3. RÉPARTITION DU RÉPERTOIRE LITURGIQUE
+--------------------------------------------------------------------------------
+${(s.chants_par_categorie || []).map(c => {
+  return `* ${categorieLabel(c.categorie).padEnd(35)} : ${String(c.nombre).padStart(4)} chants`;
+}).join('\n')}
+
+================================================================================
+FIN DU RAPPORT - HORODATAGE VALIDÉ : ${timestamp}
+================================================================================`;
+
+    const blob = new Blob([report], { type: "text/plain;charset=utf-8" });
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(blob);
+    a.download = `Rapport_Statistiques_${choraleNom.replace(/\s+/g, '_')}_${isoDate}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    return;
+  }
 
   let report = `================================================================================
 PROCÈS-VERBAL TECHNIQUE - AUDIT ET STATISTIQUES DE LA PLATEFORME DEPLIANTAPP
@@ -9125,8 +9456,9 @@ async function init() {
     actualiserBanniereSuppression();
     updateHeaderAndProfileAvatar();
 
-    document.getElementById("nav-admin").classList.toggle("hidden", IDENTITE.type !== "super");
-    document.getElementById("nav-statistiques").classList.toggle("hidden", IDENTITE.type !== "super");
+    const canSeeAdminAndStats = IDENTITE && (IDENTITE.type === "super" || IDENTITE.type === "chorale");
+    document.getElementById("nav-admin").classList.toggle("hidden", !canSeeAdminAndStats);
+    document.getElementById("nav-statistiques").classList.toggle("hidden", !canSeeAdminAndStats);
 
     MOMENTS = meta.moments;
     CATEGORIES = meta.categories;

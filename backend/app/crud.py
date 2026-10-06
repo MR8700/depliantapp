@@ -1205,6 +1205,117 @@ def get_statistiques() -> dict:
     }
 
 
+def get_statistiques_chorale(chorale_id: int) -> dict:
+    """Statistiques restreintes à la chorale connectée : ses propres dépliants,
+    ses demandes et ses métriques, sans exposer les données des autres chorales."""
+    with get_connection() as conn:
+        chorale = conn.execute("SELECT nom, created_at FROM chorales WHERE id = ?", (chorale_id,)).fetchone()
+        nom = chorale["nom"] if chorale else "Chorale"
+        created_at = chorale["created_at"] if chorale else None
+
+        total_feuillets = conn.execute(
+            "SELECT COUNT(*) AS n FROM feuillets WHERE chorale_id = ?", (chorale_id,)
+        ).fetchone()["n"]
+
+        total_chants = conn.execute("SELECT COUNT(*) AS n FROM chants WHERE actif = 1").fetchone()["n"]
+
+        feuillets_recents = [
+            dict(r) for r in conn.execute(
+                "SELECT f.id, f.date, f.lieu, f.created_at, ? AS chorale_nom "
+                "FROM feuillets f WHERE f.chorale_id = ? ORDER BY f.created_at DESC LIMIT 10",
+                (nom, chorale_id),
+            ).fetchall()
+        ]
+
+        demandes_en_attente = conn.execute(
+            "SELECT COUNT(*) AS n FROM demandes_suppression WHERE chorale_demandeuse_id = ? AND statut = 'en_attente'",
+            (chorale_id,),
+        ).fetchone()["n"]
+
+        demandes_validees = conn.execute(
+            "SELECT COUNT(*) AS n FROM demandes_suppression WHERE chorale_demandeuse_id = ? AND statut = 'validee'",
+            (chorale_id,),
+        ).fetchone()["n"]
+
+        masques_actifs = conn.execute(
+            "SELECT COUNT(*) AS n FROM masques_chorale WHERE chorale_id = ?", (chorale_id,)
+        ).fetchone()["n"]
+
+        chants_par_categorie = [
+            dict(r) for r in conn.execute(
+                "SELECT categorie, COUNT(*) AS nombre FROM chants GROUP BY categorie ORDER BY nombre DESC"
+            ).fetchall()
+        ]
+
+        chants_recents = [
+            dict(r) for r in conn.execute(
+                "SELECT titre, categorie, created_at FROM chants ORDER BY created_at DESC LIMIT 10"
+            ).fetchall()
+        ]
+
+        try:
+            sessions_ouvertes = conn.execute(
+                "SELECT COUNT(*) AS n FROM sessions WHERE compte_type = 'chorale' AND compte_id = ? AND is_active = 1",
+                (chorale_id,),
+            ).fetchone()["n"]
+        except Exception:
+            sessions_ouvertes = 1
+
+        feuillets_par_chorale = [{
+            "chorale_nom": nom,
+            "nombre": total_feuillets,
+            "dernier": feuillets_recents[0]["created_at"] if feuillets_recents else None,
+        }]
+
+        return {
+            "is_chorale": True,
+            "chorale_nom": nom,
+            "created_at": created_at,
+            "total_chorales": 1,
+            "total_chants": total_chants,
+            "total_feuillets": total_feuillets,
+            "demandes_en_attente": demandes_en_attente,
+            "demandes_validees": demandes_validees,
+            "masques_actifs": masques_actifs,
+            "sessions_ouvertes": sessions_ouvertes,
+            "feuillets_par_chorale": feuillets_par_chorale,
+            "chants_par_categorie": chants_par_categorie,
+            "feuillets_recents": feuillets_recents,
+            "chants_recents": chants_recents,
+        }
+
+
+def get_demandes_chorale(chorale_id: int) -> dict:
+    with get_connection() as conn:
+        demandes = [
+            dict(r) for r in conn.execute(
+                "SELECT id, type_cible, cible_id, statut, raison, created_at, traite_at "
+                "FROM demandes_suppression WHERE chorale_demandeuse_id = ? ORDER BY created_at DESC",
+                (chorale_id,),
+            ).fetchall()
+        ]
+        categories = [
+            dict(r) for r in conn.execute(
+                "SELECT id, nom, statut, motif_rejet, created_at FROM categories_personnalisees "
+                "WHERE cree_par = ? ORDER BY created_at DESC",
+                (chorale_id,),
+            ).fetchall()
+        ]
+        partitions = [
+            dict(r) for r in conn.execute(
+                "SELECT cp.id, cp.chant_id, c.titre AS chant_titre, cp.statut, cp.created_at "
+                "FROM chant_partitions cp JOIN chants c ON c.id = cp.chant_id "
+                "WHERE cp.chorale_id = ? ORDER BY cp.created_at DESC",
+                (chorale_id,),
+            ).fetchall()
+        ]
+        return {
+            "demandes": demandes,
+            "categories": categories,
+            "partitions": partitions,
+        }
+
+
 # --- Messagerie privée (chorale <-> super-admin, un seul fil par chorale) ---
 
 def list_message_threads() -> list[dict]:

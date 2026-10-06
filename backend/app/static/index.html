@@ -2268,7 +2268,8 @@
   </section>
 
   <section id="view-admin" class="view">
-    <div class="library-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+    <div id="admin-vue-super">
+      <div class="library-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
       <div>
         <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Administration</div>
         <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Administration</h1>
@@ -2518,6 +2519,108 @@
               <span id="admin-apropos-status" class="hint" style="align-self: center; font-weight: 500;"></span>
             </div>
           </form>
+        </div>
+      </div>
+    </div>
+    </div> <!-- Fin admin-vue-super -->
+
+    <!-- Vue Chorale dédiée pour l'administration de son propre compte -->
+    <div id="admin-vue-chorale" class="hidden">
+      <div class="library-header" style="margin-bottom: 24px;">
+        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Mon Espace &gt; Administration</div>
+        <h1 id="admin-chorale-nom-titre" style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Administration de ma chorale</h1>
+        <p style="font-size: 0.85rem; color: #64748B; margin: 4px 0 0 0;">Consultez vos sessions ouvertes, vos paramètres et les permissions accordées par l'administrateur.</p>
+      </div>
+
+      <!-- Alerte / Badge Multi-appareils -->
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 12px; padding: 14px 18px; margin-bottom: 20px; display: flex; align-items: center; gap: 14px;">
+        <div style="font-size: 1.5rem;">✨</div>
+        <div style="font-size: 0.85rem; color: #166534; line-height: 1.4;">
+          <strong>Accès multi-appareils libre &amp; illimité :</strong> Votre chorale peut se connecter simultanément sur tous vos appareils (ordinateurs, tablettes, smartphones) sans aucune restriction ni licence requise.
+        </div>
+      </div>
+
+      <!-- Carte 1 : Mes sessions ouvertes -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+        <div class="settings-card-header" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+          <div>
+            <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">📱 Mes sessions ouvertes</h4>
+            <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Appareils et navigateurs actuellement connectés à l'espace de votre chorale.</p>
+          </div>
+          <button type="button" id="btn-revoquer-autres-sessions" class="btn-secondary" style="font-size: 0.8rem; padding: 6px 14px; border-radius: 8px; border: 1px solid #cbd5e1; background: #f8fafc; cursor: pointer; font-weight: 600;">
+            Déconnecter tous les autres appareils
+          </button>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <div id="liste-sessions-chorale" style="display: flex; flex-direction: column; gap: 10px;">
+            <p class="hint">Chargement des sessions…</p>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carte 2 : Paramètres et permissions accordées par l'admin -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+        <div class="settings-card-header">
+          <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">🛡️ Paramètres &amp; Permissions accordées</h4>
+          <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Droits et autorisations validés pour votre chorale par l'administrateur de l'application.</p>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 20px;">
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
+              <div style="font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Nom officiel de la chorale</div>
+              <div id="param-chorale-nom" style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-top: 4px;">—</div>
+            </div>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
+              <div style="font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Identifiant unique</div>
+              <div id="param-chorale-username" style="font-size: 1.05rem; font-weight: 700; color: #1e293b; margin-top: 4px; font-family: monospace;">—</div>
+            </div>
+            <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 14px;">
+              <div style="font-size: 0.75rem; color: #64748b; font-weight: 600; text-transform: uppercase;">Statut du compte</div>
+              <div style="margin-top: 6px;"><span style="background: #dcfce7; color: #15803d; font-weight: 700; font-size: 0.8rem; padding: 3px 10px; border-radius: 20px;">✓ Actif &amp; Autorisé</span></div>
+            </div>
+          </div>
+
+          <h5 style="margin: 0 0 10px 0; font-size: 0.9rem; color: #334155;">Autorisations liturgiques accordées :</h5>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px; font-size: 0.85rem; color: #1e293b; margin-bottom: 20px;">
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Création &amp; composition libre de dépliants
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Accès complet à la bibliothèque partagée
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Proposition de nouveaux chants
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Importation de fichiers et carnets
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Messagerie directe avec le super-administrateur
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px; background: #fff; border: 1px solid #e2e8f0; padding: 10px; border-radius: 8px;">
+              <span style="color: #16a34a; font-weight: bold;">✔</span> Utilisation multi-appareils sans limite
+            </div>
+          </div>
+
+          <div style="border-top: 1px solid #e2e8f0; padding-top: 16px; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px;">
+            <div style="font-size: 0.85rem; color: #64748b;">Sécurité du compte : vous pouvez modifier votre mot de passe personnalisé à tout moment.</div>
+            <button type="button" id="btn-admin-chorale-chg-mdp" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #2563eb; color: white; border: none; cursor: pointer; font-weight: 600;">
+              🔑 Modifier mon mot de passe
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Carte 3 : Mes demandes auprès de l'administrateur -->
+      <div class="settings-card" style="background: white; border-radius: 16px;">
+        <div class="settings-card-header">
+          <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">📋 Mes demandes auprès de l'administrateur</h4>
+          <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Suivi de vos demandes de suppression, catégories personnalisées ou partitions soumises.</p>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <div id="liste-demandes-chorale" style="display: flex; flex-direction: column; gap: 10px;">
+            <p class="hint">Chargement de vos demandes…</p>
+          </div>
         </div>
       </div>
     </div>
