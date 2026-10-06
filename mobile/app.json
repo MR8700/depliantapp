@@ -5,6 +5,11 @@
     "version": "1.0.0",
     "orientation": "default",
     "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#1a3c6e"
+    },
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
