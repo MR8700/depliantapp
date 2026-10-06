@@ -743,7 +743,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_licences_uid ON licences(licence_uid);
 """
 
 
-def init_db() -> None:
+_INITIALIZED = False
+
+
+def init_db(force: bool = False) -> None:
+    global _INITIALIZED
+    if _INITIALIZED and not force:
+        return
     if BACKEND == "postgres":
         _init_postgres()
     else:
@@ -751,6 +757,7 @@ def init_db() -> None:
 
     from . import auth  # import différé : auth.py importe get_connection depuis ce module
     auth.ensure_default_account()
+    _INITIALIZED = True
 
 
 def _init_sqlite() -> None:
@@ -939,14 +946,13 @@ def _migrer_vers_multi_chorale(conn) -> None:
     bascule le modèle mono-tenant historique vers le modèle multi-chorale —
     crée une première chorale "Chorale Sainte Cécile" et lui rattache toutes
     les données existantes (dépliants, réglages, logos/bannière)."""
-    if conn.execute("SELECT 1 FROM chorales LIMIT 1").fetchone():
+    if conn.execute("SELECT 1 FROM chorales WHERE id > 0 LIMIT 1").fetchone():
         return
 
-    import secrets
-
+    import os
     from . import auth as auth_module  # import différé, même raison qu'ailleurs dans ce module
 
-    mot_de_passe = secrets.token_urlsafe(12)
+    mot_de_passe = os.environ.get("DEPLIANTAPP_DEFAULT_CHORALE_PASSWORD") or getattr(auth_module, "DEFAULT_CHORALE_PASSWORD", "Chorale2026!")
     chorale_id = insert_returning_id(
         conn,
         "INSERT INTO chorales (nom, username, password_hash, must_change_password) VALUES (?, ?, ?, 1)",

@@ -39,7 +39,7 @@ export default function LoginScreen({ onConnecte, onAnnuler }: Props) {
           </Text>
           <TextInput
             style={styles.champ}
-            placeholder="Identifiant administrateur"
+            placeholder="Identifiant (admin ou chorale)"
             placeholderTextColor="#9aa5b1"
             autoCapitalize="none"
             autoCorrect={false}

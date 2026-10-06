@@ -69,14 +69,19 @@
 
     <form id="form-login">
       <label for="login-username">Identifiant</label>
-      <input id="login-username" type="text" autocomplete="username" required autofocus>
+      <input id="login-username" type="text" placeholder="admin ou chorale-sainte-cecile" autocomplete="username" required autofocus>
       <label for="login-password">Mot de passe</label>
       <div class="champ-mdp">
-        <input id="login-password" type="password" autocomplete="current-password" required>
+        <input id="login-password" type="password" placeholder="Mot de passe initial ou personnalisé" autocomplete="current-password" required>
         <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe">👁</button>
       </div>
       <div class="erreur" id="login-erreur"></div>
       <button type="submit">Se connecter</button>
+      <p class="hint" style="text-align: center; margin-top: 14px; background: #f8fafc; padding: 8px 10px; border-radius: 6px; border: 1px solid #e2e8f0; font-size: 0.8rem; line-height: 1.4;">
+        <b>Connexion initiale :</b><br>
+        Super-admin : <code>admin</code> / <code>Admin2026!</code><br>
+        Chorale démo : <code>chorale-sainte-cecile</code> / <code>Chorale2026!</code>
+      </p>
     </form>
 
     <form id="form-changement" class="hidden">
@@ -149,7 +154,7 @@ let dernierMotDePasseSaisi = "";
 document.getElementById("form-login").addEventListener("submit", async (e) => {
   e.preventDefault();
   masquerErreur("login-erreur");
-  const username = document.getElementById("login-username").value;
+  const username = (document.getElementById("login-username").value || "").trim();
   const password = document.getElementById("login-password").value;
   const submitBtn = e.target.querySelector('button[type="submit"]');
   try {

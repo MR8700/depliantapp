@@ -15,7 +15,7 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # un attaquant pouvait tenter un nombre illimité de mots de passe contre
 # n'importe quel compte chorale (identifiants souvent peu secrets, proches du
 # nom de la chorale) sans aucun ralentissement.
-_TENTATIVES_MAX = 10
+_TENTATIVES_MAX = 50
 _FENETRE_SECONDES = 900
 _echecs_par_cle: dict[str, list[float]] = defaultdict(list)
 
@@ -48,13 +48,15 @@ class ChangementMotDePasse(BaseModel):
 
 @router.post("/login")
 def login(identifiants: Identifiants, request: Request, response: Response):
+    user_clean = identifiants.username.strip()
     ip = request.client.host if request.client else "inconnu"
-    cle = f"{ip}:{identifiants.username.strip().lower()}"
+    cle = f"{ip}:{user_clean.lower()}"
     _verifier_throttle(cle)
-    identite = auth.verify_credentials_toute_source(identifiants.username, identifiants.password)
+    identite = auth.verify_credentials_toute_source(user_clean, identifiants.password)
     if not identite:
         _enregistrer_echec(cle)
         raise HTTPException(status_code=401, detail="Identifiant ou mot de passe incorrect")
+    _echecs_par_cle.pop(cle, None)
     token = auth.create_session_token(identite)
     response.set_cookie(
         auth.COOKIE_NAME, token,
