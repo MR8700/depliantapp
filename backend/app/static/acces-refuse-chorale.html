@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Accès réservé — DepliantApp</title>
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1a3c6e">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<link rel="icon" href="/icon-192.png">
+<style>
+  :root { --bleu: #1a3c6e; --bleu-clair: #eaf0fa; --gris: #666; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    font-family: -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+    background: linear-gradient(160deg, #1a3c6e 0%, #2a5a9e 55%, #0f2547 100%);
+    color: #222; padding: 20px;
+  }
+  .carte {
+    background: white; border-radius: 12px; padding: 32px; width: 100%; max-width: 400px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.25); text-align: center;
+  }
+  .icone { font-size: 2.4rem; margin-bottom: 8px; }
+  h1 { font-size: 1.25rem; color: var(--bleu); margin: 0 0 12px 0; }
+  p { color: #333; font-size: 0.92rem; line-height: 1.5; margin: 0 0 8px 0; }
+  button {
+    width: 100%; margin-top: 20px; padding: 10px; border: none; border-radius: 6px;
+    background: var(--bleu); color: white; font-size: 0.95rem; font-weight: 600; cursor: pointer;
+  }
+  button:hover { background: #14315c; }
+</style>
+</head>
+<body>
+  <div class="carte">
+    <div class="icone">📱</div>
+    <h1>Le site web est réservé à l'administration</h1>
+    <p>Votre chorale gère désormais chants et dépliants depuis <strong>l'application mobile DepliantApp</strong>.</p>
+    <button id="btn-deconnexion">Se déconnecter</button>
+  </div>
+<script>
+document.getElementById("btn-deconnexion").addEventListener("click", async () => {
+  try { await fetch("/auth/logout", { method: "POST" }); } catch (e) {}
+  window.location.href = "/login.html";
+});
+</script>
+</body>
+</html>

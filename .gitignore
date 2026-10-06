@@ -1,0 +1,11 @@
+backend/data/
+backend/*.db
+backend/*.log
+backend/*.pid
+**/__pycache__/
+*.pyc
+.venv/
+venv/
+../*.txt
+../text.txt
+text.txt

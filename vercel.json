@@ -1,0 +1,26 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/index.py",
+      "use": "@vercel/python"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/api/(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/(auth|chants|chorales|feuillets|parametres|moderation|statistiques|messages|ml|import|licences|aelf|health|meta|categories)(.*)",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/backend/app/static/$1"
+    }
+  ],
+  "env": {
+    "PYTHON_VERSION": "3.11"
+  }
+}

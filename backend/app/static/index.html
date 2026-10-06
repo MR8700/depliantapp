@@ -1,0 +1,2439 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<title>DepliantApp</title>
+<link rel="stylesheet" href="/style.css?v=23">
+<link rel="manifest" href="/manifest.json">
+<meta name="theme-color" content="#1a3c6e">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DepliantApp">
+<link rel="apple-touch-icon" href="/favicon.svg">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg">
+</head>
+<body>
+
+<!-- Deletion warning banner for chorales -->
+<div id="deletion-warning-banner" class="deletion-warning-banner hidden no-print" style="background: #fee2e2; border-bottom: 2px solid #ef4444; color: #991b1b; padding: 12px 24px; position: sticky; top: 0; z-index: 9999; display: flex; align-items: center; justify-content: space-between; gap: 16px; box-shadow: 0 4px 6px rgba(0,0,0,0.05); font-size: 0.9rem;">
+  <div style="display: flex; align-items: center; gap: 12px; flex: 1;">
+    <span style="font-size: 1.4rem;">⚠️</span>
+    <div id="deletion-banner-text" style="font-weight: 500;"></div>
+  </div>
+  <button type="button" id="btn-banner-revision" class="btn-primary" style="background: #dc2626; border: none; color: white; padding: 6px 14px; border-radius: 6px; font-weight: 600; cursor: pointer; font-size: 0.8rem; flex-shrink: 0; transition: background-color 0.2s;">
+    Contester / Demander révision
+  </button>
+</div>
+
+<div id="splash" class="splash">
+  <div class="splash-symbole" aria-hidden="true">
+    <svg viewBox="0 0 100 100" width="110" height="110">
+      <circle cx="50" cy="50" r="46" fill="none" stroke="#ffffff" stroke-width="3" stroke-dasharray="90 199" opacity="0.8"/>
+      <path d="M50 20 C 30 20, 22 35, 22 48 C 22 66, 38 76, 50 84 C 62 76, 78 66, 78 48 C 78 35, 70 20, 50 20 Z"
+            fill="none" stroke="#ffffff" stroke-width="3" opacity="0.85"/>
+      <path d="M38 50 q12 -18 24 0" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round"/>
+      <circle cx="38" cy="50" r="3" fill="#ffffff"/>
+      <circle cx="62" cy="50" r="3" fill="#ffffff"/>
+    </svg>
+  </div>
+  <p id="splash-titre" class="splash-titre">DepliantApp</p>
+  <p id="splash-message" class="splash-message">Chargement…</p>
+</div>
+
+<header>
+  <button id="btn-menu" class="btn-hamburger" aria-label="Ouvrir le menu">
+    <span></span><span></span><span></span>
+  </button>
+  <h1 id="app-title">DepliantApp</h1>
+  <div class="header-user-badge" id="header-user-badge" style="margin-left: auto; display: flex; align-items: center; gap: 8px; cursor: pointer; padding: 4px 8px; border-radius: 20px; transition: background 0.2s;" onclick="ouvrirProfil()">
+    <span id="identite-badge" class="identite-badge" style="margin: 0; max-width: 120px; background: none; padding: 0;"></span>
+    <div id="header-user-avatar" class="header-avatar" style="width: 28px; height: 28px; border-radius: 50%; background: rgba(255,255,255,0.22); border: 1.5px solid rgba(255,255,255,0.8); display: flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: bold; overflow: hidden; flex-shrink: 0; color: white; transition: all 0.2s;">
+    </div>
+  </div>
+</header>
+
+<div id="ptr-indicateur" class="ptr-indicateur" aria-hidden="true">
+  <span class="ptr-fleche">↓</span>
+  <span class="ptr-spinner"></span>
+</div>
+
+<div id="menu-overlay" class="menu-overlay hidden"></div>
+<nav id="menu-berger" class="menu-berger">
+  <button id="btn-mon-profil" class="nav-btn nav-btn-profil">Mon profil</button>
+  <button data-view="bibliotheque" class="nav-btn active">Bibliothèque</button>
+  <button data-view="composer" class="nav-btn">Composer</button>
+  <button data-view="depliants" class="nav-btn">Les dépliants</button>
+  <button data-view="editeur" class="nav-btn">Éditeur</button>
+  <button data-view="importer" class="nav-btn">Importer</button>
+  <button data-view="reglages" class="nav-btn">Réglages</button>
+  <button data-view="apropos" class="nav-btn">À propos</button>
+  <button data-view="messagerie" id="nav-messagerie" class="nav-btn">Messagerie <span id="badge-messagerie" class="badge-non-lus hidden"></span></button>
+  <button data-view="statistiques" id="nav-statistiques" class="nav-btn hidden">Statistiques</button>
+  <button data-view="admin" id="nav-admin" class="nav-btn hidden">Administration</button>
+  <button id="btn-deconnexion" class="nav-btn nav-btn-deconnexion">Se déconnecter</button>
+</nav>
+
+<main>
+  <!-- Bibliothèque -->
+  <section id="view-bibliotheque" class="view active">
+    <!-- Header Area -->
+    <div class="library-header">
+      <div class="library-title-row">
+        <h2 class="library-main-title">Bibliothèque de chants</h2>
+        <span id="library-total-badge" class="library-total-badge">0 chants</span>
+      </div>
+      <div class="library-header-actions" id="library-header-role-actions">
+        <!-- Actions loaded dynamically based on role -->
+      </div>
+    </div>
+    
+    <!-- Filters Area -->
+    <div class="library-filters-card">
+      <div class="filters-main-row">
+        <div class="search-input-wrapper">
+          <span class="search-icon">🔍</span>
+          <input id="search-q" type="search" placeholder="Rechercher un chant, un mot des paroles…">
+        </div>
+        <select id="search-categorie">
+          <option value="">Toutes catégories</option>
+        </select>
+        <select id="search-langue">
+          <option value="">Toutes langues</option>
+          <option value="fr">Français</option>
+          <option value="moore">Mooré</option>
+          <option value="dioula">Dioula</option>
+          <option value="la">Latin</option>
+          <option value="en">Anglais</option>
+          <option value="dagara">Dagara</option>
+          <option value="bissa">Bissa</option>
+          <option value="gulmancema">Gulmancema</option>
+          <option value="lingala">Lingala</option>
+          <option value="autre">Autre</option>
+        </select>
+        <button type="button" id="btn-filtres-avances" class="btn-secondary">
+          <span>⚙</span> Filtres avancés
+        </button>
+      </div>
+      
+      <!-- Collapsible Advanced Filters -->
+      <div id="advanced-filters-block" class="advanced-filters-block hidden">
+        <div class="filters-grid">
+          <label>Occasion
+            <input id="search-occasion" type="text" placeholder="Ex: Messe, Mariage...">
+          </label>
+          <label>État
+            <select id="search-etat">
+              <option value="">Tous les états</option>
+              <option value="actif">Actif</option>
+              <option value="a-verifier">À vérifier</option>
+              <option value="archive">Archivé</option>
+            </select>
+          </label>
+        </div>
+      </div>
+    </div>
+    
+    <!-- View & Sort Toolbar -->
+    <div class="library-toolbar">
+      <div class="view-toggle-buttons">
+        <button type="button" id="btn-view-list" class="btn-toggle active" title="Vue Liste">
+          <span class="icon-list">☰</span> Liste
+        </button>
+        <button type="button" id="btn-view-grid" class="btn-toggle" title="Vue Grille">
+          <span class="icon-grid">⚏</span> Grille
+        </button>
+      </div>
+      
+      <div class="sort-and-limit-row">
+        <div class="sort-selector">
+          <span class="sort-label">Trier par</span>
+          <select id="library-sort-by">
+            <option value="titre">Ordre alphabétique</option>
+            <option value="code">Référence</option>
+            <option value="creation">Date de création</option>
+            <option value="confiance">Popularité</option>
+          </select>
+          <button type="button" id="btn-sort-direction" class="btn-icon-toggle" title="Inverser l'ordre">⇅</button>
+        </div>
+      </div>
+    </div>
+    
+    <!-- Songs container -->
+    <div id="library-songs-wrapper" class="view-mode-list">
+      <ul id="chant-list" class="songs-container list"></ul>
+    </div>
+    
+    <!-- Pagination Area -->
+    <div class="library-pagination-row">
+      <div class="pagination-pages" id="library-pagination-controls">
+        <!-- Generated dynamically -->
+      </div>
+      <div class="pagination-limit">
+        <select id="library-page-size">
+          <option value="10">10 par page</option>
+          <option value="20" selected>20 par page</option>
+          <option value="50">50 par page</option>
+          <option value="100">100 par page</option>
+        </select>
+      </div>
+    </div>
+  </section>
+
+  <!-- Composer -->
+  <!-- Composer -->
+  <section id="view-composer" class="view">
+    <!-- Mobile Tab Toggle Buttons -->
+    <div class="mobile-composer-tabs no-print">
+      <button type="button" id="btn-comp-tab-form" class="btn-tab-toggle active">Formulaire</button>
+      <button type="button" id="btn-comp-tab-preview" class="btn-tab-toggle">Aperçu PDF</button>
+    </div>
+
+    <div class="composer-layout-wrapper">
+      <!-- Middle column: Form inputs -->
+      <div class="composer-form-column">
+        <form id="feuillet-form">
+          <!-- Carte 1: Informations de la célébration -->
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">ℹ️ Informations de la célébration</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="celebration-info-row">
+                <label class="req-label">Date * <input id="f-date" type="date" required></label>
+                <label>Lieu <input id="f-lieu" type="text" placeholder="Paroisse Saint Pierre…"></label>
+                <label>Célébration <input id="f-type-celebration" type="text" placeholder="Temps ordinaire…"></label>
+                <label>Président <input id="f-president" type="text" placeholder="Père…"></label>
+                <label>Animateur <input id="f-animateur" type="text" placeholder="Nom…"></label>
+                <label>Chorale <input id="f-chorale-info" type="text" placeholder="Nom…"></label>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Carte 2: Lectures du jour -->
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">📖 Lecture du jour</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="lectures-grid">
+                <div class="lecture-field-group">
+                  <label>1ère lecture</label>
+                  <div class="input-with-search">
+                    <input id="f-lecture1" type="text" placeholder="Ex: Actes 15,1-2.22-29">
+                    <button type="button" class="btn-search-lecture" data-target="f-lecture1" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
+                </div>
+                <div class="lecture-field-group">
+                  <label>Psaume</label>
+                  <div class="input-with-search">
+                    <input id="f-psaume" type="text" placeholder="Ex: Psaume 66 (67)">
+                    <button type="button" class="btn-search-lecture" data-target="f-psaume" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
+                </div>
+                <div class="lecture-field-group">
+                  <label>2ème lecture</label>
+                  <div class="input-with-search">
+                    <input id="f-lecture2" type="text" placeholder="Ex: Apocalypse 21">
+                    <button type="button" class="btn-search-lecture" data-target="f-lecture2" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
+                </div>
+                <div class="lecture-field-group">
+                  <label>Évangile</label>
+                  <div class="input-with-search">
+                    <input id="f-evangile" type="text" placeholder="Ex: Jean 14,23-29">
+                    <button type="button" class="btn-search-lecture" data-target="f-evangile" title="Rechercher dans la bibliothèque">📚</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Carte 3: Chants par moment liturgique -->
+          <fieldset class="composer-card-fieldset">
+            <div class="section-header-row">
+              <div class="section-title-col">
+                <legend style="margin-bottom:2px; padding:0;">Chants par moment liturgique</legend>
+                <p class="section-card-subtitle">L'ordre détermine la position d'affichage du chant dans le feuillet PDF. Vous pouvez modifier librement cet ordre.</p>
+              </div>
+              <div class="section-header-actions">
+                <button type="button" id="btn-composer-ajouter-moment" class="btn-text-action">➕ Ajouter un moment</button>
+                <button type="button" id="btn-composer-reinit-ordre" class="btn-text-action">↺ Réinitialiser l'ordre</button>
+                <button type="button" id="btn-composer-tri-auto" class="btn-text-action">⇅ Trier automatiquement</button>
+              </div>
+            </div>
+            
+            <!-- Cards list for moments -->
+            <div class="moments-table-header no-print">
+              <div>Ordre</div>
+              <div>Moment liturgique</div>
+              <div>Mode</div>
+              <div>Sélection du chant</div>
+              <div>Résumé</div>
+              <div style="text-align: right; padding-right: 16px;">Actions</div>
+            </div>
+            <div id="moments-container" class="moments-cards-list"></div>
+          </fieldset>
+
+          <!-- Carte 4: Chants spéciaux -->
+          <fieldset class="composer-card-fieldset">
+            <div class="section-header-row">
+              <div class="section-title-col">
+                <legend style="margin-bottom:2px; padding:0;">Chants spéciaux</legend>
+                <p class="section-card-subtitle">Ajoute un chant ou un texte libre à une position précise, en plus des moments liturgiques ci-dessus.</p>
+              </div>
+              <div class="section-header-actions">
+                <button type="button" id="btn-ajouter-special" class="btn-text-action">➕ Ajouter un chant spécial</button>
+              </div>
+            </div>
+            
+            <div class="special-table-header no-print">
+              <div>Ordre</div>
+              <div>Mode</div>
+              <div>Sélection du chant</div>
+              <div>Résumé</div>
+              <div style="text-align: right; padding-right: 16px;">Actions</div>
+            </div>
+            <div id="chants-speciaux-container" class="moments-cards-list"></div>
+          </fieldset>
+
+          <!-- Carte 5: Widgets -->
+          <fieldset class="composer-card-fieldset accordion-fieldset">
+            <legend class="accordion-header">
+              <span class="header-title">⚙️ Widgets PDF</span>
+              <span class="accordion-chevron">▼</span>
+            </legend>
+            <div class="accordion-content">
+              <div class="widgets-selection-grid">
+                <label class="checkbox-row">
+                  <input id="f-priere-active" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Prière pour le Burkina Faso <small>occupe la dernière colonne G2 de la page 1</small></span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-widget-info-chorale" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Informations de la chorale</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-one-page-mode" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Feuillet 1 page <small>A4 paysage unique (Couverture + Chants côte à côte)</small></span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-banniere-active" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Bannière Bon dimanche</span>
+                </label>
+                <label class="checkbox-row">
+                  <input id="f-widget-ref-bibles" type="checkbox">
+                  <span class="checkbox-slider"></span>
+                  <span class="checkbox-label">Afficher les références bibliques</span>
+                </label>
+              </div>
+              
+              <div class="widget-textarea-group">
+                <label>Texte personnalisé de la Prière (facultatif)
+                  <textarea id="f-priere-texte" rows="3" placeholder="Laisser vide pour utiliser le texte par défaut (Prière pour le Burkina Faso)"></textarea>
+                </label>
+              </div>
+            </div>
+          </fieldset>
+
+          <!-- Hidden default submit button for standard JS compatibility -->
+          <button type="submit" id="btn-generer" style="display:none;"></button>
+        </form>
+      </div>
+
+      <!-- Right column: PDF Live Preview -->
+      <div class="composer-preview-column">
+        <div class="preview-header-row">
+          <h3 class="preview-title">Aperçu du feuillet</h3>
+          <span class="preview-badge-sync">🟢 Aperçu synchronisé</span>
+          <button type="button" id="btn-close-mobile-preview" class="btn-close-preview-sheet" title="Fermer l'aperçu">✕</button>
+        </div>
+        <div class="preview-toolbar" id="preview-custom-toolbar">
+          <button type="button" id="pv-btn-zoom-out" class="btn-pv-tool" title="Zoom -">－</button>
+          <span id="pv-zoom-val" class="pv-zoom-val-label">Auto</span>
+          <button type="button" id="pv-btn-zoom-in" class="btn-pv-tool" title="Zoom +">＋</button>
+          <button type="button" id="pv-btn-zoom-100" class="btn-pv-tool btn-text-tool" title="Zoom Auto">Auto</button>
+          <button type="button" id="pv-btn-download" class="btn-pv-tool" title="Télécharger le PDF">⬇</button>
+          <button type="button" id="pv-btn-print" class="btn-pv-tool" title="Imprimer le feuillet">🖨</button>
+          <button type="button" id="pv-btn-fullscreen" class="btn-pv-tool" title="Plein écran">⛶</button>
+          <button type="button" id="pv-btn-refresh" class="btn-pv-tool" title="Actualiser l'aperçu">↺</button>
+          <button type="button" id="pv-btn-partager" class="btn-pv-tool" title="Partager le feuillet">🔗</button>
+          <button type="button" id="pv-btn-supprimer" class="btn-pv-tool btn-pv-tool-danger" title="Supprimer ce feuillet">🗑</button>
+        </div>
+        
+        <!-- Target container where app.js mounts the iframe -->
+        <div id="composer-result" class="composer-result-iframe-wrapper"></div>
+      </div>
+    </div>
+
+    <!-- Fixed Bottom Bar -->
+    <div class="composer-bottom-bar no-print">
+      <div class="bar-left-info">
+        <span class="info-item" id="composer-bar-chants-count">0 chant sélectionné</span>
+        <span class="info-item-divider">|</span>
+        <span class="info-item" id="composer-bar-checklist">Moments vides</span>
+        <span class="info-item-divider">|</span>
+        <span class="info-item" id="composer-bar-pages-est">PDF : 2 pages (A4 paysage)</span>
+        <span class="info-item-divider">|</span>
+        <span class="info-item" id="composer-bar-update-time">Mis à jour il y a 2s</span>
+      </div>
+      <div class="bar-right-actions">
+        <button type="button" id="btn-save-draft" class="btn-secondary" title="Enregistrer comme brouillon"><span>💾</span> <span class="btn-text">Enregistrer comme brouillon</span></button>
+        <button type="button" id="btn-generate-pdf-direct" class="btn-secondary" title="Générer le PDF"><span>📄</span> <span class="btn-text">Générer le PDF</span></button>
+        <button type="button" id="btn-submit-composer" class="btn-primary" title="Créer le feuillet"><span>✨</span> <span class="btn-text">Créer le feuillet</span></button>
+      </div>
+    </div>
+
+    <!-- Floating Radial Action Menu (Toolbox) for Mobile -->
+    <div id="mobile-floating-toolbox" class="floating-toolbox no-print">
+      <!-- Radial Action Buttons -->
+      <button type="button" id="fab-action-save-draft" class="fab-action-btn" title="Enregistrer comme brouillon">
+        <span class="fab-btn-icon">💾</span>
+        <span class="fab-btn-label">Brouillon</span>
+      </button>
+      <button type="button" id="fab-action-generate-pdf" class="fab-action-btn" title="Générer le PDF">
+        <span class="fab-btn-icon">📄</span>
+        <span class="fab-btn-label">PDF</span>
+      </button>
+      <button type="button" id="fab-action-create-sheet" class="fab-action-btn" title="Créer le feuillet">
+        <span class="fab-btn-icon">✨</span>
+        <span class="fab-btn-label">Créer</span>
+      </button>
+      <button type="button" id="fab-action-preview-sheet" class="fab-action-btn" title="Aperçu du feuillet">
+        <span class="fab-btn-icon">👁</span>
+        <span class="fab-btn-label">Aperçu</span>
+      </button>
+      <button type="button" id="fab-action-widgets" class="fab-action-btn" title="Widgets PDF">
+        <span class="fab-btn-icon">⚙️</span>
+        <span class="fab-btn-label">Widgets</span>
+      </button>
+      
+      <!-- Central Trigger Ball -->
+      <button type="button" id="fab-toolbox-trigger" class="fab-trigger-btn" title="Outils d'action rapide">
+        <span class="trigger-icon">🛠️</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Les dépliants -->
+  <section id="view-depliants" class="view">
+    <div class="view-header">
+      <div class="view-title-block">
+        <h2 class="library-main-title">Mes dépliants</h2>
+        <p class="view-subtitle">Retrouvez tous vos feuillets composés ainsi que ceux partagés par la communauté.</p>
+      </div>
+      <button type="button" id="btn-nouveau-depliant" class="btn-primary">+ Nouveau feuillet</button>
+    </div>
+
+    <!-- Hidden native controls for compatibility -->
+    <select id="depliants-portee" class="hidden">
+      <option value="mine" selected>Mes dépliants</option>
+      <option value="tous">Tous les dépliants</option>
+    </select>
+    <ul id="depliants-list" class="hidden"></ul>
+
+    <!-- Actions bar: search and tabs filter -->
+    <div class="depliants-actions-bar">
+      <div class="depliants-search-wrapper">
+        <span class="search-icon">🔍</span>
+        <input id="search-depliant" type="search" placeholder="Rechercher un feuillet (paroisse, chant, date, lieu)...">
+      </div>
+      
+      <div class="depliants-tabs-wrapper">
+        <button type="button" class="tab-filter-btn active" data-tab="mine">Mes créations</button>
+        <button type="button" class="tab-filter-btn" data-tab="publics">Feuillets publics</button>
+        <button type="button" class="tab-filter-btn" data-tab="tous">Tous les feuillets</button>
+        <button type="button" class="tab-filter-btn" data-tab="favoris">⭐ Favoris</button>
+        <button type="button" class="tab-filter-btn" data-tab="recents">🕒 Récents</button>
+        <button type="button" class="tab-filter-btn" data-tab="sauvegardes">💾 Mes sauvegardes</button>
+      </div>
+
+      <div class="depliants-meta-info">
+        <span id="depliants-count-badge" class="results-count-badge">0 résultat</span>
+      </div>
+    </div>
+
+    <!-- Sort bar -->
+    <div class="depliants-sort-row">
+      <label for="depliants-sort">Trier par :</label>
+      <select id="depliants-sort" class="sort-select">
+        <option value="recent" selected>Plus récent</option>
+        <option value="ancien">Plus ancien</option>
+        <option value="nom-asc">Nom A → Z</option>
+        <option value="nom-desc">Nom Z → A</option>
+        <option value="creation">Date de création</option>
+        <option value="modification">Date de modification</option>
+        <option value="chants">Nombre de chants</option>
+        <option value="auteur">Auteur</option>
+      </select>
+    </div>
+
+    <!-- Main List Container with Groups -->
+    <div class="depliants-groups-container">
+      <!-- Mes Créations Group -->
+      <div id="group-mine-container" class="depliants-group-section">
+        <div class="group-header">
+          <h3>⭐ MES CRÉATIONS <span id="group-mine-badge" class="group-badge">0</span></h3>
+        </div>
+        <ul id="depliants-mine-list" class="depliants-grid"></ul>
+      </div>
+
+      <!-- Feuillets Publics Group -->
+      <div id="group-publics-container" class="depliants-group-section">
+        <div class="group-header">
+          <h3>👥 FEUILLETS PUBLICS <span id="group-publics-badge" class="group-badge">0</span></h3>
+        </div>
+        <ul id="depliants-publics-list" class="depliants-grid"></ul>
+      </div>
+    </div>
+  </section>
+
+  <!-- Éditeur -->
+  <section id="view-editeur" class="view">
+    <div class="view-header">
+      <div class="view-title-block">
+        <h2 class="library-main-title">Éditeur de chants</h2>
+        <p class="view-subtitle">Gérez les chants de votre bibliothèque et les résultats des imports automatiques.</p>
+      </div>
+      <div class="editeur-header-actions">
+        <button type="button" id="btn-editeur-importer" class="btn-secondary">📤 Importer des chants</button>
+        <button type="button" id="btn-ajouter-chant-top" class="btn-primary">+ Ajouter un chant</button>
+        <button type="button" id="btn-ajouter-chant" class="hidden"></button> <!-- Compatibility slot -->
+      </div>
+    </div>
+
+    <!-- Statistics Cards -->
+    <div class="editeur-stats-grid">
+      <div class="editeur-stat-card card-total active" data-filter="tous">
+        <span class="stat-icon">🎵</span>
+        <div class="stat-info">
+          <span class="stat-label">Total chants</span>
+          <span id="stat-count-total" class="stat-value">0</span>
+        </div>
+      </div>
+      <div class="editeur-stat-card card-success" data-filter="importes">
+        <span class="stat-icon">✅</span>
+        <div class="stat-info">
+          <span class="stat-label">Importés</span>
+          <span id="stat-count-importes" class="stat-value">0</span>
+          <span id="stat-pct-importes" class="stat-percentage">0%</span>
+        </div>
+      </div>
+      <div class="editeur-stat-card card-warning" data-filter="a-verifier">
+        <span class="stat-icon">⚠️</span>
+        <div class="stat-info">
+          <span class="stat-label">À vérifier</span>
+          <span id="stat-count-verifier" class="stat-value">0</span>
+        </div>
+      </div>
+      <div class="editeur-stat-card card-danger" data-filter="echecs">
+        <span class="stat-icon">❌</span>
+        <div class="stat-info">
+          <span class="stat-label">Échecs</span>
+          <span id="stat-count-echecs" class="stat-value">0</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Toolbar: Search and Filter Button -->
+    <div class="editeur-toolbar">
+      <div class="editeur-search-wrapper">
+        <span class="search-icon">🔍</span>
+        <input id="edit-q" type="search" placeholder="Rechercher par titre, paroles, auteur, catégorie...">
+      </div>
+      
+      <!-- Compatibility hidden filter dropdown -->
+      <select id="edit-filtre" class="hidden">
+        <option value="tous">Tous les chants</option>
+        <option value="a-verifier">À vérifier seulement</option>
+      </select>
+
+      <button type="button" id="btn-open-filters-drawer" class="btn-secondary">⚙️ Filtres avancés</button>
+    </div>
+
+    <!-- Bulk Actions Bar -->
+    <div id="bulk-bar" class="bulk-bar hidden">
+      <span id="bulk-count">0 sélectionné(s)</span>
+      <div class="bulk-actions-group">
+        <label style="color:white;font-size:0.85rem;">Déplacer vers : <select id="bulk-categorie" class="sort-select" style="padding:4px;border-radius:4px;"></select></label>
+        <button type="button" id="bulk-appliquer" class="btn-secondary" style="padding:4px 8px;font-size:0.85rem;">Déplacer</button>
+        <button type="button" id="bulk-rendre-public" class="btn-secondary" style="padding:4px 8px;font-size:0.85rem;">Rendre public</button>
+        <button type="button" id="bulk-rendre-prive" class="btn-secondary" style="padding:4px 8px;font-size:0.85rem;">Rendre privé</button>
+        <button type="button" id="bulk-exporter" class="btn-secondary" style="padding:4px 8px;font-size:0.85rem;">Exporter</button>
+        <button type="button" id="bulk-supprimer" class="btn-danger btn-effacer" style="padding:4px 8px;font-size:0.85rem;background:#ef4444;color:white;">Supprimer</button>
+      </div>
+    </div>
+
+    <!-- main table view -->
+    <div class="editeur-table-container">
+      <table class="saas-table">
+        <thead>
+          <tr>
+            <th width="40"><input type="checkbox" id="editeur-select-all"></th>
+            <th>Titre</th>
+            <th>Catégorie</th>
+            <th>Langue</th>
+            <th>Auteur</th>
+            <th>Visibilité</th>
+            <th>Confiance</th>
+            <th>Statut</th>
+            <th>Modifié</th>
+            <th width="100">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="editeur-table-body">
+          <!-- Dynamically filled lines -->
+        </tbody>
+      </table>
+    </div>
+
+    <!-- Hidden list for compatibility -->
+    <ul id="editeur-list" class="hidden"></ul>
+
+    <!-- Pagination Footer -->
+    <div class="editeur-pagination-footer">
+      <div class="pagination-rows-selector">
+        <label for="pagination-limit">Lignes par page :</label>
+        <select id="pagination-limit" class="sort-select">
+          <option value="20" selected>20</option>
+          <option value="50">50</option>
+          <option value="100">100</option>
+        </select>
+      </div>
+      <div class="pagination-info">
+        <span id="pagination-current-range">1-20 sur 20</span>
+      </div>
+      <div class="pagination-buttons">
+        <button type="button" id="btn-pagination-prev" class="btn-secondary" disabled>◀ Précédent</button>
+        <button type="button" id="btn-pagination-next" class="btn-secondary" disabled>Suivant ▶</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Panel Filtres Coulissant (Drawer) -->
+  <div id="editeur-filter-drawer" class="side-drawer hidden">
+    <div class="drawer-header">
+      <h4>⚙️ Filtres avancés</h4>
+      <button type="button" class="drawer-close" onclick="document.getElementById('editeur-filter-drawer').classList.add('hidden')">&times;</button>
+    </div>
+    <div class="drawer-body">
+      <div class="filter-group">
+        <label>Catégorie liturgique</label>
+        <select id="filter-categorie" class="drawer-select">
+          <option value="">Toutes</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Langue</label>
+        <select id="filter-langue" class="drawer-select">
+          <option value="">Toutes</option>
+          <option value="fr">Français</option>
+          <option value="moore">Mooré</option>
+          <option value="dioula">Dioula</option>
+          <option value="la">Latin</option>
+          <option value="en">Anglais</option>
+          <option value="autre">Autre</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Visibilité</label>
+        <select id="filter-visibilite" class="drawer-select">
+          <option value="">Toutes</option>
+          <option value="public">Uniquement Public</option>
+          <option value="prive">Uniquement Privé</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Statut d'importation</label>
+        <select id="filter-statut" class="drawer-select">
+          <option value="">Tous</option>
+          <option value="importes">Importé</option>
+          <option value="verifier">À vérifier</option>
+          <option value="echecs">Échec</option>
+          <option value="manuel">Créé manuellement</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Origine</label>
+        <select id="filter-origine" class="drawer-select">
+          <option value="">Toutes</option>
+          <option value="manuel">Créé manuellement</option>
+          <option value="import">Import automatique</option>
+        </select>
+      </div>
+      <div class="filter-group">
+        <label>Trier par</label>
+        <select id="filter-tri" class="drawer-select">
+          <option value="recent">Date de modification</option>
+          <option value="creation">Date de création</option>
+          <option value="titre">Titre (A-Z)</option>
+          <option value="auteur">Auteur</option>
+          <option value="confiance">Score de confiance</option>
+        </select>
+      </div>
+      <button type="button" id="btn-appliquer-filtres-tiroir" class="btn-primary" style="width:100%;margin-top:16px;">Appliquer les filtres</button>
+    </div>
+  </div>
+
+  <!-- Panel Détails Import Coulissant (Drawer) -->
+  <div id="import-detail-drawer" class="side-drawer hidden">
+    <div class="drawer-header">
+      <h4>🔍 Détails de l'import</h4>
+      <button type="button" class="drawer-close" onclick="document.getElementById('import-detail-drawer').classList.add('hidden')">&times;</button>
+    </div>
+    <div id="import-detail-content" class="drawer-body">
+      <!-- Rempli dynamiquement -->
+    </div>
+  </div>
+
+  <!-- Importer -->
+  <section id="view-importer" class="view">
+    <div class="library-header" style="margin-bottom: 24px;">
+      <div>
+        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Bibliothèque &gt; Importer</div>
+        <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Importer un carnet de chants</h1>
+        <p style="font-size: 0.85rem; color: #64748B; margin: 4px 0 0 0;">Importez un document contenant plusieurs chants. Le système analysera automatiquement son contenu pour créer les chants dans votre bibliothèque.</p>
+      </div>
+      <div style="background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 12px 16px; display: flex; align-items: center; gap: 12px; max-width: 280px; box-shadow: 0 1px 3px rgba(0,0,0,0.02);">
+        <div style="font-size: 1.5rem; background: #eaf0fa; width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">📄</div>
+        <div>
+          <div style="font-weight: 600; font-size: 0.8rem; color: #0F172A;">Formats acceptés</div>
+          <div style="font-size: 0.75rem; color: #64748B;">DOC, DOCX, PDF (max 50 Mo)</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="import-setup-section">
+      <form id="import-form" style="display: flex; flex-direction: column; gap: 24px;">
+        
+        <!-- Large Drag & Drop Card -->
+        <div class="settings-card" id="import-dropzone" style="border: 2px dashed #cbd5e1; background: white; cursor: pointer; text-align: center; padding: 40px 20px; transition: all 0.2s; border-radius:16px;">
+          <input id="import-fichier" type="file" accept=".doc,.docx,.pdf" required style="display: none;">
+          <div style="font-size: 3rem; margin-bottom: 12px;">📤</div>
+          <h3 style="margin: 0; font-size: 1.1rem; color: #1e293b;" id="import-dropzone-title">Glissez-déposez votre document ici</h3>
+          <p style="margin: 4px 0 16px 0; font-size: 0.85rem; color: #64748B;">ou</p>
+          <button type="button" id="btn-select-file" class="btn-primary" style="background: #2563eb; color: white; border: none; padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; font-weight: 600; cursor: pointer;">Choisir un fichier</button>
+          
+          <div id="selected-file-info" class="hidden" style="margin-top: 16px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; display: inline-flex; align-items: center; gap: 12px; max-width: 400px; text-align: left;">
+            <div style="font-size: 1.5rem;">📄</div>
+            <div style="flex: 1; min-width: 0;">
+              <div id="selected-file-name" style="font-weight: 600; font-size: 0.85rem; color: #0F172A; text-overflow: ellipsis; overflow: hidden; white-space: nowrap;">mon-carnet.docx</div>
+              <div id="selected-file-size" style="font-size: 0.75rem; color: #64748B;">2.4 Mo</div>
+            </div>
+            <button type="button" id="btn-remove-file" style="background: none; border: none; color: #ef4444; font-size: 1.2rem; cursor: pointer;" title="Retirer">&times;</button>
+          </div>
+        </div>
+
+        <!-- Import Parameters Card -->
+        <div class="settings-card" style="background: white; border-radius:16px;">
+          <div class="settings-card-header">
+            <h4>⚙️ Paramètres d'importation</h4>
+            <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Ces informations aideront à classer correctement les chants importés.</p>
+          </div>
+          <div class="settings-card-body" style="padding-top: 16px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 20px;">
+              <div class="form-group">
+                <label for="import-categorie">Catégorie liturgique par défaut</label>
+                <select id="import-categorie" class="sort-select" style="width: 100%; height: 38px; padding: 8px; border-radius: 8px; border: 1px solid #E2E8F0;"></select>
+              </div>
+              <div class="form-group">
+                <label for="import-langue">Langue principale</label>
+                <select id="import-langue" class="sort-select" style="width: 100%; height: 38px; padding: 8px; border-radius: 8px; border: 1px solid #E2E8F0;">
+                  <option value="fr">Français</option>
+                  <option value="dioula">Dioula</option>
+                  <option value="latin">Latin</option>
+                  <option value="moore">Mooré</option>
+                  <option value="autre">Autre</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="import-occasions">Occasions (ex: Noël, Mariage, Pâques...)</label>
+                <input id="import-occasions" type="text" placeholder="Funérailles, Confirmation…" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px;">
+              </div>
+              <div class="form-group">
+                <label for="import-auteur">Auteur / Compositeur par défaut</label>
+                <input id="import-auteur" type="text" placeholder="Ex: Chants de l'Emmanuel" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px;">
+              </div>
+            </div>
+            
+            <button type="submit" class="btn-primary" style="margin-top: 24px; padding: 10px 20px; border-radius: 8px; border: none; background: #2563eb; color: white; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; gap: 8px;">
+              <span>📥</span> Importer et analyser
+            </button>
+          </div>
+        </div>
+
+      </form>
+
+      <!-- Explanation cards -->
+      <div style="margin-top: 32px;">
+        <h3 style="font-size: 1rem; color: #475569; margin-bottom: 16px;">Comment fonctionne l'import ?</h3>
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+          <div style="background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; display: flex; gap: 12px;">
+            <div style="font-size: 1.5rem; background: #f1f5f9; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink:0;">🔍</div>
+            <div>
+              <h4 style="margin:0 0 4px 0; font-size: 0.85rem; color: #1F4A7C;">Analyse du document</h4>
+              <p style="margin:0; font-size: 0.75rem; color: #64748B; line-height: 1.4;">Le moteur scanne la mise en page et la structure textuelle du fichier importé.</p>
+            </div>
+          </div>
+          <div style="background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; display: flex; gap: 12px;">
+            <div style="font-size: 1.5rem; background: #f1f5f9; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink:0;">🏷️</div>
+            <div>
+              <h4 style="margin:0 0 4px 0; font-size: 0.85rem; color: #1F4A7C;">Détection des titres</h4>
+              <p style="margin:0; font-size: 0.75rem; color: #64748B; line-height: 1.4;">Identification intelligente des titres et des débuts de chants.</p>
+            </div>
+          </div>
+          <div style="background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; display: flex; gap: 12px;">
+            <div style="font-size: 1.5rem; background: #f1f5f9; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink:0;">🎵</div>
+            <div>
+              <h4 style="margin:0 0 4px 0; font-size: 0.85rem; color: #1F4A7C;">Refrains &amp; Couplets</h4>
+              <p style="margin:0; font-size: 0.75rem; color: #64748B; line-height: 1.4;">Séparation automatique des refrains, couplets, ponts et strophes.</p>
+            </div>
+          </div>
+          <div style="background: white; border: 1px solid #E2E8F0; border-radius: 12px; padding: 16px; display: flex; gap: 12px;">
+            <div style="font-size: 1.5rem; background: #f1f5f9; width: 44px; height: 44px; border-radius: 8px; display: flex; align-items: center; justify-content: center; flex-shrink:0;">📈</div>
+            <div>
+              <h4 style="margin:0 0 4px 0; font-size: 0.85rem; color: #1F4A7C;">Confidence Score</h4>
+              <p style="margin:0; font-size: 0.75rem; color: #64748B; line-height: 1.4;">Un score évalue l'intégrité de l'extraction (Importé, À vérifier, Échec).</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Output upload progress and results container -->
+    <div id="import-result" style="margin-top: 24px;"></div>
+  </section>
+
+  <!-- Réglages -->
+  <!-- À propos GOT -->
+  <section id="view-apropos" class="view">
+    <!-- Hero Section -->
+    <div class="apropos-hero">
+      <div class="hero-shapes">
+        <div class="shape shape-1"></div>
+        <div class="shape shape-2"></div>
+        <div class="shape shape-3"></div>
+      </div>
+      <div class="hero-content">
+        <div class="hero-left">
+          <h1 id="apropos-hero-title">À propos</h1>
+          <p id="apropos-hero-slogan" class="hero-subtitle"></p>
+          <div class="hero-actions">
+            <a href="#/apropos#got-entreprise" class="btn-primary-hero">Découvrir l'entreprise</a>
+            <a href="#/messagerie" class="btn-secondary-hero">Nous contacter</a>
+          </div>
+        </div>
+        <div class="hero-right">
+          <!-- Inline modern SVG Logo for GOT -->
+          <div class="got-logo-wrapper">
+            <svg class="got-logo-svg" viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="got-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stop-color="#3b82f6" />
+                  <stop offset="100%" stop-color="#1d4ed8" />
+                </linearGradient>
+                <filter id="got-shadow" x="-10%" y="-10%" width="120%" height="120%">
+                  <feDropShadow dx="2" dy="4" stdDeviation="3" flood-opacity="0.3"/>
+                </filter>
+              </defs>
+              <circle cx="50" cy="50" r="45" fill="none" stroke="url(#got-grad)" stroke-width="5" filter="url(#got-shadow)"/>
+              <path d="M35 30 H65 V42 H50 V58 H35 Z" fill="url(#got-grad)" />
+              <path d="M50 48 H65 V70 H50 Z" fill="url(#got-grad)" opacity="0.8" />
+              <circle cx="65" cy="48" r="4" fill="#60a5fa" />
+            </svg>
+            <div class="got-logo-text">GO Technologie</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Floating Sticky Navbar -->
+    <div class="apropos-sticky-nav no-print">
+      <a href="#/apropos#got-entreprise" class="sticky-nav-item active">Entreprise</a>
+      <a href="#/apropos#got-mission" class="sticky-nav-item">Mission</a>
+      <a href="#/apropos#got-vision" class="sticky-nav-item">Vision</a>
+      <a href="#/apropos#got-valeurs" class="sticky-nav-item">Valeurs</a>
+      <a href="#/apropos#got-application" class="sticky-nav-item">Application</a>
+      <a href="#/apropos#got-why" class="sticky-nav-item">Pourquoi ?</a>
+      <a href="#/apropos#got-engagements" class="sticky-nav-item">Engagements</a>
+      <a href="#/apropos#got-confidentialite" class="sticky-nav-item">Confidentialité</a>
+      <a href="#/apropos#got-securite" class="sticky-nav-item">Sécurité</a>
+      <a href="#/apropos#got-donnees" class="sticky-nav-item">Données</a>
+      <a href="#/apropos#got-droits" class="sticky-nav-item">Vos droits</a>
+      <a href="#/apropos#got-contact" class="sticky-nav-item">Contact</a>
+    </div>
+
+    <!-- Main Content Container -->
+    <div class="apropos-container">
+      
+      <!-- Section: Notre entreprise -->
+      <section id="got-entreprise" class="apropos-section scroll-offset">
+        <div class="section-grid">
+          <div class="section-left">
+            <span class="section-tag">Qui sommes-nous ?</span>
+            <h2 id="apropos-entreprise-title">GO Technologie (GOT)</h2>
+            <div id="apropos-entreprise-text" class="section-paragraphs"></div>
+          </div>
+          <div class="section-right">
+            <!-- Modern Tech SVG Illustration -->
+            <svg class="tech-illustration" viewBox="0 0 200 150" xmlns="http://www.w3.org/2000/svg">
+              <rect x="20" y="20" width="160" height="110" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="4"/>
+              <rect x="30" y="30" width="140" height="75" rx="6" fill="#1e293b"/>
+              <line x1="40" y1="45" x2="110" y2="45" stroke="#3b82f6" stroke-width="6" stroke-linecap="round"/>
+              <line x1="40" y1="60" x2="80" y2="60" stroke="#10b981" stroke-width="6" stroke-linecap="round"/>
+              <line x1="40" y1="75" x2="130" y2="75" stroke="#e2e8f0" stroke-width="4" stroke-linecap="round"/>
+              <line x1="40" y1="90" x2="100" y2="90" stroke="#64748b" stroke-width="4" stroke-linecap="round"/>
+              <rect x="120" y="45" width="40" height="20" rx="4" fill="#2563eb" opacity="0.3"/>
+              <circle cx="145" cy="55" r="8" fill="#3b82f6"/>
+              <path d="M70 130 H130 L140 145 H60 Z" fill="#cbd5e1"/>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Mission & Vision -->
+      <div class="section-two-cols">
+        <section id="got-mission" class="apropos-section scroll-offset">
+          <div class="modern-card hover-glow">
+            <div class="card-icon">🎯</div>
+            <h3>Notre mission</h3>
+            <p id="apropos-mission-text"></p>
+          </div>
+        </section>
+
+        <section id="got-vision" class="apropos-section scroll-offset">
+          <div class="modern-card hover-glow">
+            <div class="card-icon">🚀</div>
+            <h3>Notre vision</h3>
+            <p id="apropos-vision-text"></p>
+          </div>
+        </section>
+      </div>
+
+      <!-- Section: Nos valeurs -->
+      <section id="got-valeurs" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Nos valeurs</h2>
+          <p>Les principes cardinaux qui animent chacun de nos projets au quotidien.</p>
+        </div>
+        <div id="apropos-valeurs-grid" class="valeurs-grid">
+          <!-- Dynamic Valeurs Cards -->
+        </div>
+      </section>
+
+      <!-- Section: À propos de l'application -->
+      <section id="got-application" class="apropos-section scroll-offset">
+        <div class="app-card">
+          <div class="app-card-header">
+            <span class="app-tag">L'application</span>
+            <h2>À propos de l'application</h2>
+            <p id="apropos-app-desc" class="app-lead-text"></p>
+          </div>
+          <div id="apropos-app-features" class="features-grid">
+            <!-- Dynamic Features Cards -->
+          </div>
+          <div class="app-card-footer">
+            <p>Notre objectif est de réduire le temps consacré à la mise en page afin que les équipes puissent se concentrer sur l'essentiel : la préparation de la célébration.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Pourquoi cette application ? (Timeline) -->
+      <section id="got-why" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Pourquoi cette application ?</h2>
+          <p>Le parcours menant de l'identification des frictions à l'aboutissement de notre solution automatique.</p>
+        </div>
+        <div id="apropos-why-timeline" class="timeline-container">
+          <!-- Dynamic Timeline Items -->
+        </div>
+      </section>
+
+      <!-- Section: Nos engagements -->
+      <section id="got-engagements" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Nos engagements</h2>
+          <p>Notre pacte de confiance et de rigueur technique envers notre communauté.</p>
+        </div>
+        <div id="apropos-engagements-grid" class="engagements-grid">
+          <!-- Dynamic Engagements -->
+        </div>
+      </section>
+
+      <!-- Section: Politique de confidentialité -->
+      <section id="got-confidentialite" class="apropos-section scroll-offset">
+        <div class="shield-card">
+          <div class="shield-icon-wrapper">
+            <span class="shield-icon">🛡️</span>
+          </div>
+          <div class="shield-content">
+            <h2>Politique de confidentialité</h2>
+            <p id="apropos-confidentialite-text"></p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Sécurité des données -->
+      <section id="got-securite" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Sécurité des données</h2>
+          <p>Des infrastructures et protocoles robustes garantissant la protection intégrale de vos informations.</p>
+        </div>
+        <div class="security-layout">
+          <div id="apropos-securite-grid" class="security-grid">
+            <!-- Dynamic Safety Cards -->
+          </div>
+          <div class="security-illustration-block">
+            <svg class="security-illustration" viewBox="0 0 150 150" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="75" cy="75" r="70" fill="#f0f9ff" stroke="#e0f2fe" stroke-width="2"/>
+              <circle cx="75" cy="75" r="50" fill="#1e3a8a"/>
+              <path d="M75 45 C85 45 95 40 95 40 V75 C95 90 75 105 75 105 C75 105 55 90 55 75 V40 C55 40 65 45 75 45 Z" fill="#3b82f6"/>
+              <path d="M67 73 L73 79 L84 66" stroke="#ffffff" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+              <circle cx="35" cy="45" r="6" fill="#10b981"/>
+              <line x1="35" y1="45" x2="58" y2="58" stroke="#10b981" stroke-width="2" stroke-dasharray="2 2"/>
+              <circle cx="115" cy="105" r="6" fill="#10b981"/>
+              <line x1="92" y1="92" x2="115" y2="105" stroke="#10b981" stroke-width="2" stroke-dasharray="2 2"/>
+            </svg>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Utilisation des données -->
+      <section id="got-donnees" class="apropos-section scroll-offset">
+        <div class="data-use-card">
+          <div class="data-use-header">
+            <h3>Comment nous utilisons vos données</h3>
+            <p>La transparence est au cœur de notre éthique. Vos données servent uniquement à assurer le bon fonctionnement de vos services :</p>
+          </div>
+          <ul id="apropos-donnees-list" class="data-use-list">
+            <!-- Dynamic Data Use Items -->
+          </ul>
+          <div class="data-use-footer">
+            <span class="highlight-badge">⚠️</span>
+            <p class="highlight-text">Nous ne collectons aucune donnée sans objectif légitime.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- Section: Vos droits -->
+      <section id="got-droits" class="apropos-section scroll-offset">
+        <div class="section-header">
+          <h2>Vos droits concernant vos données</h2>
+          <p>Vous conservez la maîtrise et la propriété pleine et entière de toutes vos informations.</p>
+        </div>
+        <div id="apropos-droits-grid" class="droits-grid">
+          <!-- Dynamic Rights Items -->
+        </div>
+      </section>
+
+      <!-- Section: Nous contacter -->
+      <section id="got-contact" class="apropos-section scroll-offset">
+        <div class="contact-card-premium">
+          <div class="contact-header">
+            <span class="contact-tag">Contact</span>
+            <h2>Nous contacter</h2>
+            <p>Une question, un besoin d'assistance ou une proposition de projet ? Écrivez-nous ou retrouvez nos coordonnées officielles ci-dessous.</p>
+          </div>
+          <div class="contact-grid">
+            <div class="contact-info-block">
+              <div class="contact-item">
+                <span class="contact-icon">🏢</span>
+                <div class="contact-details">
+                  <span class="contact-label">Entreprise</span>
+                  <span id="apropos-contact-entreprise" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item">
+                <span class="contact-icon">📧</span>
+                <div class="contact-details">
+                  <span class="contact-label">Email</span>
+                  <span id="apropos-contact-email" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item">
+                <span class="contact-icon">✉️</span>
+                <div class="contact-details">
+                  <span class="contact-label">Messagerie interne</span>
+                  <a href="#/messagerie" class="contact-value" style="color: #2563eb; font-weight: 600; text-decoration: underline;">Nous écrire directement</a>
+                </div>
+              </div>
+              <div class="contact-item" id="apropos-contact-tel-row">
+                <span class="contact-icon">📞</span>
+                <div class="contact-details">
+                  <span class="contact-label">Téléphone</span>
+                  <span id="apropos-contact-telephone" class="contact-value"></span>
+                </div>
+              </div>
+              <div class="contact-item">
+                <span class="contact-icon">🌍</span>
+                <div class="contact-details">
+                  <span class="contact-label">Localisation</span>
+                  <span id="apropos-contact-adresse" class="contact-value"></span>
+                </div>
+              </div>
+            </div>
+            
+            <div class="contact-social-block" id="apropos-social-container">
+              <span class="social-title">Retrouvez-nous en ligne :</span>
+              <div class="social-links-grid">
+                <a href="#" id="apropos-social-web" class="social-link-btn" target="_blank">🌐 Site web</a>
+                <a href="#" id="apropos-social-facebook" class="social-link-btn" target="_blank">📘 Facebook</a>
+                <a href="#" id="apropos-social-linkedin" class="social-link-btn" target="_blank">💼 LinkedIn</a>
+                <a href="#" id="apropos-social-github" class="social-link-btn" target="_blank">🐙 GitHub</a>
+                <a href="#" id="apropos-social-whatsapp" class="social-link-btn" target="_blank">💬 WhatsApp</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Signature Section -->
+      <section id="got-signature" class="signature-section no-print">
+        <div class="signature-quote-card">
+          <div class="quote-mark">“</div>
+          <blockquote id="apropos-signature-text"></blockquote>
+          <cite class="quote-author">L'équipe de GO Technologie</cite>
+        </div>
+      </section>
+
+      <!-- Section: Footer -->
+      <footer class="apropos-footer no-print">
+        <p>&copy; <span id="apropos-footer-year"></span> <strong>GO Technologie (GOT)</strong>. Tous droits réservés.</p>
+        <p class="footer-version">DepliantApp &bull; Conçu avec rigueur et passion.</p>
+      </footer>
+      
+    </div>
+  </section>
+
+  <!-- Back to Top Button -->
+  <button type="button" id="btn-back-to-top" class="btn-back-to-top no-print hidden" title="Retour en haut">
+    <span>▲</span>
+  </button>
+
+  <section id="view-reglages" class="view">
+    <div class="reglages-layout-tabs hidden-desktop">
+      <button type="button" id="tab-reglages-form" class="layout-tab-btn active">Paramètres</button>
+      <button type="button" id="tab-reglages-preview" class="layout-tab-btn">Aperçu PDF</button>
+    </div>
+    <div class="reglages-layout">
+      <!-- Colonne de Gauche (Paramètres) -->
+      <div class="reglages-params-column">
+        
+        <!-- Carte 1 : Informations générales -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <h4>⚙️ Informations générales</h4>
+          </div>
+          <div class="settings-card-body">
+            <form id="parametres-form">
+              <div class="form-group">
+                <label for="p-chorale">Nom de la chorale</label>
+                <input id="p-chorale" type="text" placeholder="Ex: Chorale Sainte Cécile">
+              </div>
+              <div class="form-group">
+                <label for="p-paroisse">Première ligne / CTA</label>
+                <input id="p-paroisse" type="text" placeholder="Ex: Paroisse Saint Jean / CCB Saint Paul">
+              </div>
+              <div class="form-group">
+                <label for="p-contact">Contact (téléphone, affiché en pied de feuillet)</label>
+                <input id="p-contact" type="text" placeholder="Ex: Tél. +226 xx xx xx xx">
+              </div>
+              <div class="form-group">
+                <label for="p-annonce">Annonce (bannière, bas de page gauche)</label>
+                <input id="p-annonce" type="text" placeholder="Ex: Bon dimanche à tous !">
+              </div>
+              
+              <div class="reglages-apercu" id="apercu-entete">
+                <span class="reglages-apercu-label">Aperçu en temps réel de l'en-tête</span>
+                <div class="reglages-apercu-boite reglages-apercu-entete">
+                  <img id="apercu-logo-gauche" class="apercu-logo hidden" alt="Logo gauche">
+                  <div class="apercu-entete-texte">
+                    <div class="apercu-paroisse" id="apercu-paroisse"></div>
+                    <div class="apercu-chorale" id="apercu-chorale"></div>
+                  </div>
+                  <img id="apercu-logo-droit" class="apercu-logo hidden" alt="Logo droit">
+                </div>
+              </div>
+              
+              <button type="submit" class="btn-save-settings">Enregistrer les informations</button>
+            </form>
+            <p id="parametres-status"></p>
+          </div>
+        </div>
+
+        <!-- Carte 2 : Images de l'en-tête / pied de page -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <h4>🖼️ Images du feuillet</h4>
+          </div>
+          <div class="settings-card-body">
+            <p class="hint">logo à gauche, logo à droite, et bannière décorative en bas de page.</p>
+            <div id="image-slots" class="image-slots-grid">
+              <!-- Rendu dynamiquement via JavaScript -->
+            </div>
+            
+            <div class="reglages-apercu" id="apercu-banniere-bloc">
+              <span class="reglages-apercu-label">Aperçu en temps réel de la bannière</span>
+              <div class="reglages-apercu-boite reglages-apercu-banniere">
+                <div class="apercu-annonce" id="apercu-annonce"></div>
+                <img id="apercu-banniere-img" class="apercu-banniere-img hidden" alt="Bannière bas">
+                <div class="apercu-contact" id="apercu-contact"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Carte 3 : Prière du Burkina Faso (texte par défaut) -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <h4>🙏 Prière pour le Burkina Faso (texte par défaut)</h4>
+          </div>
+          <div class="settings-card-body">
+            <p class="hint">Utilisé quand un feuillet active le widget « Prière » sans texte personnalisé. Un texte spécifique saisi dans le Composer primera sur cette valeur.</p>
+            <div class="form-group">
+              <label for="p-priere-defaut">Texte de la prière</label>
+              <textarea id="p-priere-defaut" form="parametres-form" rows="6" placeholder="Laisser vide pour utiliser le texte par défaut."></textarea>
+              <div class="char-counter-wrapper"><span id="p-priere-char-count">0</span> caractères</div>
+            </div>
+            <button type="submit" form="parametres-form" class="btn-save-settings">Enregistrer la prière</button>
+          </div>
+        </div>
+
+        <!-- Carte 4 : Modèle d'auto-catégorisation -->
+        <div class="settings-card">
+          <div class="settings-card-header">
+            <h4>🧠 Modèle d'auto-catégorisation</h4>
+          </div>
+          <div class="settings-card-body">
+            <p class="hint">Le modèle apprend à partir des chants validés. Ré-entraîne-le après des corrections pour améliorer les suggestions de catégories.</p>
+            <button type="button" id="btn-train" class="btn-secondary">Ré-entraîner le modèle</button>
+            <p id="train-status"></p>
+          </div>
+        </div>
+
+        <!-- Carte 5 : Zone dangereuse -->
+        <div class="settings-card danger-zone-card">
+          <div class="settings-card-header">
+            <h4>⚠️ Zone dangereuse</h4>
+          </div>
+          <div class="settings-card-body">
+            <p class="hint">Supprime définitivement TOUS les chants de la bibliothèque — utile pour repartir d'une base propre avant un nouvel import. Les feuillets déjà générés ne sont pas affectés.</p>
+            <div class="form-group inline-confirm-group">
+              <input id="reset-confirmation" type="text" placeholder="Tape SUPPRIMER pour confirmer">
+              <button type="button" id="btn-reset-bibliotheque" class="btn-danger">Vider la bibliothèque</button>
+            </div>
+            <p id="reset-status"></p>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Colonne de Droite (Aperçu direct du PDF réel) -->
+      <div class="reglages-preview-column">
+        <div class="sticky-preview-card">
+          <div class="preview-card-header">
+            <h4>📄 Aperçu réel du feuillet</h4>
+            
+            <div class="layout-toggle-group">
+              <label class="radio-tab">
+                <input type="radio" name="preview-layout-choice" id="choice-two-pages" checked>
+                <span>2 pages</span>
+              </label>
+              <label class="radio-tab">
+                <input type="radio" name="preview-layout-choice" id="choice-one-page">
+                <span>1 page landscape</span>
+              </label>
+            </div>
+          </div>
+          <div class="preview-card-body">
+            <!-- Iframe de prévisualisation réelle -->
+            <div class="preview-iframe-wrapper">
+              <iframe id="reglages-pdf-iframe" src="about:blank" title="Aperçu direct du PDF"></iframe>
+            </div>
+            
+            <!-- Contrôles d'aperçu -->
+            <div class="preview-controls-bar">
+              <div class="zoom-controls">
+                <button type="button" class="zoom-btn" id="btn-zoom-out" title="Zoom arrière">➖</button>
+                <select id="preview-zoom-select" aria-label="Niveau de zoom">
+                  <option value="0.5">50 %</option>
+                  <option value="0.75" selected>75 %</option>
+                  <option value="1.0">100 %</option>
+                  <option value="width">Ajuster largeur</option>
+                </select>
+                <button type="button" class="zoom-btn" id="btn-zoom-in" title="Zoom avant">➕</button>
+              </div>
+              
+              <div class="quick-actions">
+                <button type="button" class="action-btn-test" id="btn-preview-fullscreen" title="Plein écran">👁️ Voir</button>
+                <button type="button" class="action-btn-test" id="btn-preview-print" title="Imprimer un test">🖨️ Imprimer</button>
+                <button type="button" class="action-btn-test" id="btn-preview-download" title="Télécharger le PDF">📥 PDF</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Messagerie -->
+  <section id="view-messagerie" class="view">
+    <div class="messagerie-container">
+      <!-- 1. Barre latérale gauche (Conversations) -->
+      <div class="messagerie-sidebar">
+        <div class="sidebar-header">
+          <h3>Messagerie</h3>
+          <!-- Barre de recherche -->
+          <div class="search-bar-wrapper" id="messagerie-search-wrapper">
+            <input type="text" id="messagerie-search" placeholder="Rechercher une chorale...">
+            <span class="search-icon">🔍</span>
+          </div>
+          <!-- Filtres -->
+          <div class="filter-tabs" id="messagerie-filters">
+            <button class="filter-tab active" data-filter="all">Tous</button>
+            <button class="filter-tab" data-filter="unread">Non lus</button>
+            <button class="filter-tab" data-filter="archived">Archivés</button>
+          </div>
+        </div>
+        <div class="conversations-list" id="conversations-list">
+          <!-- Rempli dynamiquement -->
+        </div>
+      </div>
+
+      <!-- 2. Zone centrale (Chat) -->
+      <div class="messagerie-chat-area">
+        <!-- En-tête de la conversation -->
+        <div class="chat-header" id="chat-header">
+          <div class="chat-header-info">
+            <button type="button" id="btn-back-messagerie-mobile" style="display: none; border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #1F4A7C; padding: 0 12px 0 0; line-height: 1;">←</button>
+            <div class="chat-avatar" id="chat-header-avatar">A</div>
+            <div>
+              <h4 id="chat-header-name">Sélectionnez une conversation</h4>
+              <span class="chat-status" id="chat-header-status">Sélectionnez un contact pour commencer à discuter</span>
+            </div>
+          </div>
+          <div class="chat-header-actions">
+            <button class="chat-action-btn" type="button" title="Appel vidéo (bientôt)">📹</button>
+            <button class="chat-action-btn" type="button" title="Appel vocal (bientôt)">📞</button>
+            <button class="chat-action-btn" type="button" id="btn-toggle-info-panel" title="Informations">ℹ️</button>
+            <button class="chat-action-btn" type="button" id="btn-search-chat" title="Rechercher">🔍</button>
+          </div>
+        </div>
+
+        <!-- Historique des messages -->
+        <div class="chat-body-wrapper">
+          <div class="chat-messages" id="messagerie-fil">
+            <!-- État vide initial -->
+            <div class="empty-chat-state" id="empty-chat-state">
+              <div class="empty-illustration">💬</div>
+              <p id="empty-state-text">Sélectionnez une conversation pour commencer.</p>
+              <button id="empty-state-action-btn" class="hidden">Contacter l'administrateur</button>
+            </div>
+          </div>
+          <!-- Typing indicator -->
+          <div class="typing-indicator hidden" id="typing-indicator">
+            <span class="typing-text">L'administrateur est en train d'écrire...</span>
+          </div>
+        </div>
+
+        <!-- Zone de réponse active (citation) -->
+        <div class="reply-preview-bar hidden" id="reply-preview-bar">
+          <div class="reply-preview-content">
+            <span class="reply-preview-title">Réponse à <strong id="reply-preview-author">Chorale</strong></span>
+            <span class="reply-preview-text" id="reply-preview-text">Message original</span>
+          </div>
+          <button class="reply-preview-close" type="button" id="btn-close-reply-preview">✕</button>
+        </div>
+
+        <!-- Formulaire de saisie -->
+        <form id="messagerie-form" class="messagerie-footer-form">
+          <input id="messagerie-piece-jointe" type="file" class="hidden">
+          
+          <div class="footer-input-wrapper">
+            <div class="attach-dropdown-wrapper">
+              <button type="button" id="btn-attach-menu" class="footer-btn" title="Joindre un fichier">📎</button>
+              <div class="attach-popover hidden" id="attach-popover">
+                <button type="button" class="attach-item" data-type="image">🖼️ Image</button>
+                <button type="button" class="attach-item" data-type="video">🎥 Vidéo</button>
+                <button type="button" class="attach-item" data-type="audio">🎵 Audio</button>
+                <button type="button" class="attach-item" data-type="doc">📄 Fichier</button>
+              </div>
+            </div>
+            
+            <button type="button" id="btn-emoji-picker" class="footer-btn" title="Emojis">😀</button>
+            
+            <textarea id="messagerie-texte" rows="1" placeholder="Message..." autocomplete="off"></textarea>
+          </div>
+          
+          <button type="submit" id="btn-messagerie-send" class="send-btn" disabled>Envoyer</button>
+        </form>
+        <p id="messagerie-piece-jointe-nom" class="hint"></p>
+      </div>
+
+      <!-- 3. Fiche d'informations à droite (rétractable) -->
+      <div class="messagerie-info-panel hidden" id="messagerie-info-panel">
+        <div class="info-panel-header">
+          <h4>Détails</h4>
+          <button type="button" id="btn-close-info-panel">✕</button>
+        </div>
+        <div class="info-panel-body" id="info-panel-details">
+          <!-- Rempli dynamiquement -->
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Statistiques (📊) -->
+  <section id="view-statistiques" class="view">
+    <div class="library-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap:12px;">
+      <div>
+        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Administration &gt; Statistiques</div>
+        <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Tableau de bord statistique</h1>
+        <p style="font-size: 0.85rem; color: #64748B; margin: 4px 0 0 0;">Analyse globale de l'utilisation de la plateforme et des ressources liturgiques.</p>
+      </div>
+      <div>
+        <button type="button" id="btn-export-stats" class="btn-primary" style="background:#2563eb; color:white; border:none; padding:8px 16px; border-radius:8px; font-weight:600; cursor:pointer; display:flex; align-items:center; gap:8px;">
+          <span>📥</span> <span class="btn-text">Exporter le procès-verbal</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Stats content placeholder -->
+    <div id="stats-contenu"></div>
+  </section>
+
+  <section id="view-admin" class="view">
+    <div class="library-header" style="margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px;">
+      <div>
+        <div style="font-size: 0.8rem; color: #64748B; margin-bottom: 4px;">Administration</div>
+        <h1 style="font-size: 1.5rem; font-weight: 700; color: #1F4A7C; margin: 0;">Administration</h1>
+      </div>
+      <!-- Tab Controls for Admin Panel -->
+      <div class="admin-tabs no-print" style="display: flex; gap: 8px;">
+        <button type="button" id="tab-admin-chorales" class="admin-tab-btn active">👥 Chorales</button>
+        <button type="button" id="tab-admin-apropos" class="admin-tab-btn">⚙️ À propos (GOT)</button>
+      </div>
+    </div>
+
+    <!-- Wrapper for Chorales Tab Content -->
+    <div id="admin-content-chorales" class="admin-tab-content">
+      <!-- Create Chorale Card -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">👥 Créer une chorale</h4>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <form id="admin-chorale-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+          <div class="form-group">
+            <label for="admin-chorale-nom">Nom de la chorale</label>
+            <input id="admin-chorale-nom" type="text" placeholder="Ex : Chorale Sainte Cécile" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+          </div>
+          <div class="form-group">
+            <label for="admin-chorale-username">Identifiant de connexion</label>
+            <input id="admin-chorale-username" type="text" placeholder="Ex : chorale-sainte-cecile" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+          </div>
+          <div style="grid-column: 1 / -1; margin-top: 8px;">
+            <button type="submit" class="btn-primary" style="width: 100%; padding: 10px; border-radius: 8px; border: none; background: #2563eb; color: white; font-weight: 600; font-size: 0.9rem; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px;">
+              <span>+</span> Créer la chorale
+            </button>
+          </div>
+        </form>
+        <p id="admin-chorale-status" class="hint" style="margin-top: 12px;"></p>
+      </div>
+    </div>
+
+    <!-- Success Chorale Creation Card (hidden by default) -->
+    <div id="admin-chorale-success-container" class="hidden" style="margin-bottom: 24px;">
+      <!-- Will be populated dynamically or via template -->
+    </div>
+
+    <!-- Active Chorales List -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C;">Chorales enregistrées</h4>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-chorales-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+
+    <!-- Pending Deletions requests -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">⌛ Demandes de suppression en attente</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Une chorale ne supprime jamais directement un chant ou un dépliant. Valider supprime réellement la ressource pour tout le monde ; annuler la conserve mais elle reste invisible pour la chorale demandeuse.</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-demandes-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+        <div id="admin-demandes-ignorees-header" style="margin-top: 24px; border-top: 1px solid #E2E8F0; padding-top: 16px; font-weight: 600; font-size: 0.9rem; color: #475569;">
+          <span>🚫 Demandes ignorées / archivées</span>
+        </div>
+        <ul id="admin-demandes-ignorees-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none; margin-top: 8px;"></ul>
+      </div>
+    </div>
+
+    <!-- Pending Categories validation requests -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">🏷️ Validation des catégories personnalisées</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Validez pour rendre la catégorie utilisable par tout le monde. Rejetez avec un motif pour envoyer une notification au créateur.</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-categories-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+
+    <!-- Pending sheet music (partitions) validation -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">📄 Partitions à vérifier</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Score de pertinence sous le seuil ou analyse impossible -- l'algorithme ne rejette jamais automatiquement, la décision finale te revient.</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-partitions-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+
+    <!-- Hidden Resources (restore) -->
+    <div class="settings-card" style="background: white; border-radius: 16px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">🔄 Ressources masquées (restauration)</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Après une annulation, la chorale demandeuse ne revoit une ressource que si tu la restaures spécifiquement pour elle ici.</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-masques-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+    </div> <!-- End of admin-content-chorales -->
+
+    <!-- Wrapper for About Page Configuration Tab Content -->
+    <div id="admin-content-apropos" class="admin-tab-content hidden">
+      <!-- About GOT Page Form -->
+      <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+        <div class="settings-card-header">
+          <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C;">⚙️ Configurer la page À propos</h4>
+        </div>
+        <div class="settings-card-body" style="padding-top: 16px;">
+          <form id="admin-apropos-form" style="display: grid; grid-template-columns: 1fr; gap: 16px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-nom">Nom de l'entreprise</label>
+                <input id="adm-got-nom" type="text" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-logo">URL du logo</label>
+                <input id="adm-got-logo" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-slogan">Slogan (Hero)</label>
+              <input id="adm-got-slogan" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-presentation">Présentation de l'entreprise</label>
+              <textarea id="adm-got-presentation" rows="6" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-mission">Mission</label>
+                <textarea id="adm-got-mission" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-vision">Vision</label>
+                <textarea id="adm-got-vision" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div style="background: #f8fafc; padding: 12px; border-radius: 8px; border: 1px solid #e2e8f0; font-size: 0.8rem; color: #475569;">
+              💡 <strong>Note sur la structure des listes</strong> : Les valeurs, fonctionnalités de l'appli, engagements, protocoles de sécurité, droits, et utilisation des données sont stockés au format JSON.
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-valeurs">Valeurs (Format JSON)</label>
+                <textarea id="adm-got-valeurs" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-features">Fonctionnalités (Format JSON)</label>
+                <textarea id="adm-got-features" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-why">Timeline "Pourquoi ?" (Format JSON)</label>
+                <textarea id="adm-got-why" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-engagements">Engagements (Format JSON)</label>
+                <textarea id="adm-got-engagements" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-app-description">Texte de présentation de l'application</label>
+              <textarea id="adm-got-app-description" rows="3" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-confidentialite">Politique de confidentialité</label>
+              <textarea id="adm-got-confidentialite" rows="4" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-securite">Sécurité des données (Format JSON)</label>
+                <textarea id="adm-got-securite" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+              <div class="form-group">
+                <label for="adm-got-utilisation">Utilisation des données (Format JSON)</label>
+                <textarea id="adm-got-utilisation" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-droits">Droits des utilisateurs (Format JSON)</label>
+              <textarea id="adm-got-droits" rows="5" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.8rem; font-family: monospace; resize: vertical;"></textarea>
+            </div>
+
+            <h4 style="margin: 8px 0 0 0; font-size: 0.95rem; color: #1F4A7C; border-bottom: 1px solid #E2E8F0; padding-bottom: 6px;">📞 Informations de contact & Liens</h4>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-email">Adresse e-mail (settings.contact_email)</label>
+                <input id="adm-got-email" type="email" placeholder="marerichard10@gmail.com" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-tel">Téléphone (Optionnel)</label>
+                <input id="adm-got-tel" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-adresse">Localisation / Adresse</label>
+                <input id="adm-got-adresse" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-siteweb">Site Web (Optionnel)</label>
+                <input id="adm-got-siteweb" type="url" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-facebook">Facebook (Optionnel)</label>
+                <input id="adm-got-facebook" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-linkedin">LinkedIn (Optionnel)</label>
+                <input id="adm-got-linkedin" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px;">
+              <div class="form-group">
+                <label for="adm-got-github">GitHub (Optionnel)</label>
+                <input id="adm-got-github" type="text" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+              <div class="form-group">
+                <label for="adm-got-whatsapp">WhatsApp (Optionnel)</label>
+                <input id="adm-got-whatsapp" type="text" placeholder="Ex: https://wa.me/..." style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem;">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="adm-got-signature">Signature finale de GOT</label>
+              <textarea id="adm-got-signature" rows="4" style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+            </div>
+
+            <div style="margin-top: 12px; display: flex; gap: 12px;">
+              <button type="submit" class="btn-primary" style="padding: 10px 24px; border-radius: 8px; border: none; background: #2563eb; color: white; font-weight: 600; font-size: 0.9rem; cursor: pointer;">
+                Enregistrer la configuration
+              </button>
+              <span id="admin-apropos-status" class="hint" style="align-self: center; font-weight: 500;"></span>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<!-- Song Details Viewer Modal (Canva/Notion style) -->
+<div id="chant-details-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 600px; border-radius: 16px; overflow: hidden; padding: 0; display: flex; flex-direction: column; max-height: 85vh;">
+    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%); color: white; padding: 20px; position: relative; flex-shrink: 0;">
+      <span id="det-categorie-badge" style="font-size: 0.75rem; text-transform: uppercase; font-weight: 700; background: rgba(255,255,255,0.2); padding: 4px 8px; border-radius: 4px; display: inline-block; margin-bottom: 8px;">Entrée</span>
+      <h2 id="det-titre" style="margin: 0; font-size: 1.4rem; font-weight: 700;">Chant titre</h2>
+      <p id="det-auteur" style="margin: 4px 0 0 0; font-size: 0.85rem; opacity: 0.9; font-style: italic;">Auteur : -</p>
+      <button type="button" style="position: absolute; top: 16px; right: 16px; background: none; border: none; color: white; font-size: 1.5rem; cursor: pointer;" onclick="fermerModale('chant-details-modal')">&times;</button>
+    </div>
+    <div style="padding: 24px; display: flex; flex-direction: column; gap: 20px; flex: 1; overflow-y: auto; background: #F8FAFC;">
+      
+      <!-- Refrain Section -->
+      <div id="det-refrain-sec" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
+        <h4 style="margin: 0 0 8px 0; color: #1e3a8a; font-size: 0.85rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Refrain</h4>
+        <p id="det-refrain" style="margin: 0; font-size: 0.95rem; line-height: 1.6; color: #1e293b; font-style: italic; white-space: pre-line;"></p>
+      </div>
+
+      <!-- Couplets Section -->
+      <div id="det-couplets-sec" style="background: white; border-radius: 12px; padding: 16px; border: 1px solid #E2E8F0;">
+        <h4 style="margin: 0 0 12px 0; color: #1e3a8a; font-size: 0.85rem; text-transform: uppercase; font-weight: 700; letter-spacing: 0.05em;">Couplets</h4>
+        <div id="det-couplets-list" style="display: flex; flex-direction: column; gap: 16px;"></div>
+      </div>
+
+      <!-- Extra details -->
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px;">
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Langue</span>
+          <span id="det-langue" style="font-size: 0.95rem; font-weight: 700; color: #0F172A; text-transform: uppercase;">FR</span>
+        </div>
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Tonalité</span>
+          <span id="det-tonalite" style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">-</span>
+        </div>
+        <div style="background: white; border-radius: 10px; padding: 12px; border: 1px solid #E2E8F0; text-align: center;">
+          <span style="font-size: 0.75rem; color: #64748B; display: block; font-weight: 600;">Durée</span>
+          <span id="det-duree" style="font-size: 0.95rem; font-weight: 700; color: #0F172A;">-</span>
+        </div>
+      </div>
+
+      <!-- Remarques -->
+      <div id="det-remarques-sec" style="background: #FFFBEB; border-radius: 12px; padding: 16px; border: 1px solid #FDE68A;">
+        <h4 style="margin: 0 0 6px 0; color: #b45309; font-size: 0.8rem; text-transform: uppercase; font-weight: 700;">Remarques</h4>
+        <p id="det-remarques" style="margin: 0; font-size: 0.85rem; color: #78350f;"></p>
+      </div>
+
+    </div>
+    
+    <!-- Actions rapides footer -->
+    <div style="background: white; border-top: 1px solid #E2E8F0; padding: 16px 24px; display: flex; justify-content: flex-end; gap: 12px; align-items: center; flex-shrink: 0; flex-wrap: wrap;">
+      <span id="det-info-sup" style="font-size: 0.75rem; color: #64748B; margin-right: auto;">Créé par admin</span>
+      <button type="button" id="det-btn-public" class="btn-secondary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem;">Rendre privé</button>
+      <button type="button" id="det-btn-supprimer" class="btn-danger" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #ef4444; color: white; border: none; cursor: pointer;">Supprimer</button>
+      <button type="button" id="det-btn-modifier" class="btn-primary" style="padding: 8px 16px; border-radius: 8px; font-size: 0.85rem; background: #2563eb; color: white; border: none; cursor: pointer;">Modifier</button>
+    </div>
+  </div>
+</div>
+
+<div id="chant-editor" class="side-drawer hidden large-drawer">
+  <div class="drawer-header">
+    <div class="modal-header" style="padding: 0; border: none; margin: 0; display: flex; align-items: center; gap: 12px;">
+      <div class="modal-header-icon" style="font-size: 1.5rem; background: #eaf0fa; width: 40px; height: 40px; border-radius: 8px; display: flex; align-items: center; justify-content: center;">🎵</div>
+      <div>
+        <h2 id="ce-modal-titre" class="modal-title" style="margin: 0; font-size: 1.2rem; color: #1F4A7C;">Ajouter / Modifier un chant</h2>
+        <p class="modal-subtitle" style="margin: 0; font-size: 0.85rem; color: #666;">Saisissez les informations du chant ci-dessous.</p>
+      </div>
+    </div>
+    <button type="button" class="drawer-close" onclick="fermerModale('chant-editor')">&times;</button>
+  </div>
+  
+  <div class="drawer-body" style="padding: 20px; overflow-y: auto; height: calc(100% - 70px);">
+    <form id="chant-editor-form">
+      <input type="hidden" id="ce-id">
+      <input type="hidden" id="ce-slug">
+      
+      <div class="form-row form-row-2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Titre <span class="required" style="color:red;">*</span>
+          <input id="ce-titre" type="text" placeholder="Entrez le titre du chant..." required style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+        </label>
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Catégorie liturgique <span class="required" style="color:red;">*</span>
+          <select id="ce-categorie" required style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;"></select>
+        </label>
+      </div>
+      
+      <label id="ce-nouvelle-categorie-champ" class="hidden" style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">Nom de la nouvelle catégorie
+        <input id="ce-nouvelle-categorie" type="text" placeholder="ex: Chants de louange" style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+      </label>
+      
+      <div id="ce-suggestion" class="suggestion hidden" style="padding: 10px; background: #eaf0fa; border-radius: 8px; color: #1f4a7c; font-size: 0.85rem; margin-bottom: 16px;"></div>
+      <div id="ce-doublons" class="suggestion hidden" style="padding: 10px; background: #fef2f2; border-radius: 8px; color: #b91c1c; font-size: 0.85rem; margin-bottom: 16px;"></div>
+      
+      <div class="form-row form-row-3" style="display: flex; gap: 16px; margin-bottom: 16px;">
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Code de référence
+          <input id="ce-code" type="text" placeholder="Ex: D 6, K 23..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+        </label>
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Langue
+          <select id="ce-langue" style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+            <option value="fr">Français</option>
+            <option value="moore">Mooré</option>
+            <option value="dioula">Dioula</option>
+            <option value="la">Latin</option>
+            <option value="en">Anglais</option>
+            <option value="dagara">Dagara</option>
+            <option value="bissa">Bissa</option>
+            <option value="gulmancema">Gulmancema</option>
+            <option value="lingala">Lingala</option>
+            <option value="autre">Autre</option>
+          </select>
+        </label>
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Occasions
+          <input id="ce-occasions" type="text" placeholder="Messe, Mariage..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+        </label>
+      </div>
+
+      <div class="form-row form-row-3" style="display: flex; gap: 16px; margin-bottom: 16px;">
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Tonalité
+          <input id="ce-tonalite" type="text" placeholder="Ex: Do, Fa#m..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+        </label>
+        <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Durée estimée
+          <input id="ce-duree-estimee" type="text" placeholder="Ex: 03:15" style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+        </label>
+        <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 6px;">
+          <span style="font-weight: 500; font-size: 0.85rem; margin-bottom: 2px;">Type de chant</span>
+          <div style="display:flex; gap:12px; align-items:center; height: 38px;">
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;"><input type="checkbox" id="ce-actif" checked> Actif</label>
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;"><input type="checkbox" id="ce-favori"> Favori</label>
+            <label style="display:flex; align-items:center; gap:4px; font-size:0.85rem;"><input type="checkbox" id="ce-chant-principal"> Principal</label>
+          </div>
+        </div>
+      </div>
+      
+      <div class="mots-cles-container" style="margin-bottom: 16px;">
+        <div class="mots-cles-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label for="ce-mots-cles" style="font-weight: 500; font-size: 0.9rem;">Mots-clés</label>
+          <button type="button" id="ce-btn-generer-mots" class="btn-text-action" style="background: none; border: none; color: #1f4a7c; cursor: pointer; font-size: 0.8rem; display: flex; align-items: center; gap: 4px;">
+            <span class="icon-refresh">↺</span> Générer automatiquement
+          </button>
+        </div>
+        <input id="ce-mots-cles" type="text" placeholder="kyrie, seigneur, pitié..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px; width: 100%;">
+        <p class="field-hint" style="margin: 4px 0 0 0; font-size: 0.75rem; color: #888;">Mots-clés extraits automatiquement à partir des paroles du chant.</p>
+      </div>
+      
+      <label style="display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px;">Refrain
+        <textarea id="ce-refrain" rows="3" placeholder="Saisissez le refrain du chant..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; width: 100%;"></textarea>
+      </label>
+      
+      <div class="couplets-field-container" style="margin-bottom: 20px;">
+        <div class="couplets-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label for="ce-couplets" style="font-weight: 500;">Couplets <span class="required" style="color:red;">*</span></label>
+          <span class="couplets-hint-icon" style="font-size: 0.75rem; color: #888;">💡 Séparez chaque couplet par une ligne vide.</span>
+        </div>
+        <textarea id="ce-couplets" rows="8" placeholder="Saisissez les couplets ici..." required style="padding: 8px; border: 1px solid #ddd; border-radius: 8px; font-family: inherit; width: 100%;"></textarea>
+      </div>
+
+      <!-- Hidden elements to keep app.js compat -->
+      <div class="hidden">
+        <textarea id="ce-remarques"></textarea>
+        <details class="ce-details"><summary>Info</summary></details>
+      </div>
+
+      <!-- Placeholder for import-specific actions when editing workspace items -->
+      <div id="ce-import-options-placeholder" style="margin-bottom: 20px;"></div>
+
+      <!-- Associated files card (mock) -->
+      <div class="associated-files-card" style="padding: 16px; border: 1px dashed #2f6bb2; background: #f8fafc; border-radius: 12px; margin-bottom: 24px;">
+        <h5 style="margin: 0 0 8px 0; color: #1F4A7C; font-size: 0.9rem; display: flex; align-items: center; gap: 6px;">
+          📁 Fichiers associés <span class="badge-soon" style="font-size: 0.7rem; background: #e2e8f0; color: #475569; padding: 2px 6px; border-radius: 4px; font-weight: normal;">Bientôt disponible</span>
+        </h5>
+        <p class="field-hint" style="margin: 0 0 12px 0; font-size: 0.75rem; color: #666;">Bientôt, vous pourrez associer des partitions, enregistrements audio, vidéos, PDF et autres ressources à chaque chant.</p>
+        <div class="media-icons-row" style="display: flex; gap: 8px;">
+          <button type="button" class="media-icon-btn" disabled style="padding: 6px 12px; font-size: 1.1rem; opacity: 0.5; cursor: not-allowed; border: 1px solid #ccc; border-radius: 6px; background: white;" title="Partition PDF">📄 PDF</button>
+          <button type="button" class="media-icon-btn" disabled style="padding: 6px 12px; font-size: 1.1rem; opacity: 0.5; cursor: not-allowed; border: 1px solid #ccc; border-radius: 6px; background: white;" title="Partition XML">🎼 XML</button>
+          <button type="button" class="media-icon-btn" disabled style="padding: 6px 12px; font-size: 1.1rem; opacity: 0.5; cursor: not-allowed; border: 1px solid #ccc; border-radius: 6px; background: white;" title="Audio MP3">🎵 MP3</button>
+          <button type="button" class="media-icon-btn" disabled style="padding: 6px 12px; font-size: 1.1rem; opacity: 0.5; cursor: not-allowed; border: 1px solid #ccc; border-radius: 6px; background: white;" title="Vidéo">🎥 Vidéo</button>
+        </div>
+      </div>
+      
+      <div class="drawer-actions-row" style="display: flex; gap: 12px; justify-content: flex-end; padding-top: 16px; border-top: 1px solid #eee;">
+        <button type="button" id="ce-fermer" class="btn-secondary" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; background: white;">✕ Annuler</button>
+        <button type="button" id="ce-supprimer" class="btn-effacer btn-danger hidden" style="padding: 8px 16px; border: none; border-radius: 8px; cursor: pointer; background: #ef4444; color: white;">🗑 Supprimer</button>
+        <button type="submit" class="btn-primary" style="padding: 8px 24px; border: none; border-radius: 8px; cursor: pointer; background: #1F4A7C; color: white;">💾 Enregistrer</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="texte-grand-editor" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="texte-grand-editor" aria-label="Fermer">&times;</button>
+    <h3 id="tge-titre" class="tge-titre"></h3>
+    <p id="tge-astuce" class="hint hidden">Séparez plusieurs couplets par une ligne vide pour les créer tous en une fois.</p>
+    <textarea id="tge-textarea" class="tge-textarea"></textarea>
+    <div class="toolbar">
+      <button type="button" id="tge-inserer">Insérer</button>
+      <button type="button" id="tge-annuler">Annuler</button>
+    </div>
+  </div>
+</div>
+
+<div id="chant-picker" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="chant-picker" aria-label="Fermer">&times;</button>
+    <p id="picker-suggestion-hint" class="hint"></p>
+    <div class="toolbar">
+      <input id="picker-q" type="search" placeholder="Chercher un chant…">
+      <select id="picker-categorie"></select>
+      <button type="button" id="picker-close">Fermer</button>
+    </div>
+    <ul id="picker-list" class="list"></ul>
+  </div>
+</div>
+
+<div id="chant-detail-modal" class="modal hidden">
+  <div class="modal-content chant-detail-modal-content">
+    <button type="button" class="modal-close-x" data-close="chant-detail-modal" aria-label="Fermer">&times;</button>
+    
+    <div class="cd-header">
+      <span class="cd-categorie-pill" id="cd-categorie"></span>
+      <h2 id="cd-titre" class="cd-title"></h2>
+      <div class="cd-meta-row">
+        <span id="cd-meta-ref"></span>
+        <span id="cd-meta-langue"></span>
+        <span id="cd-meta-occasions"></span>
+      </div>
+    </div>
+
+    <div class="cd-body">
+      <!-- Left column: lyrics -->
+      <div class="cd-lyrics-section">
+        <div id="cd-refrain-container" class="cd-refrain-box">
+          <span class="cd-section-label">Refrain</span>
+          <p id="cd-refrain-text" class="cd-refrain-text-lyrics"></p>
+        </div>
+        <div class="cd-couplets-box">
+          <span class="cd-section-label">Couplets</span>
+          <div id="cd-couplets-list" class="cd-couplets-list-lyrics"></div>
+        </div>
+      </div>
+      
+      <!-- Right column: meta / history -->
+      <div class="cd-sidebar-section">
+        <div class="cd-sidebar-block">
+          <span class="cd-sidebar-label">Historique &amp; État</span>
+          <div class="cd-history-info">
+            <div class="cd-history-item">
+              <span class="lbl">État</span>
+              <span id="cd-hist-etat" class="val"></span>
+            </div>
+            <div class="cd-history-item">
+              <span class="lbl">Création</span>
+              <span id="cd-hist-creation" class="val"></span>
+            </div>
+            <div class="cd-history-item">
+              <span class="lbl">Modification</span>
+              <span id="cd-hist-modification" class="val"></span>
+            </div>
+            <div class="cd-history-item">
+              <span class="lbl">Auteur</span>
+              <span id="cd-hist-auteur" class="val"></span>
+            </div>
+          </div>
+        </div>
+        
+        <div class="cd-sidebar-block">
+          <span class="cd-sidebar-label">Mots-clés</span>
+          <div id="cd-mots-cles-list" class="cd-tags-list"></div>
+        </div>
+
+        <div class="cd-sidebar-block">
+          <span class="cd-sidebar-label">📄 Partition</span>
+          <div id="cd-partition-zone">
+            <span class="cd-partition-chargement">Chargement...</span>
+          </div>
+          <input type="file" id="cd-partition-fichier" accept="application/pdf" class="hidden">
+        </div>
+
+        <div class="cd-sidebar-block">
+          <span class="cd-sidebar-label">🎧 Audio / Vidéo</span>
+          <div id="cd-medias-zone">
+            <span class="cd-partition-chargement">Chargement...</span>
+          </div>
+          <input type="file" id="cd-media-fichier-audio" accept="audio/*" class="hidden">
+          <input type="file" id="cd-media-fichier-video" accept="video/*" class="hidden">
+        </div>
+      </div>
+    </div>
+    
+    <!-- Original elements kept hidden to preserve standard bindings in app.js -->
+    <div style="display:none;">
+      <div id="cd-corps"></div>
+      <button type="button" id="cd-btn-ajouter"></button>
+      <button type="button" id="cd-btn-modifier"></button>
+      <button type="button" id="cd-btn-annuler"></button>
+    </div>
+
+    <!-- Redesigned premium actions -->
+    <div class="modal-footer cd-footer" id="cd-footer-actions">
+      <!-- Loaded dynamically based on role -->
+    </div>
+  </div>
+</div>
+
+<div id="media-picker-modal" class="modal hidden">
+  <div class="modal-content">
+    <button type="button" class="modal-close-x" data-close="media-picker-modal" aria-label="Fermer">&times;</button>
+    <h2>Choisir une image</h2>
+    <p class="hint">Pool partagé entre toutes les chorales — les images déjà envoyées par d'autres restent
+    réutilisables ici.</p>
+    <div id="media-picker-grid" class="media-picker-grid"></div>
+  </div>
+</div>
+
+<div id="profil-modal" class="modal hidden">
+  <div class="modal-content profil-dashboard-modal" style="max-width: 960px; width: 95%; padding: 0; display: flex; border-radius: 16px; overflow: hidden; height: 600px;">
+    <!-- Left Sidebar (Desktop) -->
+    <div class="profil-sidebar" style="width: 240px; background: #f8fafc; border-right: 1px solid #e2e8f0; display: flex; flex-direction: column; justify-content: space-between; padding: 20px;">
+      <div>
+        <div style="margin-top: 10px; display: flex; flex-direction: column; gap: 8px;">
+          <button type="button" class="profil-nav-item active" data-section="infos-personnelles" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #1F4A7C; cursor: pointer; border-radius: 8px;">
+            <span>👤</span> Informations
+          </button>
+          <button type="button" class="profil-nav-item" data-section="securite" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+            <span>🔒</span> Sécurité
+          </button>
+          <button type="button" class="profil-nav-item" data-section="infos-compte" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+            <span>ℹ️</span> Infos du compte
+          </button>
+        </div>
+      </div>
+      
+      <!-- Secure shield card -->
+      <div class="secure-shield-card" style="padding: 12px; background: #eaf0fa; border-radius: 12px; display: flex; flex-direction: column; gap: 6px;">
+        <span style="font-size: 1.2rem; color: #1F4A7C;">🛡️</span>
+        <span style="font-weight: 600; font-size: 0.8rem; color: #1F4A7C;">Données protégées</span>
+        <p style="margin: 0; font-size: 0.7rem; color: #475569; line-height: 1.3;">Seules les personnes autorisées peuvent consulter vos informations.</p>
+      </div>
+    </div>
+
+    <!-- Right Body -->
+    <div class="profil-body" style="flex: 1; display: flex; flex-direction: column; background: white;">
+      <!-- Header -->
+      <div class="profil-body-header" style="padding: 24px; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center;">
+        <div style="display: flex; align-items: center; gap: 12px;">
+          <!-- Hamburger menu button visible only on mobile -->
+          <button type="button" id="profil-menu-burger" style="display: none; border: 1px solid #e2e8f0; background: white; font-size: 1.2rem; padding: 6px 10px; border-radius: 6px; cursor: pointer; color: #1F4A7C;">☰ Menu</button>
+          <div>
+            <h3 id="profil-body-title" style="margin: 0; font-size: 1.25rem; color: #1F4A7C;">Mon profil</h3>
+            <p id="profil-body-subtitle" style="margin: 4px 0 0 0; font-size: 0.85rem; color: #64748b;">Gérez les informations de votre compte.</p>
+          </div>
+        </div>
+        <button type="button" class="modal-close-x" data-close="profil-modal" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b;">&times;</button>
+      </div>
+
+      <!-- Mobile Dropdown Navigation Menu (hidden by default) -->
+      <div id="profil-menu-dropdown" class="hidden" style="background: #f8fafc; border-bottom: 1px solid #e2e8f0; padding: 12px 24px; flex-direction: column; gap: 8px;">
+        <button type="button" class="profil-nav-item active" data-section="infos-personnelles" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #1F4A7C; cursor: pointer; border-radius: 8px;">
+          <span>👤</span> Informations
+        </button>
+        <button type="button" class="profil-nav-item" data-section="securite" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+          <span>🔒</span> Sécurité
+        </button>
+        <button type="button" class="profil-nav-item" data-section="infos-compte" style="display: flex; align-items: center; gap: 10px; width: 100%; padding: 10px 12px; border: none; background: none; text-align: left; font-size: 0.9rem; font-weight: 500; color: #64748b; cursor: pointer; border-radius: 8px;">
+          <span>ℹ️</span> Infos du compte
+        </button>
+      </div>
+
+      <!-- Scrollable content -->
+      <div class="profil-body-content" style="flex: 1; padding: 24px; overflow-y: auto;">
+        
+        <!-- SECTION 1: Personal Info -->
+        <div id="section-infos-personnelles" class="profil-section-content">
+          <!-- Avatar section -->
+          <div style="display: flex; align-items: center; gap: 20px; margin-bottom: 24px;">
+            <div id="profil-avatar" class="profil-avatar" style="width: 80px; height: 80px; border-radius: 50%; background: #2f6bb2; color: white; display: flex; align-items: center; justify-content: center; font-size: 2rem; font-weight: bold; overflow: hidden; border: 3px solid #eaf0fa;">
+              SC
+            </div>
+            <div>
+              <input type="file" id="profil-avatar-input" accept="image/*" class="hidden">
+              <div style="display: flex; gap: 8px;">
+                <button type="button" id="btn-profil-avatar-upload" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer;">Changer</button>
+                <button type="button" id="btn-profil-avatar-delete" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; border: 1px solid #ddd; background: white; cursor: pointer; color: #ef4444;">Supprimer</button>
+              </div>
+              <p style="margin: 4px 0 0 0; font-size: 0.75rem; color: #888;">Formats : PNG, JPG, SVG. Max 5 Mo.</p>
+            </div>
+          </div>
+
+          <!-- Form Fields -->
+          <form id="profil-infos-form">
+            <div class="form-row form-row-2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Nom complet
+                <input id="p-profil-nom-complet" type="text" placeholder="Entrez votre nom..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+              <label id="lbl-profil-prenom" style="flex: 1; display: flex; flex-direction: column; gap: 6px;" class="hidden">Prénom
+                <input id="p-profil-prenom" type="text" placeholder="Entrez votre prénom..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+              <label id="lbl-profil-nom-chorale" style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Nom de la chorale
+                <input id="p-profil-nom-chorale" type="text" placeholder="Chorale..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+            </div>
+            <div class="form-row form-row-2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Paroisse
+                <input id="p-profil-paroisse" type="text" placeholder="Paroisse..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">CCB / Quartier
+                <input id="p-profil-ccb" type="text" placeholder="CCB..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+            </div>
+            <div class="form-row form-row-2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Téléphone
+                <input id="p-profil-telephone" type="text" placeholder="Contact..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Adresse e-mail
+                <input id="p-profil-email" type="email" placeholder="Email..." style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+              </label>
+            </div>
+            <div class="form-row form-row-2" style="display: flex; gap: 16px; margin-bottom: 16px;">
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Langue
+                <select id="p-profil-langue" style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+                  <option value="fr" selected>Français</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+              <label style="flex: 1; display: flex; flex-direction: column; gap: 6px;">Fuseau horaire
+                <select id="p-profil-fuseau" style="padding: 8px; border: 1px solid #ddd; border-radius: 8px;">
+                  <option value="GMT" selected>GMT (UTC+0)</option>
+                  <option value="CET">CET (UTC+1)</option>
+                </select>
+              </label>
+            </div>
+          </form>
+        </div>
+
+        <!-- SECTION 2: Security -->
+        <div id="section-securite" class="profil-section-content hidden">
+          <form id="profil-mdp-form">
+            <div style="display:flex; flex-direction:column; gap:16px; max-width: 480px; margin-bottom: 24px;">
+              <label style="display: flex; flex-direction: column; gap: 6px;">Mot de passe actuel
+                <span class="champ-mdp" style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: white; padding-right: 8px;">
+                  <input id="profil-mdp-actuel" type="password" autocomplete="current-password" required style="flex: 1; border: none; padding: 8px; outline: none;">
+                  <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe" style="border: none; background: none; cursor: pointer; color: #666;">👁</button>
+                </span>
+              </label>
+              
+              <label style="display: flex; flex-direction: column; gap: 6px;">Nouveau mot de passe
+                <span class="champ-mdp" style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: white; padding-right: 8px;">
+                  <input id="profil-mdp-nouveau" type="password" autocomplete="new-password" required minlength="8" style="flex: 1; border: none; padding: 8px; outline: none;">
+                  <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe" style="border: none; background: none; cursor: pointer; color: #666;">👁</button>
+                </span>
+              </label>
+              
+              <label style="display: flex; flex-direction: column; gap: 6px;">Confirmation
+                <span class="champ-mdp" style="display: flex; align-items: center; border: 1px solid #ddd; border-radius: 8px; overflow: hidden; background: white; padding-right: 8px;">
+                  <input id="profil-mdp-confirme" type="password" autocomplete="new-password" required minlength="8" style="flex: 1; border: none; padding: 8px; outline: none;">
+                  <button type="button" class="btn-voyant-mdp" aria-label="Afficher le mot de passe" style="border: none; background: none; cursor: pointer; color: #666;">👁</button>
+                </span>
+              </label>
+
+              <!-- Strength Indicator -->
+              <div class="mdp-strength-indicator" style="margin-top: 8px;">
+                <div style="display: flex; justify-content: space-between; font-size: 0.75rem; color: #666; margin-bottom: 4px;">
+                  <span>Robustesse :</span>
+                  <span id="profil-mdp-strength-label" style="font-weight: 600; color: #ef4444;">Faible</span>
+                </div>
+                <div style="height: 6px; background: #e2e8f0; border-radius: 3px; overflow: hidden;">
+                  <div id="profil-mdp-strength-bar" style="width: 20%; height: 100%; background: #ef4444; transition: width 0.3s ease, background 0.3s ease;"></div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Password Requirements checklist -->
+            <div class="mdp-requirements" style="padding: 16px; background: #f8fafc; border-radius: 12px; margin-bottom: 24px;">
+              <span style="font-weight: 600; font-size: 0.8rem; color: #475569; display: block; margin-bottom: 8px;">Exigences de sécurité :</span>
+              <ul style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; font-size: 0.8rem; color: #64748b;">
+                <li id="req-length" class="req-item">❌ minimum 8 caractères</li>
+                <li id="req-uppercase" class="req-item">❌ une lettre majuscule</li>
+                <li id="req-lowercase" class="req-item">❌ une lettre minuscule</li>
+                <li id="req-digit" class="req-item">❌ un chiffre</li>
+                <li id="req-special" class="req-item">❌ un caractère spécial</li>
+              </ul>
+            </div>
+
+            <p id="profil-mdp-status" class="hint" style="font-size: 0.8rem; color: #ef4444;"></p>
+            
+            <button type="button" id="btn-disconnect-all" class="btn-secondary" style="display: flex; align-items: center; gap: 8px; color: #b91c1c; border-color: #fca5a5; padding: 8px 16px; border-radius: 8px; cursor: pointer; background: white;">
+              <span>🛡️</span> Déconnexion de tous les appareils
+            </button>
+          </form>
+        </div>
+
+        <!-- SECTION 3: Account info -->
+        <div id="section-infos-compte" class="profil-section-content hidden">
+          <div id="profil-lecture-seule" style="display: flex; flex-direction: column; gap: 16px; padding: 20px; background: #f8fafc; border-radius: 12px; border: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+              <span style="font-weight: 500; color: #64748b;">Identifiant</span>
+              <span id="profil-info-username" style="font-weight: 600; color: #1F4A7C;">admin</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+              <span style="font-weight: 500; color: #64748b;">Rôle</span>
+              <span id="profil-info-role" style="font-weight: 600; color: #1F4A7C; text-transform: uppercase;">superadmin</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+              <span style="font-weight: 500; color: #64748b;">Date de création</span>
+              <span id="profil-info-created-at" style="font-weight: 600; color: #1F4A7C;">-</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; border-bottom: 1px solid #e2e8f0; padding-bottom: 10px;">
+              <span style="font-weight: 500; color: #64748b;">Dernière connexion</span>
+              <span id="profil-info-last-login" style="font-weight: 600; color: #1F4A7C;">Aujourd'hui</span>
+            </div>
+            <div style="display: flex; justify-content: space-between; align-items: center;">
+              <span style="font-weight: 500; color: #64748b;">Statut du compte</span>
+              <span style="font-size: 0.8rem; background: #dcfce7; color: #15803d; padding: 4px 10px; border-radius: 20px; font-weight: 600; display: flex; align-items: center; gap: 4px;">
+                Compte vérifié <span style="font-size: 0.75rem;">✅</span>
+              </span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <!-- Footer Buttons -->
+      <div class="profil-body-footer" style="padding: 20px 24px; border-top: 1px solid #e2e8f0; display: flex; justify-content: flex-end; gap: 12px; background: #f8fafc;">
+        <button type="button" class="btn-secondary" data-close="profil-modal" style="padding: 8px 16px; border: 1px solid #ddd; border-radius: 8px; cursor: pointer; background: white;">Annuler</button>
+        <button type="button" id="btn-profil-enregistrer" class="btn-primary" style="padding: 8px 24px; border: none; border-radius: 8px; cursor: pointer; background: #1F4A7C; color: white; display: flex; align-items: center; gap: 6px;">
+          <span>✓</span> Enregistrer les modifications
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Admin Reset Password Success Modal -->
+<div id="admin-reset-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 480px; border-radius: 16px; padding: 24px; text-align: center; display: flex; flex-direction: column; gap: 16px; box-shadow: 0 20px 50px rgba(0,0,0,0.3);">
+    <div style="font-size: 3rem; color: #10B981; margin-bottom: 8px;">🔑</div>
+    <h3 style="margin: 0; color: #1F4A7C; font-size: 1.25rem;">Mot de passe réinitialisé</h3>
+    <p style="margin: 0; color: #64748B; font-size: 0.9rem; line-height: 1.5;">
+      Le mot de passe de la chorale <strong id="reset-modal-nom"></strong> a été réinitialisé avec succès.
+    </p>
+    
+    <div style="background: #F1F5F9; border: 1px solid #E2E8F0; padding: 16px; border-radius: 10px; margin: 8px 0; display: flex; align-items: center; justify-content: space-between; gap: 12px;">
+      <code id="reset-modal-mdp" style="font-family: monospace; font-size: 1.3rem; font-weight: 700; color: #1E293B; letter-spacing: 0.05em; flex: 1; text-align: left;"></code>
+      <button type="button" id="btn-copy-reset-mdp" class="btn-secondary" style="padding: 6px 12px; font-size: 0.8rem; border-radius: 6px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+        <span>📋</span> Copier
+      </button>
+    </div>
+    
+    <p style="margin: 0; color: #EF4444; font-size: 0.75rem; font-weight: 600; line-height: 1.4;">
+      ⚠️ Communiquez ce mot de passe temporaire à la chorale. Il ne sera plus affiché après la fermeture de cette fenêtre.
+    </p>
+    
+    <button type="button" onclick="fermerModale('admin-reset-modal')" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #1F4A7C; color: white; cursor: pointer; margin-top: 8px;">
+      Fermer
+    </button>
+  </div>
+</div>
+
+<!-- Modal: Planifier la suppression (Admin) -->
+<div id="admin-planifier-suppression-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('admin-planifier-suppression-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">⚠️ Planifier la suppression</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Planifiez la suppression définitive du compte de la chorale <strong id="planifier-suppr-nom"></strong>. Un délai de contestation lui sera accordé.
+    </p>
+    
+    <form id="admin-planifier-suppr-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison de la suppression (Modèles rapides)</label>
+        <select id="planifier-suppr-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Inactivité prolongée : Absence d'activité ou de création de dépliants liturgiques sur la plateforme depuis plus de 6 mois.">💤 Inactivité prolongée (> 6 mois)</option>
+          <option value="Non-respect des conditions d'utilisation : Utilisation inappropriée de l'espace de stockage ou diffusion de contenus non conformes.">🚫 Non-respect des conditions d'utilisation</option>
+          <option value="Fermeture de la chorale : Signalement de la dissolution ou de l'arrêt des activités de la chorale.">🏛️ Fermeture de la chorale</option>
+          <option value="Doublon ou compte de test : Compte créé par erreur ou utilisé temporairement pour des tests de mise en route.">📋 Doublon ou compte de test</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-planifier-suppr-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison personnalisée</label>
+        <textarea id="planifier-suppr-raison-custom" rows="3" placeholder="Saisissez la raison détaillée de la suppression..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-delai" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Délai avant suppression définitive</label>
+        <select id="planifier-suppr-delai" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="7">7 jours</option>
+          <option value="15" selected>15 jours</option>
+          <option value="30">30 jours</option>
+          <option value="custom">Choisir une date sur le calendrier...</option>
+        </select>
+      </div>
+
+      <div id="planifier-suppr-date-custom-group" class="form-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="planifier-suppr-date-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Date de suppression définitive</label>
+        <input type="date" id="planifier-suppr-date-custom" style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #dc2626; color: white; cursor: pointer; margin-top: 8px;">
+        Planifier la suppression
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Annuler la suppression (Admin) -->
+<div id="admin-annuler-suppression-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('admin-annuler-suppression-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">🔄 Annuler la suppression</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Annulez la suppression programmée pour la chorale <strong id="annuler-suppr-nom"></strong>. Un message d'explication officiel lui sera envoyé automatiquement.
+    </p>
+    
+    <form id="admin-annuler-suppr-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="annuler-suppr-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Motif de l'annulation (Modèles rapides)</label>
+        <select id="annuler-suppr-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Confirmation d'activité : Suite à vos explications, nous confirmons le maintien de votre compte actif sur la plateforme.">✓ Confirmation d'activité (Révision approuvée)</option>
+          <option value="Assistance technique apportée : Les problèmes techniques ou d'accès ayant été résolus, le compte est rétabli.">🛠️ Assistance technique apportée</option>
+          <option value="Malentendu clarifié : Le malentendu a été résolu, la planification de la suppression est annulée.">🤝 Malentendu clarifié</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-annuler-suppr-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="annuler-suppr-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Motif d'annulation personnalisé</label>
+        <textarea id="annuler-suppr-raison-custom" rows="3" placeholder="Saisissez la raison détaillée de l'annulation..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #2563eb; color: white; cursor: pointer; margin-top: 8px;">
+        Confirmer l'annulation
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal: Demander révision (Chorale) -->
+<div id="chorale-demande-revision-modal" class="modal hidden">
+  <div class="modal-content" style="max-width: 500px; border-radius: 16px; padding: 24px; display: flex; flex-direction: column; gap: 16px;">
+    <button type="button" class="modal-close-x" onclick="fermerModale('chorale-demande-revision-modal')" aria-label="Fermer" style="border: none; background: none; font-size: 1.5rem; cursor: pointer; color: #64748b; align-self: flex-end; margin-top: -12px;">&times;</button>
+    <h3 style="margin: -16px 0 0 0; color: #1F4A7C; font-size: 1.25rem;">⌛ Demander examen et révision</h3>
+    <p class="hint" style="margin: 0; color: #64748b; font-size: 0.85rem; line-height: 1.4;">
+      Expliquez pourquoi la planification de la suppression de votre compte doit être suspendue et réexaminée.
+    </p>
+    
+    <form id="chorale-demande-revision-form" style="display: flex; flex-direction: column; gap: 14px;">
+      <div class="form-group" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="revision-raison-select" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Raison de la contestation (Modèles rapides)</label>
+        <select id="revision-raison-select" required style="height: 38px; border-radius: 8px; border: 1px solid #E2E8F0; padding: 0 8px; font-size: 0.85rem; background: white;">
+          <option value="Compte actif : Notre chorale est toujours en activité et nous prévoyons de créer de nouveaux dépliants liturgiques prochainement.">🏛️ Chorale en activité</option>
+          <option value="Erreur de ciblage : Il y a une erreur, notre compte n'est pas inactif et respecte toutes les conditions de la plateforme.">❌ Erreur de ciblage / d'inactivité</option>
+          <option value="Besoin d'aide : Nous rencontrons des difficultés techniques pour utiliser la plateforme et demandons de l'assistance.">🛠️ Difficultés techniques rencontrées</option>
+          <option value="autre">Saisie personnalisée...</option>
+        </select>
+      </div>
+      
+      <div class="form-group id-revision-custom-raison-group hidden" style="display: flex; flex-direction: column; gap: 6px;">
+        <label for="revision-raison-custom" style="font-weight: 600; font-size: 0.85rem; color: #1e293b;">Explications personnalisées</label>
+        <textarea id="revision-raison-custom" rows="3" placeholder="Saisissez des détails supplémentaires..." style="border-radius: 8px; border: 1px solid #E2E8F0; padding: 8px; font-size: 0.85rem; font-family: inherit; resize: vertical;"></textarea>
+      </div>
+
+      <button type="submit" class="btn-primary" style="padding: 10px; width: 100%; border: none; border-radius: 8px; font-weight: 600; background: #1f4a7c; color: white; cursor: pointer; margin-top: 8px;">
+        Soumettre la demande d'examen
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- Bottom Navigation globale pour mobile -->
+<nav class="mobile-bottom-nav no-print">
+  <button type="button" class="bottom-nav-item" data-target-view="profil">
+    <span class="bottom-nav-icon">👤</span>
+    <span class="bottom-nav-label">Mon profil</span>
+  </button>
+  <button type="button" class="bottom-nav-item" data-target-view="bibliotheque">
+    <span class="bottom-nav-icon">📚</span>
+    <span class="bottom-nav-label">Bibliothèque</span>
+  </button>
+  <button type="button" class="bottom-nav-item composer-item" data-target-view="composer">
+    <div class="composer-icon-wrapper">
+      <span class="bottom-nav-icon">✏️</span>
+    </div>
+    <span class="bottom-nav-label">Composer</span>
+  </button>
+  <button type="button" class="bottom-nav-item" data-target-view="depliants">
+    <span class="bottom-nav-icon">📄</span>
+    <span class="bottom-nav-label">Les dépliants</span>
+  </button>
+  <button type="button" class="bottom-nav-item" id="btn-bottom-extras">
+    <span class="bottom-nav-icon">⋯</span>
+    <span class="bottom-nav-label">Extras</span>
+  </button>
+</nav>
+
+<!-- Tiroir Bottom Sheet pour Extras -->
+<div id="bottom-sheet-extras" class="bottom-sheet-overlay hidden no-print">
+  <div class="bottom-sheet-backdrop"></div>
+  <div class="bottom-sheet-drawer">
+    <div class="bottom-sheet-header">
+      <h4>Autres fonctionnalités</h4>
+      <button type="button" class="btn-close-extras">✕</button>
+    </div>
+    <div class="bottom-sheet-menu-grid">
+      <button type="button" class="extra-menu-item" data-target-view="editeur">
+        <span class="extra-icon">🎵</span>
+        <span class="extra-label">Éditeur</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="importer">
+        <span class="extra-icon">📥</span>
+        <span class="extra-label">Importer</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="reglages">
+        <span class="extra-icon">⚙️</span>
+        <span class="extra-label">Réglages</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="messagerie">
+        <span class="extra-icon">✉️</span>
+        <span class="extra-label">Messagerie</span>
+      </button>
+      <button type="button" class="extra-menu-item" data-target-view="apropos">
+        <span class="extra-icon">ℹ️</span>
+        <span class="extra-label">À propos</span>
+      </button>
+      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="statistiques">
+        <span class="extra-icon">📊</span>
+        <span class="extra-label">Stats</span>
+      </button>
+      <button type="button" class="extra-menu-item id-admin-only hidden" data-target-view="admin">
+        <span class="extra-icon">🔑</span>
+        <span class="extra-label">Administration</span>
+      </button>
+      <button type="button" class="extra-menu-item btn-logout-action" style="grid-column: span 2; color: #ef4444; border-top: 1px solid #f1f5f9; margin-top: 8px; padding-top: 12px; font-weight: bold;">
+        <span class="extra-icon">🚪</span>
+        <span class="extra-label">Se déconnecter</span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Tiroir Bottom Sheet pour les actions d'une carte de moment -->
+<div id="bottom-sheet-card-actions" class="bottom-sheet-overlay hidden no-print">
+  <div class="bottom-sheet-backdrop"></div>
+  <div class="bottom-sheet-drawer">
+    <div class="bottom-sheet-header">
+      <h4 id="card-actions-sheet-title">Actions sur le moment</h4>
+      <button type="button" class="btn-close-card-actions">✕</button>
+    </div>
+    <div class="bottom-sheet-menu-list">
+      <button type="button" class="sheet-action-item" id="sheet-action-book">
+        <span class="action-icon">📖</span> Choisir dans la bibliothèque
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-eye">
+        <span class="action-icon">👁</span> Prévisualiser le chant
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-pencil">
+        <span class="action-icon">✏</span> Modifier le chant/texte
+      </button>
+      <button type="button" class="sheet-action-item" id="sheet-action-trash" style="color: #ef4444;">
+        <span class="action-icon">🗑</span> Vider ce moment
+      </button>
+      <button type="button" class="sheet-action-item btn-close-card-actions" style="border-top: 1px solid #f1f5f9; margin-top: 8px; font-weight: bold; color: #64748b;">
+        Annuler
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Import workspace rendered inline in view-importer -->
+
+<script src="/app.js?v=23"></script>
+</body>
+</html>

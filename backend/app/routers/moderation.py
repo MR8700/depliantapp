@@ -1,0 +1,236 @@
+from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
+from .. import auth, crud
+from ..deps import require_chorale, require_superadmin
+
+router = APIRouter(prefix="/moderation", tags=["moderation"])
+
+
+class DemandeSuppressionCreation(BaseModel):
+    type_cible: str  # "chant" | "feuillet"
+    cible_id: int
+    raison: str
+
+
+def _apercu_cible(type_cible: str, cible_id: int) -> Optional[dict]:
+    """Contenu de la cible pour l'affichage dans le panneau de modération —
+    None si elle a déjà été supprimée entre-temps (demande orpheline)."""
+    if type_cible == "chant":
+        chant = crud.get_chant(cible_id)
+        return {"titre": chant.titre, "categorie": chant.categorie} if chant else None
+    feuillet = crud.get_feuillet(cible_id)
+    return {"date": feuillet.date, "lieu": feuillet.lieu, "chorale_nom": feuillet.chorale_nom} if feuillet else None
+
+
+@router.post("/demandes")
+def creer_demande(payload: DemandeSuppressionCreation, identite: auth.Identite = Depends(require_chorale)):
+    if payload.type_cible not in ("chant", "feuillet"):
+        raise HTTPException(status_code=400, detail="type_cible invalide")
+    cible_existe = (
+        crud.get_chant(payload.cible_id) if payload.type_cible == "chant" else crud.get_feuillet(payload.cible_id)
+    )
+    if not cible_existe:
+        raise HTTPException(status_code=404, detail="Ressource introuvable")
+    demande = crud.creer_demande_suppression(payload.type_cible, payload.cible_id, identite.compte_id, payload.raison)
+    return demande
+
+
+@router.get("/demandes")
+def list_demandes(statut: Optional[str] = "en_attente", _identite: auth.Identite = Depends(require_superadmin)):
+    demandes = crud.list_demandes_suppression(statut)
+    for d in demandes:
+        d["apercu"] = _apercu_cible(d["type_cible"], d["cible_id"])
+    return demandes
+
+
+@router.post("/demandes/{demande_id}/valider")
+def valider(demande_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    if not crud.valider_demande_suppression(demande_id):
+        raise HTTPException(status_code=404, detail="Demande introuvable ou déjà traitée")
+    return {"ok": True}
+
+
+@router.post("/demandes/{demande_id}/annuler")
+def annuler(demande_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    if not crud.annuler_demande_suppression(demande_id):
+        raise HTTPException(status_code=404, detail="Demande introuvable ou déjà traitée")
+    return {"ok": True}
+
+
+@router.post("/demandes/{demande_id}/remettre_en_attente")
+def remettre_en_attente(demande_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    from ..db import get_connection
+    with get_connection() as conn:
+        row = conn.execute("SELECT id FROM demandes_suppression WHERE id = ?", (demande_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="Demande introuvable")
+        conn.execute(
+            "UPDATE demandes_suppression SET statut = 'en_attente', traite_at = NULL WHERE id = ?",
+            (demande_id,),
+        )
+    return {"ok": True}
+
+
+@router.get("/masques")
+def list_masques(_identite: auth.Identite = Depends(require_superadmin)):
+    masques = crud.list_masques()
+    for m in masques:
+        m["apercu"] = _apercu_cible(m["type_cible"], m["cible_id"])
+    return masques
+
+
+@router.delete("/masques/{masque_id}")
+def restaurer(masque_id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    if not crud.restaurer_masque(masque_id):
+        raise HTTPException(status_code=404, detail="Masque introuvable")
+    return {"ok": True}
+
+
+@router.get("/categories")
+def list_categories_moderation(statut: Optional[str] = "en_attente", _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        rows = conn.execute(
+            "SELECT cp.id, cp.nom, cp.statut, cp.motif_rejet, cp.created_at, c.nom as chorale_nom "
+            "FROM categories_personnalisees cp "
+            "LEFT JOIN chorales c ON cp.cree_par = c.id "
+            "WHERE cp.statut = ? ORDER BY cp.created_at DESC",
+            (statut,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
+class RejetCategoriePayload(BaseModel):
+    motif: str
+
+
+@router.post("/categories/{id}/valider")
+def valider_categorie(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        conn.execute("UPDATE categories_personnalisees SET statut = 'valide', motif_rejet = NULL WHERE id = ?", (id,))
+    return {"ok": True}
+
+
+@router.post("/categories/{id}/rejeter")
+def rejeter_categorie(id: int, payload: RejetCategoriePayload, _identite: auth.Identite = Depends(require_superadmin)):
+    with crud.get_connection() as conn:
+        cp = conn.execute("SELECT nom, cree_par FROM categories_personnalisees WHERE id = ?", (id,)).fetchone()
+        if not cp:
+            raise HTTPException(status_code=404, detail="Catégorie introuvable")
+        conn.execute("UPDATE categories_personnalisees SET statut = 'rejete', motif_rejet = ? WHERE id = ?", (payload.motif, id))
+
+        # Send system notification message to the creator chorale
+        if cp["cree_par"]:
+            crud.creer_message(
+                chorale_id=cp["cree_par"],
+                expediteur_type="super",
+                texte=f"Votre demande d'ajout de la catégorie '{cp['nom']}' a été rejetée par l'administrateur. Motif : {payload.motif}"
+            )
+    return {"ok": True}
+
+
+# --- Partitions (copies notées) --------------------------------------------
+# Voir ml/partitions.py : le score sous le seuil ou une erreur d'analyse
+# orientent TOUJOURS ici plutôt que vers un rejet automatique.
+
+@router.get("/partitions")
+def list_partitions_en_attente(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.lister_partitions_en_attente()
+
+
+@router.get("/partitions/{id}/fichier")
+def apercu_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Aperçu d'une soumission -- y compris NON validée -- réservé au
+    super-admin, pour décider en connaissance de cause (voir aussi
+    GET /chants/{id}/partition/fichier, public, qui ne sert que la partition
+    déjà publiée)."""
+    from fastapi.responses import Response
+    resultat = crud.get_partition_bytes(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    contenu, content_type, _chorale_id = resultat
+    return Response(content=contenu, media_type=content_type)
+
+
+@router.post("/partitions/{id}/valider")
+def valider_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    resultat = crud.valider_partition(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    return resultat
+
+
+@router.post("/partitions/{id}/revoquer")
+def revoquer_partition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    """Retire une partition publiée, OU rejette une soumission en attente --
+    toujours une décision humaine, jamais automatique (voir aussi
+    valider_partition qui résilie l'ancienne active au passage)."""
+    resultat = crud.revoquer_partition(id)
+    if not resultat:
+        raise HTTPException(status_code=404, detail="Partition introuvable")
+    return resultat
+
+
+# --- Chants privés en attente de publication --------------------------------
+# Un chant créé par une chorale reste visible seulement d'elle (voir
+# routers/chants.py::create_chant) tant qu'un administrateur ne l'a pas
+# publié ici -- sauf si le réglage global chants_publication_auto est actif.
+
+@router.get("/chants-prives")
+def list_chants_prives(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.list_chants_prives()
+
+
+@router.post("/chants-prives/{id}/publier")
+def publier_chant_prive(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    chant = crud.publier_chant(id)
+    if not chant:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return chant
+
+
+# --- Dépliants en attente de publication ------------------------------------
+# Même logique que les chants privés ci-dessus : un dépliant composé par une
+# chorale reste visible seulement d'elle (voir routers/feuillets.py::create_
+# feuillet) jusqu'à ce qu'elle en demande la publication (POST /feuillets/
+# {id}/demander-publication) ET qu'un administrateur la valide ici.
+
+@router.get("/feuillets-a-valider")
+def list_feuillets_a_valider(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.list_feuillets_a_valider()
+
+
+@router.post("/feuillets-a-valider/{id}/valider")
+def valider_publication_feuillet_route(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    feuillet = crud.valider_publication_feuillet(id)
+    if not feuillet:
+        raise HTTPException(status_code=404, detail="Dépliant introuvable")
+    return feuillet
+
+
+# --- Médias audio/vidéo en attente de modération ----------------------------
+# Un média ajouté par une chorale (voir routers/chants.py::ajouter_media_chant)
+# reste invisible des autres chorales jusqu'à validation ici -- SANS jamais
+# affecter la visibilité du chant qui le porte (déjà validé ou non).
+
+@router.get("/medias-a-valider")
+def list_medias_en_attente(_identite: auth.Identite = Depends(require_superadmin)):
+    return crud.lister_medias_en_attente()
+
+
+@router.post("/medias-a-valider/{id}/valider")
+def valider_media(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    media = crud.valider_media_chant(id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Média introuvable")
+    return media
+
+
+@router.post("/medias-a-valider/{id}/rejeter")
+def rejeter_media(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    media = crud.revoquer_media_chant(id)
+    if not media:
+        raise HTTPException(status_code=404, detail="Média introuvable")
+    return media

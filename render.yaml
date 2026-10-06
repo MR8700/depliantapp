@@ -1,0 +1,33 @@
+# Base de données persistante (survit aux redéploiements, contrairement au
+# disque du service web ci-dessous) : dès que DATABASE_URL est définie, le
+# backend bascule automatiquement de SQLite vers cette base (voir app/db.py).
+databases:
+  - name: depliantapp-db
+    plan: free
+    databaseName: depliantapp
+    user: depliantapp
+
+services:
+  - type: web
+    name: depliantapp
+    runtime: python
+    plan: free
+    buildCommand: pip install -r backend/requirements.txt
+    startCommand: cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+      - key: DATABASE_URL
+        fromDatabase:
+          name: depliantapp-db
+          property: connectionString
+      # Générée une seule fois par Render et conservée ensuite : signe les
+      # cookies de session ET rend le mot de passe par défaut stable tout le
+      # mois (voir app/auth.py) au lieu de changer à chaque redémarrage.
+      - key: DEPLIANTAPP_SECRET_KEY
+        generateValue: true
+    # NB : ce fichier ne s'applique automatiquement que si le service a été
+    # créé via "New Blueprint" à partir de render.yaml. S'il a été créé
+    # directement dans le tableau de bord Render, ajoute DATABASE_URL et
+    # DEPLIANTAPP_SECRET_KEY manuellement dans Environment -- voir la base
+    # PostgreSQL créée pour son "Internal Database URL".
