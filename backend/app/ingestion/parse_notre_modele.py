@@ -11,9 +11,14 @@ l'ordre D1->D2->page2(C1-C4)->G1->G2, sans jamais réordonner ni fusionner deux
 unités. Reconstruire cette file — en extrayant le texte zone par zone, dans ce
 même ordre — annule donc exactement la distribution, quelle que soit la façon
 dont le contenu a été coupé entre les zones."""
-from typing import Optional
+from __future__ import annotations
 
-import fitz
+from typing import Optional, Any
+
+try:
+    import fitz
+except (ImportError, Exception):
+    fitz = None
 
 from .common import REF_RE, VERSE_RE, RawChant, finalize
 from ..render.labels import LABELS_MOMENTS
@@ -207,6 +212,8 @@ def segment_notre_modele(path) -> Optional[list[tuple[str, RawChant]]]:
     """Retourne la liste (catégorie, chant brut) si `path` a été généré par
     notre propre moteur, sinon None (pour laisser `parse_and_segment`
     retomber sur les heuristiques génériques)."""
+    if fitz is None:
+        return None
     doc = fitz.open(path)
     try:
         if not _page_taille_ok(doc):

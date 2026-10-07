@@ -7,11 +7,16 @@ critère isolé ne décide. Sous le seuil, ou si l'analyse échoue pour
 n'importe quelle raison (PDF corrompu, page vide, etc.), la partition est
 orientée vers la validation humaine (statut 'a_verifier'), jamais rejetée
 automatiquement -- ce module ne lève jamais d'exception vers l'appelant."""
+from __future__ import annotations
+
 import unicodedata
 from difflib import SequenceMatcher
-from typing import Optional
+from typing import Optional, Any
 
-import fitz
+try:
+    import fitz
+except (ImportError, Exception):
+    fitz = None
 
 SEUIL_AUTO_VALIDATION = 50.0
 # Nombre minimal de signaux (sur 6) devant réellement s'être prononcés (donc

@@ -233,11 +233,14 @@ app.include_router(aelf.router)
 
 @app.on_event("startup")
 def on_startup():
-    init_db()
+    try:
+        init_db()
+    except Exception as e:
+        print("Startup init_db error:", e)
     try:
         classifier.train_from_db()
-    except Exception:
-        pass  # base vide au premier lancement : rien à entraîner encore
+    except Exception as e:
+        print("Startup classifier error:", e)
 
 
 @app.get("/health")
@@ -278,4 +281,12 @@ def ajouter_categorie(payload: schemas.CategoriePersonnalisee, identite: auth.Id
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
-app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+if STATIC_DIR.exists() and STATIC_DIR.is_dir():
+    app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+else:
+    try:
+        STATIC_DIR.mkdir(parents=True, exist_ok=True)
+        app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
+    except Exception as e:
+        print("Warning: Impossible de monter STATIC_DIR:", e)
+

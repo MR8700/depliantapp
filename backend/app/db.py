@@ -30,8 +30,12 @@ DB_PATH = DATA_DIR / "chants.db"
 SEED_DB_PATH = Path(__file__).resolve().parent.parent / "seed_data" / "chants.db"
 
 if BACKEND == "postgres":
-    import psycopg2
-    import psycopg2.extras
+    try:
+        import psycopg2
+        import psycopg2.extras
+    except (ImportError, Exception) as e:
+        print("Warning: psycopg2 non disponible, repli sur sqlite:", e)
+        BACKEND = "sqlite"
 
 _PLACEHOLDER_RE = re.compile(r"\?")
 

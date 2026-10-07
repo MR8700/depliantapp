@@ -1,9 +1,14 @@
+from __future__ import annotations
+
 import re
 from collections import Counter
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Any
 
-import fitz
+try:
+    import fitz
+except (ImportError, Exception):
+    fitz = None
 
 from .common import (
     RawChant, VERSE_RE, REF_RE, DIALOGUE_RE, BULLET_RE,
@@ -152,6 +157,8 @@ def extract_paragraphs_pdf(path: Path) -> list[str]:
     figé à 4) puis page par page — reproduit ainsi l'ordre 'colonne 1 de haut
     en bas, puis colonne 2, puis page suivante colonne 1...' des livrets
     pliés, quel que soit leur nombre réel de colonnes (1, 2 ou 4)."""
+    if fitz is None:
+        raise RuntimeError("PyMuPDF (fitz) n'est pas disponible dans cet environnement.")
     doc = fitz.open(path)
     try:
         pages = [(page.rect.width, page.rect.height, _lignes_page(page)) for page in doc]
@@ -192,6 +199,8 @@ def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str,
     (titre = grande taille/gras, refrain = gras, couplet = texte normal numéroté ou non),
     avec prise en compte des sections liturgiques (Entrée, Kyrie, Gloria, etc.).
     """
+    if fitz is None:
+        return []
     doc = fitz.open(path)
     try:
         # 1. Analyse préalable de la distribution des tailles de police pour calibrer le seuil
@@ -320,6 +329,8 @@ def detect_pdf_strategy(path: Path) -> str:
     du document PDF pour détecter le meilleur parseur à appliquer.
     Retourne: 'notre_modele' | 'font_based' | 'generic'
     """
+    if fitz is None:
+        return "generic"
     doc = fitz.open(path)
     try:
         n = doc.page_count
@@ -397,6 +408,8 @@ def detecter_marqueur_reimport(path) -> list[int]:
     été supprimé de la base, l'id ne matchera simplement plus rien lors de la
     résolution -- pas d'erreur, juste un repli silencieux sur le
     rapprochement flou habituel."""
+    if fitz is None:
+        return []
     try:
         doc = fitz.open(path)
     except Exception:
