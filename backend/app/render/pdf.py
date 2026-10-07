@@ -20,8 +20,8 @@ from .measure import construire_unites
 from .model import build_sections
 from .typography import ECHELLES_CORPS, TAILLE_TEXTE, TAILLE_TEXTE_PLAFOND, construire_styles
 from .widgets import construire_flowables_priere, dessiner_banniere, dessiner_entete
-from .zones import (EPAISSEUR_BORDURE, HAUTEUR_UTILE, LARGEUR_COLONNE, LARGEUR_UTILE, PAGE_SIZE,
-                     X0, Y0, construire_grille)
+from .zones import (EPAISSEUR_BORDURE, HAUTEUR_ENTETE, HAUTEUR_UTILE, LARGEUR_COLONNE, LARGEUR_DEMI,
+                     LARGEUR_UTILE, PAGE_SIZE, X0, X_DROITE, X_GAUCHE, Y0, construire_grille)
 
 try:
     from reportlab.pdfgen.canvas import Canvas
@@ -32,11 +32,12 @@ __all__ = ["DepassementImpossible", "render_feuillet_pdf_auto"]
 
 
 def _dessiner_bordure(c) -> None:
-    """Bordure noire 0.4pt sur toute la zone imprimable — sur chaque page."""
+    """Bordure noire 0.4pt autour de chaque volet du dépliant (gauche et droite)."""
     c.saveState()
     c.setStrokeColor(colors.black)
     c.setLineWidth(EPAISSEUR_BORDURE)
-    c.rect(X0, Y0, LARGEUR_UTILE, HAUTEUR_UTILE, fill=0, stroke=1)
+    c.rect(X_GAUCHE, Y0, LARGEUR_DEMI, HAUTEUR_UTILE, fill=0, stroke=1)
+    c.rect(X_DROITE, Y0, LARGEUR_DEMI, HAUTEUR_UTILE, fill=0, stroke=1)
     c.restoreState()
 
 
@@ -105,9 +106,29 @@ def _tester_taille(feuillet: schemas.Feuillet, config: dict, sections: list, gri
     rendu Canvas complet à chaque tentative — seule la taille retenue est
     effectivement dessinée, dans _dessiner_pdf."""
     styles = construire_styles(taille_texte)
-    unites = construire_unites(sections, styles, LARGEUR_COLONNE)
-    engine = LayoutEngine(grille.flow_order)
-    assignation = engine.distribuer(unites, sections)
+
+    # Si un chant de Sortie est présent dans un feuillet 2 pages avec G1 disponible,
+    # il est placé sur le dos du dépliant (colonne G1) comme dans la liturgie réelle.
+    sortie_sections = [s for s in sections if s.moment.upper() in ("SORTIE", "ENVOI")]
+    a_sortie = bool(sortie_sections) and not getattr(feuillet, "one_page_mode", False) and "G1" in grille.toutes
+
+    if a_sortie:
+        sections_liturgie = [s for s in sections if s.moment.upper() not in ("SORTIE", "ENVOI")]
+        unites_liturgie = construire_unites(sections_liturgie, styles, LARGEUR_COLONNE)
+        unites_sortie = construire_unites(sortie_sections, styles, LARGEUR_COLONNE)
+
+        zones_ordinaires = [z for z in grille.flow_order if z.nom != "G1"]
+        engine_ord = LayoutEngine(zones_ordinaires)
+        assignation = engine_ord.distribuer(unites_liturgie, sections_liturgie)
+
+        engine_sortie = LayoutEngine([grille.toutes["G1"]])
+        assignation_g1 = engine_sortie.distribuer(unites_sortie, sortie_sections)
+        assignation["G1"] = assignation_g1.get("G1", [])
+    else:
+        unites = construire_unites(sections, styles, LARGEUR_COLONNE)
+        engine = LayoutEngine(grille.flow_order)
+        assignation = engine.distribuer(unites, sections)
+
     if feuillet.priere_active:
         cle_priere = "C2" if getattr(feuillet, "one_page_mode", False) else "G2"
         assignation[grille.toutes[cle_priere].nom] = construire_flowables_priere(feuillet, styles, config)

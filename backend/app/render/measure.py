@@ -2,6 +2,7 @@
 couplet) et mesure leur hauteur réelle via ReportLab (`Flowable.wrap()`).
 Chaque unité est indivisible : le LayoutEngine ne coupe jamais un couplet,
 il déplace l'unité entière vers la zone suivante si elle ne rentre pas."""
+import re
 from dataclasses import dataclass
 from xml.sax.saxutils import escape
 
@@ -38,20 +39,48 @@ def construire_unites_section(section: Section, styles: dict, largeur: float) ->
         marges = (style.spaceBefore or 0) + (style.spaceAfter or 0)
         unites.append(Unite(flowable=flowable, hauteur=h + marges, section_ordre=section.ordre, nature=nature))
 
-    titre_texte = f"<u>{escape(section.label).upper()}</u>"
-    ajouter(Paragraph(titre_texte, styles["titre_section"]), "titre")
-
     song = section.song
-    if song.titre:
-        titre_html = escape(song.titre)
-        if song.auteur_compositeur:
-            # Sous-ligne auteur/compositeur intégrée au MÊME Paragraph (pas
-            # une unité séparée) : une unité est indivisible (voir docstring
-            # de fichier) -- il ne faut jamais que le titre et son auteur se
-            # retrouvent séparés par un saut de zone/colonne.
-            taille_auteur = max(styles["titre_chant"].fontSize - 1.5, 6)
-            titre_html += f'<br/><font face="{POLICE_ITALIQUE}" size="{taille_auteur}">{escape(song.auteur_compositeur)}</font>'
-        ajouter(Paragraph(titre_html, styles["titre_chant"]), "titre")
+    moment_upper = escape(section.label).upper() if section.label else ""
+
+    # Titre ou précision du chant
+    titre_chant = (song.titre or "").strip()
+    refrain_chant = (song.refrain or "").strip()
+
+    # Déterminer si le titre du chant est redondant avec le refrain
+    est_redondant_refrain = False
+    if titre_chant and refrain_chant:
+        t_clean = re.sub(r"^(r[ée]f|ref)\s*:\s*", "", titre_chant, flags=re.IGNORECASE).strip().lower()
+        r_clean = re.sub(r"^(r[ée]f|ref)\s*:\s*", "", refrain_chant, flags=re.IGNORECASE).strip().lower()
+        if len(t_clean) >= 6 and (t_clean[:18] in r_clean or r_clean[:18] in t_clean):
+            est_redondant_refrain = True
+
+    est_meme_que_moment = titre_chant.lower() == section.label.lower() if titre_chant else False
+
+    complement = ""
+    if titre_chant and not est_redondant_refrain and not est_meme_que_moment:
+        complement = titre_chant
+
+    if song.auteur_compositeur:
+        if complement and song.auteur_compositeur not in complement:
+            complement += f" ({song.auteur_compositeur})"
+        elif not complement:
+            complement = song.auteur_compositeur
+
+    est_deuxieme_chant = " 2" in moment_upper or "_2" in moment_upper
+
+    if est_deuxieme_chant:
+        en_tete_texte = f"<b>{escape(complement or titre_chant)}</b>" if (complement or titre_chant) else ""
+    elif moment_upper and complement:
+        en_tete_texte = f"<u>{moment_upper}</u> : {escape(complement)}"
+    elif moment_upper:
+        en_tete_texte = f"<u>{moment_upper}</u> :"
+    elif complement:
+        en_tete_texte = f"<b>{escape(complement)}</b>"
+    else:
+        en_tete_texte = ""
+
+    if en_tete_texte:
+        ajouter(Paragraph(en_tete_texte, styles["titre_section"]), "titre")
 
     if song.refrain:
         texte = mettre_en_gras_refrain(escape(song.refrain))

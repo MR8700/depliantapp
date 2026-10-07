@@ -15,9 +15,9 @@ MARGE = 5 * mm
 ENTRE_COLONNES = 6 * mm
 EPAISSEUR_BORDURE = 0.4
 
-HAUTEUR_ENTETE = 46 * mm
+HAUTEUR_ENTETE = 53 * mm
 """Bloc fixe en haut du demi-page droite de la page 1 (logos, titre,
-chorale, date, lectures) — jamais déplacé."""
+chorale, date, lectures) — calqué exactement sur la hauteur de 150pt du feuillet de référence."""
 
 HAUTEUR_BANNIERE = 45 * mm
 """Bande fixe en bas du demi-page gauche de la page 1 (annonce, bannière

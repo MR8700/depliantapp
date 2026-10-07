@@ -38,7 +38,9 @@ def _resolve_song(moment: schemas.MomentContenu) -> Song:
 
     if chant:
         couplets = chant.couplets
-        if moment.couplet_limit is not None:
+        if getattr(moment, "couplets_selectionnes", None) is not None and len(moment.couplets_selectionnes) > 0:
+            couplets = [chant.couplets[i] for i in moment.couplets_selectionnes if i < len(chant.couplets)]
+        elif moment.couplet_limit is not None:
             couplets = couplets[: moment.couplet_limit]
         return Song(
             titre=chant.titre, refrain=chant.refrain, couplets=couplets,

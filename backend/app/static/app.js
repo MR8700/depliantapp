@@ -825,11 +825,18 @@ function chantCardHtml(chant) {
     actionButtonsHtml = `
       <div class="card-actions-wrapper" onclick="event.stopPropagation();">
         <button type="button" class="btn-card-action btn-action-voir" title="Voir les détails">👁</button>
+        <button type="button" class="btn-card-action btn-action-modifier" title="Adapter pour ma chorale">✏</button>
         <button type="button" class="btn-card-action btn-action-favori" title="${chant.favori ? 'Retirer des favoris' : 'Ajouter aux favoris'}">${favIcon}</button>
         ${addBtnHtml}
       </div>
     `;
   }
+
+  const versionBadgeHtml = chant.version_nom
+    ? `<span class="card-ref-badge" style="background:#e0f2fe; color:#0369a1; border:1px solid #bae6fd;">${escapeHtml(chant.version_nom)}</span>`
+    : (chant.nb_versions && chant.nb_versions > 1
+        ? `<span class="card-ref-badge" style="background:#f0fdf4; color:#166534; border:1px solid #bbf7d0;">${chant.nb_versions} versions</span>`
+        : "");
 
   return `
     <li class="chant-card" data-id="${chant.id}">
@@ -839,6 +846,7 @@ function chantCardHtml(chant) {
           <span class="chant-categorie-pill ${catClass}">${categorieLabel(chant.categorie)}</span>
           <h3 class="card-title">${escapeHtml(chant.titre || "(sans titre)")}</h3>
           ${chant.code_reference ? `<span class="card-ref-badge">${escapeHtml(chant.code_reference)}</span>` : ""}
+          ${versionBadgeHtml}
         </div>
         <p class="card-refrain-apercu">${escapeHtml(refrainApercu)}${refrainApercu.length >= 80 ? "..." : ""}</p>
         <div class="card-meta-line">
@@ -2831,6 +2839,42 @@ function ouvrirDetailChant(chant) {
     ? `Occasions : <strong>${escapeHtml(chant.occasions.join(", "))}</strong>`
     : "";
 
+  // Gestion des versions du chant
+  const versionContainer = document.getElementById("cd-version-container");
+  const versionSelect = document.getElementById("cd-version-select");
+  if (versionContainer && versionSelect) {
+    versionContainer.classList.add("hidden");
+    versionSelect.innerHTML = "";
+    api(`/chants/${chant.id}/versions`).then((versions) => {
+      if (versions && versions.length > 1) {
+        versionContainer.classList.remove("hidden");
+        versionSelect.innerHTML = versions.map((v) => {
+          let label = v.version_nom;
+          if (!label) {
+            if (!v.chant_parent_id) label = "Version originale";
+            else label = `Version #${v.id}`;
+          }
+          if (v.cree_par) {
+            label += (IDENTITE && v.cree_par === IDENTITE.compte_id) ? " (Ma chorale)" : " (Chorale)";
+          }
+          return `<option value="${v.id}" ${v.id === chant.id ? "selected" : ""}>${escapeHtml(label)}</option>`;
+        }).join("");
+
+        versionSelect.onchange = async () => {
+          const selectedId = Number(versionSelect.value);
+          if (selectedId && selectedId !== chant.id) {
+            try {
+              const nouvelleVersion = await api(`/chants/${selectedId}`);
+              ouvrirDetailChant(nouvelleVersion);
+            } catch (err) {
+              console.error("Erreur chargement version:", err);
+            }
+          }
+        };
+      }
+    }).catch(() => {});
+  }
+
   const refrainContainer = document.getElementById("cd-refrain-container");
   if (chant.refrain) {
     refrainContainer.classList.remove("hidden");
@@ -2993,6 +3037,17 @@ function ouvrirDetailChant(chant) {
     btnImprimer.innerHTML = "🖨 Imprimer";
     btnImprimer.addEventListener("click", () => imprimerChant(chant));
     footerActions.appendChild(btnImprimer);
+
+    const btnModifier = document.createElement("button");
+    btnModifier.type = "button";
+    btnModifier.className = "btn-primary";
+    btnModifier.innerHTML = "✏ Adapter / Modifier";
+    btnModifier.title = "Modifier les paroles ou le titre pour votre chorale";
+    btnModifier.addEventListener("click", () => {
+      fermerModale("chant-detail-modal");
+      ouvrirEditeurChant(chant.id);
+    });
+    footerActions.appendChild(btnModifier);
   }
 
   if (pickerTargetMoment || pickerTargetInputId) {
@@ -4162,7 +4217,10 @@ function editeurRowHtml(chant) {
     <tr data-id="${chant.id}">
       <td><input type="checkbox" class="chant-checkbox" data-id="${chant.id}" ${selectionEditeur.has(chant.id) ? "checked" : ""}></td>
       <td>
-        <div style="font-weight: 600; color: #1F4A7C; cursor: pointer;" class="chant-click-target">${titleEsc}</div>
+        <div style="font-weight: 600; color: #1F4A7C; cursor: pointer; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;" class="chant-click-target">
+          ${titleEsc}
+          ${chant.version_nom ? `<span style="font-size: 0.7rem; background: #e0f2fe; color: #0369a1; padding: 1px 6px; border-radius: 4px; font-weight: 600;">${escapeHtml(chant.version_nom)}</span>` : (chant.nb_versions && chant.nb_versions > 1 ? `<span style="font-size: 0.7rem; background: #f0fdf4; color: #166534; padding: 1px 6px; border-radius: 4px; font-weight: 600;">${chant.nb_versions} versions</span>` : "")}
+        </div>
         <div style="font-size: 0.75rem; color: #666; font-style: italic;">${escapeHtml(refrainApercu)}...</div>
       </td>
       <td><span class="chant-categorie-pill" style="font-size:0.75rem; background:#f1f5f9; padding:2px 6px; border-radius:4px;">${categorieLabel(chant.categorie)}</span></td>
@@ -4876,6 +4934,7 @@ function afficherDetailsChantModification() {
     } else {
       await avecChargement(e.currentTarget, async () => {
         let chantModifie;
+        const ancienId = currentDetailIndexOrId;
         if (currentDetailIndexOrId) {
           chantModifie = await api(`/chants/${currentDetailIndexOrId}`, {
             method: "PATCH",
@@ -4888,13 +4947,13 @@ function afficherDetailsChantModification() {
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(modifications),
           });
-          currentDetailIndexOrId = chantModifie.id;
         }
+        currentDetailIndexOrId = chantModifie.id;
         currentDetailChant = chantModifie;
 
         // Synchronize local caches
         if (window.editeurChantsCache) {
-          const idx = window.editeurChantsCache.findIndex(c => c.id === chantModifie.id);
+          const idx = window.editeurChantsCache.findIndex(c => c.id === chantModifie.id || c.id === ancienId);
           if (idx !== -1) {
             window.editeurChantsCache[idx] = chantModifie;
           } else {
@@ -4902,14 +4961,19 @@ function afficherDetailsChantModification() {
           }
         }
         if (window.listChantsCache) {
-          const idx = window.listChantsCache.findIndex(c => c.id === chantModifie.id);
-          if (idx !== -1) window.listChantsCache[idx] = chantModifie;
+          const idx = window.listChantsCache.findIndex(c => c.id === chantModifie.id || c.id === ancienId);
+          if (idx !== -1) {
+            window.listChantsCache[idx] = chantModifie;
+          } else {
+            window.listChantsCache.push(chantModifie);
+          }
         }
 
         // Dynamically propagate update to active booklet composer rows
         Object.keys(momentsState).forEach(momentKey => {
           const state = momentsState[momentKey];
-          if (state && state.type === "chant" && state.chant_id === chantModifie.id) {
+          if (state && state.type === "chant" && (state.chant_id === chantModifie.id || state.chant_id === ancienId)) {
+            state.chant_id = chantModifie.id;
             state.chant_titre = chantModifie.titre;
             state.chant_categorie = chantModifie.categorie;
             state.chant_reference = chantModifie.code_reference;
@@ -6903,13 +6967,14 @@ async function actualiserAdmin() {
   if (superView) superView.classList.remove("hidden");
   if (choraleView) choraleView.classList.add("hidden");
 
-  // En parallèle pour le super-admin : 5 sections indépendantes
+  // En parallèle pour le super-admin : 6 sections indépendantes
   const resultats = await Promise.allSettled([
     actualiserAdminChorales(),
     actualiserAdminDemandes(),
     actualiserAdminMasques(),
     actualiserAdminPartitions(),
     actualiserAdminCategories(),
+    actualiserAdminPropositionsChants(),
   ]);
   resultats.forEach((r) => { if (r.status === "rejected") console.error("Erreur section admin:", r.reason); });
 }
@@ -7005,12 +7070,26 @@ async function actualiserAdminChorale() {
         date: p.created_at,
       });
     });
+    (mesDemandes.propositions || []).forEach(pr => {
+      let statutText = "⏳ En attente de modération admin";
+      if (pr.statut === "remplace") statutText = "✓ Remplacé pour tout le monde";
+      else if (pr.statut === "versionne") statutText = "✓ Nouvelle version officielle";
+      else if (pr.statut === "annule") statutText = "✓ Conservé pour votre chorale";
+
+      listTotal.push({
+        titre: `Modification du chant : ${pr.titre_propose}${pr.titre_original && pr.titre_original !== pr.titre_propose ? ' (original : ' + pr.titre_original + ')' : ''}`,
+        motif: pr.motif_admin || (pr.statut === "en_attente" ? "Modifications actives sur vos dépliants, en attente d'arbitrage admin" : null),
+        statut: pr.statut === "remplace" || pr.statut === "versionne" || pr.statut === "annule" ? "validee" : pr.statut,
+        statutLabelCustom: statutText,
+        date: pr.created_at,
+      });
+    });
 
     if (!listTotal.length) {
       demandesEl.innerHTML = `<p class="hint" style="margin: 0; padding: 8px 0;">Aucune demande en cours auprès de l'administrateur. Toutes vos requêtes sont traitées.</p>`;
     } else {
       demandesEl.innerHTML = listTotal.map(it => {
-        const statutLabel = it.statut === "validee" ? "✓ Validée" : it.statut === "rejetee" || it.statut === "annulee" ? "✕ Non retenue" : "⏳ En cours d'examen";
+        const statutLabel = it.statutLabelCustom || (it.statut === "validee" ? "✓ Validée" : it.statut === "rejetee" || it.statut === "annulee" ? "✕ Non retenue" : "⏳ En cours d'examen");
         const statutStyle = it.statut === "validee" ? "background:#dcfce7; color:#15803d;" : it.statut === "rejetee" || it.statut === "annulee" ? "background:#fee2e2; color:#b91c1c;" : "background:#fef3c7; color:#b45309;";
         return `
           <div style="display: flex; justify-content: space-between; align-items: center; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 10px; padding: 12px 16px; flex-wrap: wrap; gap: 8px;">
@@ -7099,6 +7178,103 @@ async function actualiserAdminCategories() {
       await actualiserAdminCategories();
     });
   });
+}
+
+function adminPropositionCardHtml(p) {
+  const parolesCourt = p.paroles_proposees ? p.paroles_proposees.slice(0, 160) : "";
+  return `
+    <li class="demande-card" data-id="${p.id}" style="background: #ffffff; border: 1px solid #cbd5e1; border-radius: 10px; padding: 14px 16px;">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; flex-wrap: wrap;">
+        <div>
+          <div class="chant-titre" style="font-weight: 700; font-size: 1rem; color: #1e3a8a;">
+            ${escapeHtml(p.titre_propose)}
+            ${p.titre_propose !== p.titre_original ? `<span style="font-size: 0.8rem; color: #64748b; font-weight: normal;"> (Original : ${escapeHtml(p.titre_original)})</span>` : ""}
+          </div>
+          <div class="chant-meta" style="font-size: 0.82rem; color: #475569; margin-top: 2px;">
+            Modifié par : <strong>${escapeHtml(p.chorale_nom || "Chorale")}</strong>
+            ${p.categorie_proposee ? ` • Catégorie : ${escapeHtml(categorieLabel(p.categorie_proposee))}` : ""}
+          </div>
+        </div>
+        <span style="font-size: 0.75rem; color: #64748b; background: #f1f5f9; padding: 3px 8px; border-radius: 12px;">
+          ${p.created_at ? formaterDateAffichage(p.created_at.slice(0, 10)) : ""}
+        </span>
+      </div>
+
+      ${parolesCourt ? `
+        <div style="margin-top: 8px; font-size: 0.82rem; color: #334155; background: #f8fafc; border-left: 3px solid #3b82f6; padding: 6px 10px; border-radius: 4px; font-style: italic; white-space: pre-line;">
+          ${escapeHtml(parolesCourt)}${p.paroles_proposees && p.paroles_proposees.length > 160 ? "..." : ""}
+        </div>
+      ` : ""}
+
+      <div class="toolbar" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+        <button type="button" class="btn-prop-remplacer" style="background: #16a34a; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+          ✓ Remplacer pour tous
+        </button>
+        <button type="button" class="btn-prop-versionner" style="background: #2563eb; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+          ★ Version officielle
+        </button>
+        <button type="button" class="btn-prop-annuler" style="background: #64748b; color: white; border: none; border-radius: 6px; padding: 6px 12px; font-size: 0.8rem; font-weight: 600; cursor: pointer;">
+          ✕ Laisser à la chorale
+        </button>
+      </div>
+    </li>
+  `;
+}
+
+async function actualiserAdminPropositionsChants() {
+  const list = document.getElementById("admin-propositions-list");
+  if (!list) return;
+
+  try {
+    const propositions = await api("/moderation/propositions-chants?statut=en_attente");
+    if (!propositions || !propositions.length) {
+      list.innerHTML = `<p class="hint">Aucune proposition de modification de chant en attente.</p>`;
+      return;
+    }
+
+    list.innerHTML = propositions.map(adminPropositionCardHtml).join("");
+
+    list.querySelectorAll(".demande-card").forEach((el) => {
+      const id = Number(el.dataset.id);
+      const prop = propositions.find((p) => p.id === id);
+
+      el.querySelector(".btn-prop-remplacer").addEventListener("click", async (e) => {
+        if (!confirm(`Remplacer définitivement le chant original "${prop ? prop.titre_original : ''}" par cette proposition pour TOUTES les chorales ?`)) return;
+        await avecChargement(e.currentTarget, () => api(`/moderation/propositions-chants/${id}/remplacer`, { method: "POST" }));
+        await actualiserAdminPropositionsChants();
+        await actualiserListeBibliotheque();
+        await actualiserEditeur();
+      });
+
+      el.querySelector(".btn-prop-versionner").addEventListener("click", async (e) => {
+        const nomParDefaut = prop ? (prop.chorale_nom ? `Version ${prop.chorale_nom}` : "Nouvelle version") : "Nouvelle version";
+        const nom = prompt("Nom de cette nouvelle version publique officielle :", nomParDefaut);
+        if (nom === null) return;
+        await avecChargement(e.currentTarget, () => api(`/moderation/propositions-chants/${id}/versionner`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ version_nom: nom.trim() || nomParDefaut })
+        }));
+        await actualiserAdminPropositionsChants();
+        await actualiserListeBibliotheque();
+        await actualiserEditeur();
+      });
+
+      el.querySelector(".btn-prop-annuler").addEventListener("click", async (e) => {
+        const motif = prompt("Conserver cette version uniquement pour cette chorale sans l'appliquer aux autres ? Motif éventuel (facultatif) :");
+        if (motif === null) return;
+        await avecChargement(e.currentTarget, () => api(`/moderation/propositions-chants/${id}/annuler`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ motif: motif.trim() || null })
+        }));
+        await actualiserAdminPropositionsChants();
+      });
+    });
+  } catch (err) {
+    console.error("Erreur lors de l'actualisation des propositions:", err);
+    list.innerHTML = `<p class="hint" style="color: #ef4444;">Erreur lors du chargement des propositions : ${escapeHtml(err.message)}</p>`;
+  }
 }
 
 // --- Statistiques ---

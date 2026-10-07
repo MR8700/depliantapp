@@ -17,7 +17,7 @@ from .. import schemas
 from .typography import INTERLIGNE_TEXTE, POLICE_GRAS, TAILLE_TEXTE
 from .zones import HAUTEUR_BANNIERE, HAUTEUR_ENTETE, LARGEUR_DEMI, X_DROITE, X_GAUCHE, Y0, PAGE_H, HAUTEUR_UTILE
 
-HAUTEUR_LOGO = 26 * 2.8346  # 26mm en pt, cohérent avec l'ancien moteur
+HAUTEUR_LOGO = 37 * 2.8346  # ~105pt, calqué sur le feuillet de référence
 HAUTEUR_BANNIERE_IMG = 20 * 2.8346
 
 _JOURS_FR = ["lundi", "mardi", "mercredi", "jeudi", "vendredi", "samedi", "dimanche"]
@@ -72,72 +72,100 @@ def dessiner_entete(canvas, config: dict, images: dict, feuillet: schemas.Feuill
     y_bas = y_haut - HAUTEUR_ENTETE
     centre_x = (x0 + x1) / 2
 
+    # 1. Bannière haut (si configurée)
+    banniere_h = images.get("banniere_haut")
+    hauteur_banniere_h = 0.0
+    if banniere_h:
+        try:
+            hauteur_banniere_h = 29.0
+            canvas.drawImage(
+                banniere_h,
+                x0 + 4,
+                y_haut - hauteur_banniere_h,
+                width=(x1 - x0) - 8,
+                height=hauteur_banniere_h,
+                preserveAspectRatio=False,
+                mask="auto",
+            )
+        except Exception as exc:
+            print(f"[avertissement] banniere_haut non dessinée : {exc}", file=sys.stderr)
+
+    y_dispo_haut = y_haut - hauteur_banniere_h - 2
+    hauteur_dispo = y_dispo_haut - y_bas
+    taille_logo = min(HAUTEUR_LOGO, hauteur_dispo)
+
+    # 2. Logos gauche et droit
     logo_g = images.get("logo_gauche")
     logo_d = images.get("logo_droit")
     if logo_g:
         try:
-            canvas.drawImage(logo_g, x0, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
-                              height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
+            canvas.drawImage(
+                logo_g,
+                x0 + 4,
+                y_bas + (hauteur_dispo - taille_logo) / 2,
+                height=taille_logo,
+                width=taille_logo,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
         except Exception as exc:
             print(f"[avertissement] logo_gauche non dessiné : {exc}", file=sys.stderr)
     if logo_d:
         try:
-            canvas.drawImage(logo_d, x1 - HAUTEUR_LOGO, y_bas + (HAUTEUR_ENTETE - HAUTEUR_LOGO) / 2,
-                              height=HAUTEUR_LOGO, width=HAUTEUR_LOGO, preserveAspectRatio=True, mask="auto")
+            canvas.drawImage(
+                logo_d,
+                x1 - taille_logo - 4,
+                y_bas + (hauteur_dispo - taille_logo) / 2,
+                height=taille_logo,
+                width=taille_logo,
+                preserveAspectRatio=True,
+                mask="auto",
+            )
         except Exception as exc:
             print(f"[avertissement] logo_droit non dessiné : {exc}", file=sys.stderr)
 
-    paroisse = config.get("paroisse", "")
-    if paroisse:
-        canvas.setFont(POLICE_GRAS, 11)
-        largeur_texte = canvas.stringWidth(paroisse, POLICE_GRAS, 11)
-        ty = y_haut - 12
-        canvas.setFillColor(colors.HexColor("#d8d8d8"))
-        canvas.drawCentredString(centre_x + 0.7, ty - 0.7, paroisse)
-        canvas.setFillColor(colors.HexColor("#4a4a4a"))
-        canvas.drawCentredString(centre_x, ty, paroisse)
-    canvas.setFillColor(colors.black)
-
-    largeur_bloc = (x1 - x0) - 2 * HAUTEUR_LOGO - 8
-    cadre_y_haut = y_haut - 20
-    cadre_y_bas = y_bas + 4
-    canvas.setStrokeColor(colors.HexColor("#b23b3b"))
-    canvas.setLineWidth(1.2)
-    canvas.rect(centre_x - largeur_bloc / 2, cadre_y_bas, largeur_bloc, cadre_y_haut - cadre_y_bas)
-
+    # 3. Textes d'en-tête au centre
     def _souligner(texte: str, taille: float, y: float) -> None:
-        largeur = canvas.stringWidth(texte, canvas._fontname, taille)
+        largeur = canvas.stringWidth(texte, POLICE_GRAS, taille)
+        canvas.setLineWidth(0.8)
+        canvas.setStrokeColor(colors.black)
         canvas.line(centre_x - largeur / 2, y - 1.5, centre_x + largeur / 2, y - 1.5)
 
-    texte_y = cadre_y_haut - 13
-    canvas.setFont(POLICE_GRAS, 12)
+    curseur_y = y_dispo_haut - 16
     nom_chorale = config.get("chorale", "")
-    canvas.drawCentredString(centre_x, texte_y, nom_chorale)
-    _souligner(nom_chorale, 12, texte_y)
+    if nom_chorale:
+        canvas.setFont(POLICE_GRAS, 14)
+        canvas.setFillColor(colors.black)
+        canvas.drawCentredString(centre_x, curseur_y, nom_chorale)
+        _souligner(nom_chorale, 14, curseur_y)
+        curseur_y -= 16
 
-    texte_y -= 15
-    canvas.setFont(POLICE_GRAS, 10)
     date_affichee = formater_date_affichage(feuillet.date)
     sous_titre = date_affichee if not feuillet.lieu else f"{date_affichee} — {feuillet.lieu}"
-    canvas.drawCentredString(centre_x, texte_y, sous_titre)
-    _souligner(sous_titre, 10, texte_y)
+    if sous_titre:
+        canvas.setFont(POLICE_GRAS, 11)
+        canvas.setFillColor(colors.black)
+        canvas.drawCentredString(centre_x, curseur_y, sous_titre)
+        _souligner(sous_titre, 11, curseur_y)
+        curseur_y -= 13
 
     lectures = feuillet.lectures
     lecture_lines = [
         ("1ère lecture", lectures.premiere_lecture),
-        ("Psaume", lectures.psaume),
+        ("Graduel", lectures.psaume),
         ("2ème lecture", lectures.deuxieme_lecture),
         ("Évangile", lectures.evangile),
     ]
-    x_gauche_texte = centre_x - largeur_bloc / 2 + 6
-    canvas.setFont(POLICE_GRAS, TAILLE_TEXTE)
+    canvas.setFont(POLICE_GRAS, 10.5)
+    largeur_centre = (x1 - x0) - 2 * taille_logo - 12
+    x_texte = centre_x - largeur_centre / 2 + 10
     for label, ref in lecture_lines:
         if not ref:
             continue
-        texte_y -= 11
-        if texte_y < cadre_y_bas + 4:
+        curseur_y -= 11.5
+        if curseur_y < y_bas:
             break
-        canvas.drawString(x_gauche_texte, texte_y, f"{label} : {ref}")
+        canvas.drawString(x_texte, curseur_y, f"{label} : {ref}")
 
     canvas.restoreState()
 
@@ -156,11 +184,8 @@ def dessiner_banniere(canvas, config: dict, images: dict) -> None:
     y = y_haut - 16
     if annonce:
         canvas.setFont(POLICE_GRAS, 13)
-        canvas.setFillColor(colors.HexColor("#d8d8d8"))
-        canvas.drawCentredString(centre_x + 0.7, y - 0.7, annonce)
-        canvas.setFillColor(colors.HexColor("#4a4a4a"))
-        canvas.drawCentredString(centre_x, y, annonce)
         canvas.setFillColor(colors.black)
+        canvas.drawCentredString(centre_x, y, annonce)
         y -= 18
 
     banniere_img = images.get("banniere_bas")

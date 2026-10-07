@@ -158,10 +158,13 @@ CREATE TABLE IF NOT EXISTS chants (
     visibilite TEXT NOT NULL DEFAULT 'publique',
     auteur TEXT,
     compositeur TEXT,
+    chant_parent_id INTEGER,
+    version_nom TEXT,
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_chants_titre ON chants(titre);
+CREATE INDEX IF NOT EXISTS idx_chants_parent ON chants(chant_parent_id);
 CREATE INDEX IF NOT EXISTS idx_chants_categorie ON chants(categorie);
 CREATE INDEX IF NOT EXISTS idx_chants_code_reference ON chants(code_reference);
 -- L'index slug est créé après l'ALTER TABLE plus bas : sur une ancienne
@@ -478,6 +481,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_compte ON sessions(compte_type, compte_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
+
+-- Propositions de modification de chants par les chorales
+CREATE TABLE IF NOT EXISTS propositions_chants (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    chant_original_id INTEGER NOT NULL REFERENCES chants(id),
+    chant_modifie_id INTEGER NOT NULL REFERENCES chants(id),
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    modifications TEXT NOT NULL DEFAULT '{}',
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    motif_admin TEXT,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    traite_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_statut ON propositions_chants(statut);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_original ON propositions_chants(chant_original_id);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_chorale ON propositions_chants(chorale_id);
 """
 
 # Équivalent Postgres : mêmes tables/colonnes, mais SERIAL (pas AUTOINCREMENT),
@@ -516,10 +535,13 @@ CREATE TABLE IF NOT EXISTS chants (
     visibilite TEXT NOT NULL DEFAULT 'publique',
     auteur TEXT,
     compositeur TEXT,
+    chant_parent_id INTEGER,
+    version_nom TEXT,
     created_at TIMESTAMP NOT NULL DEFAULT now()
 );
 
 CREATE INDEX IF NOT EXISTS idx_chants_titre ON chants(titre);
+CREATE INDEX IF NOT EXISTS idx_chants_parent ON chants(chant_parent_id);
 CREATE INDEX IF NOT EXISTS idx_chants_categorie ON chants(categorie);
 CREATE INDEX IF NOT EXISTS idx_chants_code_reference ON chants(code_reference);
 -- Même règle que ci-dessus pour l'ancien schéma Postgres : l'index est créé
@@ -750,6 +772,8 @@ ALTER TABLE chants ADD COLUMN IF NOT EXISTS valide_manuellement INTEGER NOT NULL
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS propose_par_chorale_id INTEGER;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS auteur TEXT;
 ALTER TABLE chants ADD COLUMN IF NOT EXISTS compositeur TEXT;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS chant_parent_id INTEGER;
+ALTER TABLE chants ADD COLUMN IF NOT EXISTS version_nom TEXT;
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS parent_id INTEGER REFERENCES messages(id);
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS reactions TEXT NOT NULL DEFAULT '{}';
 ALTER TABLE messages ADD COLUMN IF NOT EXISTS modifie INTEGER NOT NULL DEFAULT 0;
@@ -774,6 +798,22 @@ CREATE TABLE IF NOT EXISTS sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_compte ON sessions(compte_type, compte_id, is_active);
 CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token_hash);
+
+-- Propositions de modification de chants par les chorales
+CREATE TABLE IF NOT EXISTS propositions_chants (
+    id SERIAL PRIMARY KEY,
+    chant_original_id INTEGER NOT NULL REFERENCES chants(id),
+    chant_modifie_id INTEGER NOT NULL REFERENCES chants(id),
+    chorale_id INTEGER NOT NULL REFERENCES chorales(id),
+    modifications TEXT NOT NULL DEFAULT '{}',
+    statut TEXT NOT NULL DEFAULT 'en_attente',
+    motif_admin TEXT,
+    created_at TIMESTAMP NOT NULL DEFAULT now(),
+    traite_at TIMESTAMP
+);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_statut ON propositions_chants(statut);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_original ON propositions_chants(chant_original_id);
+CREATE INDEX IF NOT EXISTS idx_propositions_chants_chorale ON propositions_chants(chorale_id);
 """
 
 
@@ -838,6 +878,10 @@ def _init_sqlite() -> None:
                 # NOUVEAUX chants créés par une chorale après cette migration
                 # partent en visibilité restreinte (voir routers/chants.py).
                 conn.execute("ALTER TABLE chants ADD COLUMN visibilite TEXT NOT NULL DEFAULT 'publique'")
+            if "chant_parent_id" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN chant_parent_id INTEGER")
+            if "version_nom" not in colonnes:
+                conn.execute("ALTER TABLE chants ADD COLUMN version_nom TEXT")
 
         conn.executescript(SCHEMA_SQLITE)
 

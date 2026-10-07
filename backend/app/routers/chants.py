@@ -101,23 +101,31 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, identite: auth.Ident
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     if identite.type == "chorale":
-        # "favori" est un geste normal sur n'importe quel chant VISIBLE
-        # (public ou privé à soi) -- tout le reste (titre, paroles,
-        # catégorie, actif...) exige d'être propriétaire du chant, sinon
-        # n'importe quelle chorale pourrait modifier le contenu de la
-        # bibliothèque partagée créé par une autre.
         champs_envoyes = set(patch.model_dump(exclude_unset=True).keys())
         champs_sensibles = champs_envoyes - {"favori"}
         est_proprietaire = chant.chorale_proprietaire_id == identite.compte_id
-        if champs_sensibles and not est_proprietaire:
-            raise HTTPException(
-                status_code=403,
-                detail="Vous ne pouvez modifier que les chants ajoutés par votre chorale (le favori reste libre pour tous).",
-            )
+        if champs_sensibles:
+            if not est_proprietaire or chant.chant_parent_id:
+                # La modification s'applique chez la chorale (version locale)
+                # et est envoyée à l'admin comme proposition de modification.
+                version_modifiee = crud.creer_ou_mettre_a_jour_version_chorale(
+                    chant_id, identite.compte_id, patch
+                )
+                if not version_modifiee:
+                    raise HTTPException(status_code=500, detail="Impossible d'enregistrer la version du chant")
+                return version_modifiee
     chant = crud.update_chant(chant_id, patch)
     if not chant:
         raise HTTPException(status_code=404, detail="Chant introuvable")
     return chant
+
+
+@router.get("/{chant_id}/versions", response_model=list[schemas.Chant])
+def get_chant_versions_route(chant_id: int, identite: auth.Identite = Depends(identite_courante)):
+    versions = crud.get_chant_versions(chant_id, chorale_id_appelant=_chorale_id_pour_masquage(identite))
+    if not versions:
+        raise HTTPException(status_code=404, detail="Chant introuvable")
+    return versions
 
 
 @router.delete("/{chant_id}")

@@ -2360,6 +2360,17 @@
       </div>
     </div>
 
+    <!-- Propositions de modification de chants -->
+    <div class="settings-card" style="background: white; border-radius: 16px; margin-bottom: 24px;">
+      <div class="settings-card-header">
+        <h4 style="margin: 0; font-size: 1rem; color: #1F4A7C; display: flex; align-items: center; gap: 8px;">🎵 Propositions de modification de chants</h4>
+        <p style="margin: 4px 0 0 0; font-size: 0.8rem; color: #64748B;">Lorsqu'une chorale personnalise un chant de la bibliothèque, sa version s'applique directement à ses dépliants. Vous pouvez ici : soit <strong>Remplacer</strong> le chant original (pour tout le monde), soit le valider comme <strong>Nouvelle version officielle</strong>, soit <strong>Laisser à la chorale</strong> (refuser la mise à jour globale ; la chorale conserve sa version sans impacter les autres).</p>
+      </div>
+      <div class="settings-card-body" style="padding-top: 16px;">
+        <ul id="admin-propositions-list" class="list" style="display: flex; flex-direction: column; gap: 12px; padding: 0; list-style: none;"></ul>
+      </div>
+    </div>
+
     <!-- Hidden Resources (restore) -->
     <div class="settings-card" style="background: white; border-radius: 16px;">
       <div class="settings-card-header">
@@ -2874,6 +2885,11 @@
         <span id="cd-meta-ref"></span>
         <span id="cd-meta-langue"></span>
         <span id="cd-meta-occasions"></span>
+      </div>
+      <!-- Selecteur de versions du chant -->
+      <div id="cd-version-container" class="hidden" style="margin-top: 10px; display: inline-flex; align-items: center; gap: 8px; background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 4px 10px;">
+        <span style="font-size: 0.8rem; font-weight: 600; color: #166534;">Version :</span>
+        <select id="cd-version-select" style="font-size: 0.8rem; border: 1px solid #86efac; border-radius: 6px; padding: 2px 8px; background: white; color: #1e293b; font-weight: 500; cursor: pointer;"></select>
       </div>
     </div>
 

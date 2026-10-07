@@ -3,7 +3,7 @@ from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 
-from .. import auth, crud
+from .. import auth, crud, schemas
 from ..deps import require_chorale, require_superadmin, identite_courante
 
 router = APIRouter(prefix="/moderation", tags=["moderation"])
@@ -241,3 +241,33 @@ def rejeter_media(id: int, _identite: auth.Identite = Depends(require_superadmin
     if not media:
         raise HTTPException(status_code=404, detail="Média introuvable")
     return media
+
+
+# --- Propositions de modification de chants par les chorales ----------------
+@router.get("/propositions-chants")
+def list_propositions_chants(statut: Optional[str] = "en_attente", _identite: auth.Identite = Depends(require_superadmin)):
+    return crud.lister_propositions_chants(statut=statut)
+
+
+@router.post("/propositions-chants/{id}/remplacer")
+def remplacer_proposition(id: int, _identite: auth.Identite = Depends(require_superadmin)):
+    if not crud.remplacer_par_proposition_chant(id):
+        raise HTTPException(status_code=404, detail="Proposition introuvable ou déjà traitée")
+    return {"ok": True, "statut": "accepte_remplace"}
+
+
+@router.post("/propositions-chants/{id}/versionner")
+def versionner_proposition(id: int, payload: Optional[schemas.TraiterPropositionPayload] = None, _identite: auth.Identite = Depends(require_superadmin)):
+    version_nom = payload.version_nom if payload else None
+    if not crud.versionner_proposition_chant(id, version_nom=version_nom):
+        raise HTTPException(status_code=404, detail="Proposition introuvable ou déjà traitée")
+    return {"ok": True, "statut": "accepte_versionne"}
+
+
+@router.post("/propositions-chants/{id}/annuler")
+def annuler_proposition(id: int, payload: Optional[schemas.TraiterPropositionPayload] = None, _identite: auth.Identite = Depends(require_superadmin)):
+    motif = payload.motif if payload else None
+    if not crud.annuler_proposition_chant(id, motif=motif):
+        raise HTTPException(status_code=404, detail="Proposition introuvable ou déjà traitée")
+    return {"ok": True, "statut": "annule"}
+

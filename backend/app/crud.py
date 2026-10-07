@@ -61,21 +61,28 @@ def _row_to_chant(row, resume: bool = False) -> schemas.Chant:
         visibilite=row["visibilite"] if "visibilite" in list(row.keys()) and row["visibilite"] else "publique",
         auteur=row["auteur"] if "auteur" in list(row.keys()) else None,
         compositeur=row["compositeur"] if "compositeur" in list(row.keys()) else None,
+        chant_parent_id=row["chant_parent_id"] if "chant_parent_id" in list(row.keys()) else None,
+        version_nom=row["version_nom"] if "version_nom" in list(row.keys()) else None,
+        statut_proposition=row["statut_proposition"] if "statut_proposition" in list(row.keys()) else None,
+        nb_versions=row["nb_versions"] if "nb_versions" in list(row.keys()) and row["nb_versions"] is not None else 1,
     )
 
 
 def create_chant(
     chant: schemas.ChantCreate, source_file: Optional[str] = None, confiance: float = 1.0,
     chorale_proprietaire_id: Optional[int] = None, visibilite: str = "publique",
+    chant_parent_id: Optional[int] = None, version_nom: Optional[str] = None,
 ) -> schemas.Chant:
     with get_connection() as conn:
         base_slug = chant.slug.strip() if chant.slug and chant.slug.strip() else chant.titre
         slug = unique_slug(base_slug, _existing_slugs(conn))
+        pid = chant_parent_id if chant_parent_id is not None else getattr(chant, "chant_parent_id", None)
+        vnom = version_nom if version_nom is not None else getattr(chant, "version_nom", None)
         new_id = insert_returning_id(
             conn,
             """
-            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, references_bibliques, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur, chorale_proprietaire_id, visibilite)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO chants (titre, slug, categorie, refrain, couplets, code_reference, langue, occasions, source_file, confiance, mots_cles, references_bibliques, actif, favori, chant_principal, duree_estimee, tonalite, remarques, auteur, compositeur, chorale_proprietaire_id, visibilite, chant_parent_id, version_nom)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 chant.titre,
@@ -100,6 +107,8 @@ def create_chant(
                 chant.compositeur,
                 chorale_proprietaire_id,
                 visibilite,
+                pid,
+                vnom,
             ),
         )
         row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
@@ -603,7 +612,7 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 slug = unique_slug(data["titre"], _existing_slugs(conn, exclude_id=chant_id))
         conn.execute(
             """
-            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, references_bibliques=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?
+            UPDATE chants SET titre=?, slug=?, categorie=?, refrain=?, couplets=?, code_reference=?, langue=?, occasions=?, confiance=?, mots_cles=?, references_bibliques=?, actif=?, favori=?, chant_principal=?, duree_estimee=?, tonalite=?, remarques=?, auteur=?, compositeur=?, chant_parent_id=?, version_nom=?
             WHERE id=?
             """,
             (
@@ -626,6 +635,8 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 data["remarques"],
                 data["auteur"],
                 data["compositeur"],
+                data.get("chant_parent_id", existing.chant_parent_id),
+                data.get("version_nom", existing.version_nom),
                 chant_id,
             ),
         )
@@ -675,6 +686,216 @@ def valider_chant(chant_id: int) -> Optional[schemas.Chant]:
         except Exception:
             pass
     return valide
+
+
+def creer_ou_mettre_a_jour_version_chorale(
+    chant_id: int, chorale_id: int, patch: schemas.ChantUpdate
+) -> Optional[schemas.Chant]:
+    """Quand une chorale modifie un chant qui ne lui appartient pas (ou public),
+    la modification :
+    1. S'applique immédiatement chez elle via une version locale (visibilite='chorale', chant_parent_id=root_id).
+    2. Envoie une proposition de modification à la modération admin (table propositions_chants).
+    """
+    original = get_chant(chant_id)
+    if not original:
+        return None
+
+    # Chant racine
+    root_id = original.chant_parent_id if original.chant_parent_id else original.id
+    champs_envoyes = patch.model_dump(exclude_unset=True)
+
+    with get_connection() as conn:
+        # Existe-t-il déjà une version locale de cette chorale rattachée à cette racine ?
+        version_existante = None
+        if original.chant_parent_id and original.chorale_proprietaire_id == chorale_id:
+            version_existante = original
+        else:
+            row = conn.execute(
+                _CHANT_SELECT + " WHERE chants.chant_parent_id = ? AND chants.chorale_proprietaire_id = ? AND chants.visibilite = 'chorale'",
+                (root_id, chorale_id),
+            ).fetchone()
+            if row:
+                version_existante = _row_to_chant(row)
+
+        if version_existante:
+            version_id = version_existante.id
+            update_chant(version_id, patch)
+        else:
+            # Créer la version locale de la chorale
+            nom_version = patch.version_nom or "Version personnalisée"
+            data = original.model_dump()
+            data.update(champs_envoyes)
+            data["chant_parent_id"] = root_id
+            data["version_nom"] = nom_version
+            data["chorale_proprietaire_id"] = chorale_id
+            data["visibilite"] = "chorale"
+
+            create_payload = schemas.ChantCreate(**data)
+            nouvelle_version = create_chant(
+                create_payload,
+                source_file=original.source_file,
+                confiance=1.0,
+                chorale_proprietaire_id=chorale_id,
+                visibilite="chorale",
+                chant_parent_id=root_id,
+                version_nom=nom_version,
+            )
+            version_id = nouvelle_version.id
+
+        # Enregistrer la proposition de modification
+        prop = conn.execute(
+            "SELECT id FROM propositions_chants WHERE chant_original_id = ? AND chorale_id = ? AND statut = 'en_attente'",
+            (root_id, chorale_id),
+        ).fetchone()
+
+        if prop:
+            conn.execute(
+                "UPDATE propositions_chants SET chant_modifie_id = ?, modifications = ? WHERE id = ?",
+                (version_id, json.dumps(champs_envoyes, ensure_ascii=False), prop["id"]),
+            )
+        else:
+            insert_returning_id(
+                conn,
+                "INSERT INTO propositions_chants (chant_original_id, chant_modifie_id, chorale_id, modifications, statut) VALUES (?, ?, ?, ?, 'en_attente')",
+                (root_id, version_id, chorale_id, json.dumps(champs_envoyes, ensure_ascii=False)),
+            )
+
+    return get_chant(version_id)
+
+
+def lister_propositions_chants(statut: Optional[str] = "en_attente") -> list[dict]:
+    with get_connection() as conn:
+        clause = " WHERE pc.statut = ?" if statut else ""
+        params = (statut,) if statut else ()
+        query = f"""
+            SELECT pc.*,
+                   o.titre AS titre_original,
+                   m.titre AS titre_propose,
+                   ch.nom AS chorale_nom
+            FROM propositions_chants pc
+            JOIN chants o ON o.id = pc.chant_original_id
+            JOIN chants m ON m.id = pc.chant_modifie_id
+            LEFT JOIN chorales ch ON ch.id = pc.chorale_id
+            {clause}
+            ORDER BY pc.created_at DESC
+        """
+        rows = conn.execute(query, params).fetchall()
+        resultat = []
+        for r in rows:
+            d = dict(r)
+            try:
+                d["modifications"] = json.loads(d.get("modifications") or "{}")
+            except Exception:
+                d["modifications"] = {}
+            if d.get("created_at"):
+                d["created_at"] = str(d["created_at"])
+            if d.get("traite_at"):
+                d["traite_at"] = str(d["traite_at"])
+            resultat.append(d)
+        return resultat
+
+
+def remplacer_par_proposition_chant(prop_id: int) -> bool:
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM propositions_chants WHERE id = ?", (prop_id,)).fetchone()
+        if not prop or prop["statut"] != "en_attente":
+            return False
+
+        chant_modifie = get_chant(prop["chant_modifie_id"])
+        if not chant_modifie:
+            return False
+
+        conn.execute(
+            """
+            UPDATE chants SET titre=?, refrain=?, couplets=?, categorie=?, code_reference=?, langue=?, occasions=?, auteur=?, compositeur=?, remarques=?, tonalite=?, duree_estimee=?
+            WHERE id=?
+            """,
+            (
+                chant_modifie.titre,
+                chant_modifie.refrain,
+                json.dumps(chant_modifie.couplets, ensure_ascii=False),
+                chant_modifie.categorie,
+                chant_modifie.code_reference,
+                chant_modifie.langue,
+                json.dumps(chant_modifie.occasions, ensure_ascii=False),
+                chant_modifie.auteur,
+                chant_modifie.compositeur,
+                chant_modifie.remarques,
+                chant_modifie.tonalite,
+                chant_modifie.duree_estimee,
+                prop["chant_original_id"],
+            ),
+        )
+
+        conn.execute(
+            f"UPDATE propositions_chants SET statut = 'accepte_remplace', traite_at = {horodatage} WHERE id = ?",
+            (prop_id,),
+        )
+        return True
+
+
+def versionner_proposition_chant(prop_id: int, version_nom: Optional[str] = None) -> bool:
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM propositions_chants WHERE id = ?", (prop_id,)).fetchone()
+        if not prop or prop["statut"] != "en_attente":
+            return False
+
+        nom = version_nom.strip() if version_nom and version_nom.strip() else None
+        if nom:
+            conn.execute(
+                "UPDATE chants SET visibilite = 'publique', version_nom = ? WHERE id = ?",
+                (nom, prop["chant_modifie_id"]),
+            )
+        else:
+            conn.execute(
+                "UPDATE chants SET visibilite = 'publique' WHERE id = ?",
+                (prop["chant_modifie_id"],),
+            )
+
+        conn.execute(
+            f"UPDATE propositions_chants SET statut = 'accepte_versionne', traite_at = {horodatage} WHERE id = ?",
+            (prop_id,),
+        )
+        return True
+
+
+def annuler_proposition_chant(prop_id: int, motif: Optional[str] = None) -> bool:
+    horodatage = "now()" if db.BACKEND == "postgres" else "datetime('now')"
+    with get_connection() as conn:
+        prop = conn.execute("SELECT * FROM propositions_chants WHERE id = ?", (prop_id,)).fetchone()
+        if not prop or prop["statut"] != "en_attente":
+            return False
+
+        conn.execute(
+            f"UPDATE propositions_chants SET statut = 'annule', motif_admin = ?, traite_at = {horodatage} WHERE id = ?",
+            (motif, prop_id),
+        )
+        return True
+
+
+def get_chant_versions(chant_id: int, chorale_id_appelant: Optional[int] = None) -> list[schemas.Chant]:
+    chant = get_chant(chant_id)
+    if not chant:
+        return []
+    root_id = chant.chant_parent_id if chant.chant_parent_id else chant.id
+    with get_connection() as conn:
+        if chorale_id_appelant is not None:
+            rows = conn.execute(
+                _CHANT_SELECT + f" WHERE (chants.id = ? OR chants.chant_parent_id = ?) AND {_VISIBILITE_CLAUSE} ORDER BY chants.id ASC",
+                (root_id, root_id, chorale_id_appelant),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                _CHANT_SELECT + " WHERE chants.id = ? OR chants.chant_parent_id = ? ORDER BY chants.id ASC",
+                (root_id, root_id),
+            ).fetchall()
+        resultats = [_row_to_chant(r) for r in rows]
+        total = len(resultats)
+        for r in resultats:
+            r.nb_versions = total
+        return resultats
 
 
 def retirer_validation_chant(chant_id: int) -> Optional[schemas.Chant]:
@@ -1361,10 +1582,25 @@ def get_demandes_chorale(chorale_id: int) -> dict:
                 (chorale_id,),
             ).fetchall()
         ]
+        propositions = [
+            dict(r) for r in conn.execute(
+                """
+                SELECT pc.id, pc.chant_original_id, pc.chant_modifie_id, pc.titre_propose,
+                       pc.statut, pc.motif_admin, pc.created_at,
+                       o.titre AS titre_original
+                FROM propositions_chants pc
+                JOIN chants o ON o.id = pc.chant_original_id
+                WHERE pc.chorale_id = ?
+                ORDER BY pc.created_at DESC
+                """,
+                (chorale_id,),
+            ).fetchall()
+        ]
         return {
             "demandes": demandes,
             "categories": categories,
             "partitions": partitions,
+            "propositions": propositions,
         }
 
 

@@ -99,7 +99,7 @@ def construire_styles(taille_texte: float = TAILLE_TEXTE) -> dict:
         "titre_section": ParagraphStyle(
             "TitreSection", parent=_styles["Normal"],
             fontName=POLICE_GRAS, fontSize=taille_titre, leading=interligne_titre,
-            alignment=TA_LEFT, spaceAfter=marge(2.5), spaceBefore=marge(4),
+            alignment=TA_LEFT, spaceAfter=marge(1.5), spaceBefore=marge(2.5),
         ),
         "titre_chant": ParagraphStyle(
             "TitreChant", parent=_styles["Normal"],

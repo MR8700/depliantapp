@@ -30,6 +30,8 @@ class ChantBase(BaseModel):
     remarques: Optional[str] = None
     auteur: Optional[str] = None
     compositeur: Optional[str] = None
+    chant_parent_id: Optional[int] = None
+    version_nom: Optional[str] = None
 
 
 class ChantCreate(ChantBase):
@@ -55,25 +57,44 @@ class ChantUpdate(BaseModel):
     remarques: Optional[str] = None
     auteur: Optional[str] = None
     compositeur: Optional[str] = None
+    chant_parent_id: Optional[int] = None
+    version_nom: Optional[str] = None
 
 
 class Chant(ChantBase):
     id: int
     source_file: Optional[str] = None
     confiance: float = 1.0
-    # Validation manuelle du badge "à vérifier" -- distincte de `confiance`
-    # (score du classifieur ML) pour ne jamais confondre "le modèle est sûr
-    # de lui" et "un humain a validé" (voir crud.py::valider_chant /
-    # proposer_validation_chant, jamais réglable via ChantCreate/ChantUpdate).
     valide_manuellement: bool = False
     propose_par_chorale_id: Optional[int] = None
     propose_par_chorale_nom: Optional[str] = None
-    # Jamais réglable via ChantCreate/ChantUpdate -- décidé côté serveur
-    # (voir routers/chants.py::create_chant) selon qui crée le chant et le
-    # réglage global chants_publication_auto.
     chorale_proprietaire_id: Optional[int] = None
     chorale_proprietaire_nom: Optional[str] = None
     visibilite: str = "publique"
+    chant_parent_id: Optional[int] = None
+    version_nom: Optional[str] = None
+    statut_proposition: Optional[str] = None
+    nb_versions: int = 1
+
+
+class PropositionChant(BaseModel):
+    id: int
+    chant_original_id: int
+    chant_modifie_id: int
+    chorale_id: int
+    chorale_nom: Optional[str] = None
+    titre_original: Optional[str] = None
+    titre_propose: Optional[str] = None
+    modifications: dict = Field(default_factory=dict)
+    statut: str = "en_attente"
+    motif_admin: Optional[str] = None
+    created_at: str
+    traite_at: Optional[str] = None
+
+
+class TraiterPropositionPayload(BaseModel):
+    motif: Optional[str] = None
+    version_nom: Optional[str] = None
 
 
 class BulkCategorize(BaseModel):

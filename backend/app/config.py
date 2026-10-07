@@ -59,8 +59,8 @@ UPLOADS_DIR = DATA_DIR / "uploads"
 # Emplacements d'image configurables dans l'en-tête/pied de page du feuillet,
 # calqués sur la mise en page réelle des dépliants (deux logos circulaires en
 # en-tête + une bannière décorative en bas de page).
-IMAGE_SLOTS = ["logo_gauche", "logo_droit", "banniere_bas"]
-_SLOT_TYPE = {"logo_gauche": "logo", "logo_droit": "logo", "banniere_bas": "banniere"}
+IMAGE_SLOTS = ["logo_gauche", "logo_droit", "banniere_haut", "banniere_bas"]
+_SLOT_TYPE = {"logo_gauche": "logo", "logo_droit": "logo", "banniere_haut": "banniere", "banniere_bas": "banniere"}
 
 # priere_texte_defaut : texte par défaut du widget « Prière pour le Burkina
 # Faso », utilisé quand un feuillet a priere_active=True sans texte
