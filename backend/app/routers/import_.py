@@ -10,6 +10,8 @@ from ..deps import identite_courante
 from ..ingestion.generic import SUPPORTED_EXTENSIONS, parse_and_segment
 from ..ingestion.parse_pdf import detecter_marqueur_reimport
 from ..ml import duplicates
+from ..ml.classifier import suggest_categorie
+from ..ml.languages import detecter_langue
 
 router = APIRouter(prefix="/import", tags=["import"])
 
@@ -47,6 +49,12 @@ async def upload_carnet(
         raise HTTPException(status_code=400, detail=f"Format non supporté : {suffix}")
 
     occasions_list = [o.strip() for o in occasions.split(",") if o.strip()]
+
+    from ..ingestion.common import _match_section_header
+    nom_stem = Path(fichier.filename).stem
+    cat_fichier = _match_section_header(nom_stem)
+    if cat_fichier and (not categorie_defaut or categorie_defaut == "Autre"):
+        categorie_defaut = cat_fichier
 
     if suffix == ".json":
         import json
@@ -123,19 +131,35 @@ async def upload_carnet(
         id_connu = titres_connus_normalises.get((raw.titre or "").strip().lower())
         if id_connu is not None and not any(d["id"] == id_connu for d in doublons):
             doublons = [{"id": id_connu, "titre": titres_par_id[id_connu], "similarite": 1.0}] + doublons
+
+        # Détection automatique de la catégorie liturgique si non spécifiée ou par défaut
+        categorie_finale = raw.categorie_detectee or categorie
+        if not categorie_finale or categorie_finale in ("Autre", categorie_defaut):
+            suggestions = suggest_categorie(raw.titre or "", raw.refrain, raw.couplets)
+            if suggestions:
+                top_cat, top_score = suggestions[0]
+                if top_score >= 0.25 and top_cat != "Autre":
+                    categorie_finale = top_cat
+        if not categorie_finale:
+            categorie_finale = categorie_defaut or "Autre"
+
+        # Détection automatique de la langue de chaque chant (latin, mooré, dioula, lingala, etc.)
+        langue_chant = detecter_langue(raw.titre or "", raw.refrain, raw.couplets, langue_defaut=langue or "fr")
+
+        # Occasions spécifiques (ex. Marial)
+        occasions_chant = list(occasions_list)
+        if categorie_finale == "Marial" and "Marial" not in occasions_chant:
+            occasions_chant.append("Marial")
+
         parsed_chants.append({
             "titre": raw.titre or "",
             "refrain": raw.refrain or "",
             "couplets": raw.couplets,
             "code_reference": raw.code_reference,
             "confiance": raw.confiance,
-            "categorie": categorie,
-            "occasions": occasions_list,
-            "langue": langue,
-            # Pas de détection d'auteur/compositeur par chant dans le moteur
-            # de segmentation (voir ingestion/generic.py) -- ce champ
-            # "par défaut" s'applique donc tel quel à tous les chants de ce
-            # carnet, comme categorie_defaut/occasions/langue ci-dessus.
+            "categorie": categorie_finale,
+            "occasions": occasions_chant,
+            "langue": langue_chant,
             "auteur": auteur or None,
             "doublons": doublons,
             "avertissements": raw.avertissements,

@@ -1,13 +1,5 @@
-// Port TypeScript de backend/app/ingestion/common.py::segment_paragraphs_docx_clean
-// (et SEULEMENT cette variante -- pas le moteur générique à 700 lignes,
-// utilisé côté serveur uniquement pour le PDF, hors périmètre ici) : les
-// imports DOCX/DOC passent tous les deux par `is_clean_paragraphs=True`
-// côté serveur (backend/app/ingestion/generic.py), donc par CETTE fonction,
-// jamais l'autre -- la porter fidèlement suffit à couvrir l'import DOCX
-// hors-ligne à l'identique du serveur, sans le risque d'un portage partiel
-// du moteur générique (voir memory : le PDF reste analysé en ligne).
-//
-// Toute divergence avec common.py doit être reportée ici ET là-bas.
+// Port TypeScript de backend/app/ingestion/common.py
+// Couvre l'analyse et la segmentation hors-ligne pour l'application mobile.
 
 export interface RawChant {
   titre: string;
@@ -19,56 +11,111 @@ export interface RawChant {
   categorieDetectee: string | null;
 }
 
-const REF_RE = /^\s*(?:(R[ée]f(?:rain)?\.?\s*\d*|R\b|\(R[ée]f(?:rain)?\s*\)|\(R\)|Ch[oœ]ur|Tous))\s*[:;/.\-)]?\s*(.*)$/i;
-const VERSE_RE = /^\s*(?:(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[.\-)–—:/]\s*|(?:v\.|couplet)\s*(\d+)\s*[:.\-]?\s*)(.*)$/i;
+const REF_RE = /^\s*(R[ée]f(?:rain)?\.?\s*\d*|R\s*\/[\.:\-]?|R\b|\(R[ée]f(?:rain)?\s*\d*\)|\(R\)|Ant(?:ienne)?\.?\s*\d*|\(Ant(?:ienne)?\s*\d*\)|Ch[oœ]ur|Tous|Assembl[ée]e|Ch\s*\/)\s*[:;/.\-)]?\s*(.*)$/i;
+const VERSE_RE = /^\s*(?:(?:Couplet|Strophe|Verset|C\.|v\.)\s*)?(\d+(?:\s*(?:&|,|\-)\s*\d+)*|[IVXivx]+|V\s*\/?)\s*[.\-)–—:/]\s*(.+)$/i;
 const CODE_REFERENCE_RE = /^([A-Z]{1,2}\s?\d{1,3}\s?[a-z]?)\s+(.+)$/;
-const SECTION_HEAD_RE = /^[A-Z]\.?\s*([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ ]{3,30})$/;
 const CODED_TITLE_RE = /^([A-ZÀÂÉÈÊËÎÏÔÙÛÜÇ]{2,25})\s*(\d{0,3})\s*(?:[:.\-]\s*(.*))?$/i;
 
-const SECTION_KEYWORDS = new Set([
-  "ENTREE", "ENTRÉE", "KYRIE", "PRENDS PITIE", "PRENDS PITIÉ", "GLORIA", "PSAUME",
-  "ALLELUIA", "ALLÉLUIA", "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE",
-  "PU", "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE",
-  "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE", "ENVOI",
-  "CHANTS MARIAUX", "MARIAUX",
-]);
+const SECTION_MOMENTS_MAP: Record<string, string> = {
+  ENTREE: "Entree", "ENTREE DE LA MESSE": "Entree", OUVERTURE: "Entree",
+  "CHANT D ENTREE": "Entree", "CHANTS D ENTREE": "Entree", "CHANTS D OUVERTURE": "Entree",
+  KYRIE: "Kyrie", "KYRIE ELEISON": "Kyrie", "ACTE PENITENTIEL": "Kyrie",
+  "PRENDS PITIE": "Kyrie", PENITENCE: "Kyrie",
+  GLORIA: "Gloria", "GLOIRE A DIEU": "Gloria", "HYMNE DE LOUANGE": "Gloria",
+  PSAUME: "Psaume", PSAUMES: "Psaume", "PSAUME RESPONSORIAL": "Psaume",
+  GRADUEL: "Psaume", GRADUELS: "Psaume",
+  ACCLAMATION: "Acclamation", ACCLAMATIONS: "Acclamation", ALLELUIA: "Acclamation",
+  "ACCLAMATION DE L EVANGILE": "Acclamation", EVANGILE: "Acclamation",
+  CREDO: "Credo", "PROFESSION DE FOI": "Credo", "SYMBOLE DES APOTRES": "Credo",
+  "PRIERE UNIVERSELLE": "Priere_universelle", "PRIERES UNIVERSELLES": "Priere_universelle",
+  PU: "Priere_universelle", INTENTIONS: "Priere_universelle",
+  OFFERTOIRE: "Offertoire", OFFERTOIRES: "Offertoire", "PRESENTATION DES DONS": "Offertoire",
+  QUETE: "Offertoire", OFFRANDE: "Offertoire", OFFRANDES: "Offertoire", "CHANTS D OFFERTOIRE": "Offertoire",
+  SANCTUS: "Sanctus", SAINT: "Sanctus", "SAINT LE SEIGNEUR": "Sanctus",
+  ANAMNESE: "Anamnese", "MYSTERE DE LA FOI": "Anamnese",
+  "NOTRE PERE": "Notre_Pere", PATER: "Notre_Pere", "PATER NOSTER": "Notre_Pere",
+  AGNUS: "Agnus", "AGNUS DEI": "Agnus", "AGNEAU DE DIEU": "Agnus", "FRACTION DU PAIN": "Agnus",
+  COMMUNION: "Communion", COMMUNIONS: "Communion", "CHANTS DE COMMUNION": "Communion", "CHANT DE COMMUNION": "Communion",
+  "ACTION DE GRACE": "Action_de_grace", "ACTIONS DE GRACE": "Action_de_grace",
+  REMERCIEMENT: "Action_de_grace", REMERCIEMENTS: "Action_de_grace", "POST COMMUNION": "Action_de_grace",
+  SORTIE: "Sortie", SORTIES: "Sortie", "CHANTS DE SORTIE": "Sortie", "CHANT DE SORTIE": "Sortie",
+  ENVOI: "Sortie", ENVOIS: "Sortie", "CHANT D ENVOI": "Sortie", "CHANTS D ENVOI": "Sortie",
+  "ENVOI ET MISSION": "Sortie", "CHANT FINAL": "Sortie",
+  MARIAL: "Marial", MARIAUX: "Marial", "CHANTS MARIAUX": "Marial", "CHANT MARIAL": "Marial",
+  MARIE: "Marial", "VIERGE MARIE": "Marial", "SAINTE VIERGE": "Marial", "CHANTS A MARIE": "Marial",
+  AVENT: "Avent", "TEMPS DE L AVENT": "Avent",
+  NOEL: "Noel", "TEMPS DE NOEL": "Noel",
+  CAREME: "Careme", "TEMPS DU CAREME": "Careme", PASSION: "Careme", "SEMAINE SAINTE": "Careme",
+  PAQUES: "Paques", "TEMPS PASCAL": "Paques", RESURRECTION: "Paques",
+  MARIAGE: "Mariage", MARIAGES: "Mariage",
+  DEFUNTS: "Defunts", OBSEQUES: "Defunts",
+  BAPTEME: "Bapteme_Confirmation", CONFIRMATION: "Bapteme_Confirmation", "BAPTEME ET CONFIRMATION": "Bapteme_Confirmation",
+};
 
 const CODED_TITLE_CATEGORIES: Record<string, string> = {
-  ENTREE: "Entree", KYRIE: "Kyrie", GLORIA: "Gloria", PSAUME: "Psaume",
-  ACCLAMATION: "Acclamation", ACCLAMTION: "Acclamation", ALLELUIA: "Acclamation",
-  CREDO: "Credo", "PRIERE UNIVERSELLE": "Priere_universelle", PU: "Priere_universelle",
-  PRIERE: "Priere_universelle", OFFERTOIRE: "Offertoire", SANCTUS: "Sanctus",
-  ANAMNESE: "Anamnese", "NOTRE PERE": "Notre_Pere", PATER: "Notre_Pere", AGNUS: "Agnus",
-  COMMUNION: "Communion", "ACTION DE GRACE": "Action_de_grace", SORTIE: "Sortie", ENVOI: "Sortie",
-  NOEL: "Noel", CAREME: "Careme", AVENT: "Avent", PAQUES: "Paques", MARIAGE: "Mariage",
-  DEFUNTS: "Defunts", BAPTEME: "Bapteme_Confirmation",
+  ...SECTION_MOMENTS_MAP,
+  ACCLAMTION: "Acclamation",
+  PRIERE: "Priere_universelle",
 };
 
 const TITRE_LONGUEUR_SUSPECTE = 60;
 const LONGUEUR_ANORMALE = 500;
 
 const DIACRITIQUES_RE = new RegExp("[\\u0300-\\u036f]", "g");
+const PREFIX_DECO_RE = /^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[.\-)–—:]\s*|^[=\-*#_\[\]]{2,}\s*|\s*[=\-*#_\[\]]{2,}$/;
 
 function normaliserAccents(texte: string): string {
   return texte.normalize("NFKD").replace(DIACRITIQUES_RE, "");
 }
 
-function estLigneSection(ligne: string): boolean {
-  const cleaned = ligne.trim().toUpperCase().replace(/[:.]+$/, "");
-  if (SECTION_KEYWORDS.has(cleaned)) return true;
-  const m = SECTION_HEAD_RE.exec(cleaned);
-  if (m) {
-    const val = m[1].trim();
-    if (SECTION_KEYWORDS.has(val) || SECTION_KEYWORDS.has(val.replace(/ /g, ""))) return true;
+function normaliserSection(texte: string): string {
+  return normaliserAccents(texte || "")
+    .toUpperCase()
+    .replace(/['’`´]/g, " ")
+    .replace(/[^A-Z0-9\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+export function matchSectionHeader(ligne: string): string | null {
+  const raw = ligne.trim();
+  if (!raw || raw.length > 55) return null;
+  const hasDeco = PREFIX_DECO_RE.test(raw);
+  const cleanedNoDeco = raw.replace(/^[=\-*#_\[\]:()]+|[=\-*#_\[\]:()]+$/g, "").trim();
+  const hadPrefix = /^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[.\-)–—:]\s*/.test(cleanedNoDeco);
+  const cleaned = cleanedNoDeco.replace(/^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[.\-)–—:]\s*/, "").trim();
+  const norm = normaliserSection(cleaned);
+
+  if (SECTION_MOMENTS_MAP[norm]) {
+    if (["PRENDS PITIE", "ALLELUIA", "SAINT", "MARIE"].includes(norm) && !(hadPrefix || hasDeco || raw === raw.toUpperCase())) {
+      return null;
+    }
+    return SECTION_MOMENTS_MAP[norm];
   }
-  return false;
+
+  // Correspondance préfixée UNIQUEMENT pour les lignes qui sont de réels en-têtes
+  // (majuscules, numérotation, décorations, ou mots-clés "Chants de...") pour ne jamais
+  // confondre une phrase de chant ordinaire avec un en-tête de section.
+  const isHeading = hadPrefix || hasDeco || raw === raw.toUpperCase() || norm.startsWith("CHANTS D ") || norm.startsWith("CHANTS DE ") || norm.startsWith("CHANT D ") || norm.startsWith("CHANT DE ") || norm.startsWith("TEMPS DE ") || norm.startsWith("TEMPS DU ");
+  if (isHeading) {
+    for (const [k, cat] of Object.entries(SECTION_MOMENTS_MAP)) {
+      if (norm.startsWith(`${k} `) && !["PRENDS PITIE", "ALLELUIA", "SAINT", "MARIE"].includes(k)) {
+        return cat;
+      }
+      if (norm.endsWith(` ${k}`)) {
+        return cat;
+      }
+    }
+  }
+
+  return null;
 }
 
 function matchCodedTitle(ligne: string): { categorie: string; titre: string } | null {
   const cleaned = ligne.trim();
   const m = CODED_TITLE_RE.exec(cleaned);
   if (!m) return null;
-  const catRaw = normaliserAccents(m[1]).toUpperCase();
+  const catRaw = normaliserSection(m[1]);
   const categorie = CODED_TITLE_CATEGORIES[catRaw];
   if (!categorie) return null;
   const number = m[2] || "";
@@ -136,11 +183,12 @@ function finaliser(chant: RawChant): RawChant {
 
 type Bloc = { type: "ref" | "couplet"; num: string | null; lignes: string[] };
 
-/** Port fidèle de segment_paragraphs_docx_clean (common.py). */
+/** Segmente une liste de paragraphes en chants individuels avec gestion des moments de section. */
 export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
   const chants: RawChant[] = [];
 
   let titreCourant: string | null = null;
+  let categorieSection: string | null = null;
   let categorieCourante: string | null = null;
   let blocks: Bloc[] = [];
   let currentBlock: Bloc | null = null;
@@ -153,6 +201,7 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
     }
     if (titreCourant === null && blocks.length === 0) return;
 
+    const catFinale = categorieCourante || categorieSection;
     const chant: RawChant = {
       titre: titreCourant || "(sans titre)",
       refrain: null,
@@ -160,7 +209,7 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
       codeReference: null,
       confiance: 1.0,
       avertissements: [],
-      categorieDetectee: categorieCourante,
+      categorieDetectee: catFinale,
     };
 
     const refParts: string[] = [];
@@ -175,13 +224,29 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
         couplets.push(texte);
       }
     }
-    if (refParts.length) chant.refrain = refParts.join(" / ");
+
+    let refConfiance = 1.0;
+    if (refParts.length) {
+      chant.refrain = refParts.join(" / ");
+    } else if (blocks.length >= 2) {
+      // Détection refrain implicite : bloc répété ou première strophe non numérotée courte
+      const nonNumerotes = blocks.filter((b) => b.type !== "ref" && !b.num);
+      if (nonNumerotes.length > 0 && nonNumerotes[0].lignes.join(" ").length <= 220) {
+        const candidat = nonNumerotes[0].lignes.join(" / ");
+        chant.refrain = candidat;
+        refConfiance = 0.6;
+        const idx = couplets.indexOf(candidat);
+        if (idx !== -1) couplets.splice(idx, 1);
+      }
+    }
+
     chant.couplets = couplets;
-    chant.confiance = calculerConfiance(chant, 1.0, blocks.some((b) => b.type === "couplet" && b.num));
+    chant.confiance = calculerConfiance(chant, refConfiance, blocks.some((b) => b.type === "couplet" && b.num));
     chants.push(finaliser(chant));
 
     titreCourant = null;
-    categorieCourante = null;
+    // On conserve la catégorie de section pour tous les chants suivants
+    categorieCourante = categorieSection;
     blocks = [];
     blockFinished = false;
   }
@@ -193,8 +258,11 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
       continue;
     }
 
-    if (estLigneSection(pClean)) {
+    const secCat = matchSectionHeader(pClean);
+    if (secCat) {
       flushSong();
+      categorieSection = secCat;
+      categorieCourante = secCat;
       continue;
     }
 
@@ -224,8 +292,8 @@ export function segmenterParagraphesDocx(paragraphs: string[]): RawChant[] {
       blockFinished = false;
     } else if (verseM) {
       if (currentBlock) blocks.push(currentBlock);
-      const numCouplet = verseM[1] || verseM[2];
-      const texteCouplet = verseM[3]?.trim();
+      const numCouplet = verseM[1];
+      const texteCouplet = verseM[2]?.trim();
       currentBlock = { type: "couplet", num: numCouplet, lignes: texteCouplet ? [texteCouplet] : [] };
       blockFinished = false;
     } else if (currentBlock && !blockFinished) {

@@ -20,13 +20,31 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher
 from typing import Optional
 
-# --- Marqueurs structurels ---------------------------------------------
-
-REF_RE = re.compile(r"^\s*(?:R[ée]f(?:rain)?\.?\s*\d*|R\b|\(R[ée]f(?:rain)?\s*\)|\(R\)|Ch[oœ]ur|Tous)\s*[:;/.\-)]?\s*(.*)$", re.IGNORECASE)
-# Numérotation : "1.", "1-", "1)", "1:", "1&3-", "1&2&3.", chiffres romains —
-# le séparateur inclut le tiret cadratin/demi-cadratin ("1 — Texte..."),
-# très fréquent en PDF (mise en page Word qui convertit "-" en "—").
-VERSE_RE = re.compile(r"^\s*(\d+(?:\s*&\s*\d+)*|[IVXivx]+)\s*[\.\-\)–—:]\s*(.+)$")
+REF_RE = re.compile(
+    r"^\s*("
+    r"R[ée]f(?:rain)?\.?\s*\d*"
+    r"|R\s*/\s*[\.:\-]?"
+    r"|R\b"
+    r"|\(R[ée]f(?:rain)?\s*\d*\)"
+    r"|\(R\)"
+    r"|Ant(?:ienne)?\.?\s*\d*"
+    r"|\(Ant(?:ienne)?\s*\d*\)"
+    r"|Ch[oœ]ur"
+    r"|Tous"
+    r"|Assembl[ée]e"
+    r"|Ch\s*/\s*"
+    r")\s*[:;/.\-)]?\s*(.*)$",
+    re.IGNORECASE,
+)
+# Numérotation : "1.", "1-", "1)", "1:", "1&3-", "Couplet 1 :", "Strophe 1 :", "v.1 :", "V/ :", chiffres romains —
+# group(1) capture le numéro/identifiant, group(2) capture le texte du couplet.
+VERSE_RE = re.compile(
+    r"^\s*(?:(?:Couplet|Strophe|Verset|C\.|v\.)\s*)?"
+    r"(\d+(?:\s*(?:&|,|\-)\s*\d+)*|[IVXivx]+|V\s*/?)"
+    r"\s*[\.\-\)–—:/]\s*"
+    r"(.+)$",
+    re.IGNORECASE,
+)
 BULLET_RE = re.compile(r"^\s*[•●▪◦►\-\*]\s+(.+)$")
 # Lignes dialoguées / voix alternées (chant à plusieurs voix ou en
 # alternatim, ex. Gloria "A./B./Tous:") : mot complet ("Soliste:"/"Chœur:")
@@ -36,19 +54,18 @@ BULLET_RE = re.compile(r"^\s*[•●▪◦►\-\*]\s+(.+)$")
 # les carnets scannés/PDF pour marquer une voix.
 _VOIX_MOT = r"(?:Soliste|Solo|Ch[oœ]ur|Tous|Assembl[ée]e|Sop(?:rano)?|Alt(?:o)?|T[ée]nor|Basse|Cantor|Ts|[SATBHF](?:\s*/\s*[SATBHF])*)"
 DIALOGUE_RE = re.compile(rf"^\s*{_VOIX_MOT}\s*[:/;.\-)]", re.IGNORECASE)
-BIS_TER_RE = re.compile(r"\(\s*(bis|ter|x\s*\d)\s*\)\s*$", re.IGNORECASE)
+BIS_TER_RE = re.compile(r"\(\s*(bis|ter|x\s*\d|\d+\s*fois)\s*\)\s*$", re.IGNORECASE)
 
-INLINE_VERSE_SPLIT_RE = re.compile(r"(?=\b\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s)")
-# Repère un marqueur (Réf/numéro) même au MILIEU d'un paragraphe (deux
+INLINE_VERSE_SPLIT_RE = re.compile(r"(?=\b(?:\d+(?:\s*(?:&|,|\-)\s*\d+)*|[IVXivx]+)\s*[\.\-\)–—:]\s)")
+# Repère un marqueur (Réf/numéro/couplet) même au MILIEU d'un paragraphe (deux
 # couplets tapés à la suite sans saut de ligne, très fréquent dans les
 # carnets sources) pour l'éclater en plusieurs lignes avant classification.
-# Le numéro peut être collé au mot suivant sans espace ("1-Venez mes
-# enfants", fréquent en PDF) : on n'exige donc qu'une majuscule juste après
-# le séparateur plutôt qu'une espace obligatoire.
 _INLINE_MARKER_SPLIT_RE = re.compile(
-    r"(?<=\S)(?<!\(Ref)(?<!\(R[ée]f)\s+"
-    r"(?=(?:R[ée]f(?:rain)?\.?\s*\d*\s*[:;])"
-    r"|(?:\d+(?:\s*&\s*\d+)*\s*[\.\-\)–—:]\s*(?=[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ])))",
+    r"(?<=\S)(?<!\(Ref)(?<!\(R[ée]f)"
+    r"(?<!Couplet)(?<!couplet)(?<!Strophe)(?<!strophe)(?<!Verset)(?<!verset)(?<!C\.)(?<!v\.)\s+"
+    r"(?=(?:(?:R[ée]f(?:rain)?\.?\s*\d*|R\s*/|Ant(?:ienne)?\.?\s*\d*)\s*[:;/\-])"
+    r"|(?:\d+(?:\s*(?:&|,|\-)\s*\d+)*\s*[\.\-\)–—:]\s*(?=[A-ZÀÂÄÉÈÊËÎÏÔÖÙÛÜÇ]))"
+    r"|(?:(?:Couplet|Strophe|Verset)\s*\d+\s*[:.\-–—/]))",
     re.IGNORECASE,
 )
 # Même principe pour les voix alternées (Gloria "A./B./Tous:" etc.) tapées
@@ -64,14 +81,42 @@ _INLINE_DIALOGUE_SPLIT_RE = re.compile(
 CODE_REFERENCE_RE = re.compile(r"^([A-Z]{1,2}\s?\d{1,3}\s?[a-z]?)\s+(.+)$")
 CATEGORY_PREFIX_RE = re.compile(r"^([A-ZÉÈÀÂÎÔÛÇÏ][A-ZÉÈÀÂÎÔÛÇÏ \-]{2,25}?)\s*:\s*(.+)$")
 
-# Cas 15 : mots-clés de section liturgique — jamais des titres de chant.
-SECTION_KEYWORDS = {
-    "ENTREE", "ENTRÉE", "KYRIE", "PRENDS PITIE", "PRENDS PITIÉ", "GLORIA", "PSAUME", 
-    "ALLELUIA", "ALLÉLUIA", "ACCLAMATION", "CREDO", "PRIERE UNIVERSELLE", "PRIÈRE UNIVERSELLE", 
-    "PU", "OFFERTOIRE", "SANCTUS", "ANAMNESE", "ANAMNÈSE", "NOTRE PERE", "NOTRE PÈRE", 
-    "PATER", "AGNUS", "COMMUNION", "ACTION DE GRACE", "ACTION DE GRÂCE", "SORTIE", "ENVOI",
-    "CHANTS MARIAUX", "MARIAUX"
+_SECTION_MOMENTS_MAP = {
+    "ENTREE": "Entree", "ENTREE DE LA MESSE": "Entree", "OUVERTURE": "Entree",
+    "CHANT D ENTREE": "Entree", "CHANTS D ENTREE": "Entree", "CHANTS D OUVERTURE": "Entree",
+    "KYRIE": "Kyrie", "KYRIE ELEISON": "Kyrie", "ACTE PENITENTIEL": "Kyrie",
+    "PRENDS PITIE": "Kyrie", "PENITENCE": "Kyrie",
+    "GLORIA": "Gloria", "GLOIRE A DIEU": "Gloria", "HYMNE DE LOUANGE": "Gloria",
+    "PSAUME": "Psaume", "PSAUMES": "Psaume", "PSAUME RESPONSORIAL": "Psaume",
+    "GRADUEL": "Psaume", "GRADUELS": "Psaume",
+    "ACCLAMATION": "Acclamation", "ACCLAMATIONS": "Acclamation", "ALLELUIA": "Acclamation",
+    "ACCLAMATION DE L EVANGILE": "Acclamation", "EVANGILE": "Acclamation",
+    "CREDO": "Credo", "PROFESSION DE FOI": "Credo", "SYMBOLE DES APOTRES": "Credo",
+    "PRIERE UNIVERSELLE": "Priere_universelle", "PRIERES UNIVERSELLES": "Priere_universelle",
+    "PU": "Priere_universelle", "INTENTIONS": "Priere_universelle",
+    "OFFERTOIRE": "Offertoire", "OFFERTOIRES": "Offertoire", "PRESENTATION DES DONS": "Offertoire",
+    "QUETE": "Offertoire", "OFFRANDE": "Offertoire", "OFFRANDES": "Offertoire", "CHANTS D OFFERTOIRE": "Offertoire",
+    "SANCTUS": "Sanctus", "SAINT": "Sanctus", "SAINT LE SEIGNEUR": "Sanctus",
+    "ANAMNESE": "Anamnese", "MYSTERE DE LA FOI": "Anamnese",
+    "NOTRE PERE": "Notre_Pere", "PATER": "Notre_Pere", "PATER NOSTER": "Notre_Pere",
+    "AGNUS": "Agnus", "AGNUS DEI": "Agnus", "AGNEAU DE DIEU": "Agnus", "FRACTION DU PAIN": "Agnus",
+    "COMMUNION": "Communion", "COMMUNIONS": "Communion", "CHANTS DE COMMUNION": "Communion", "CHANT DE COMMUNION": "Communion",
+    "ACTION DE GRACE": "Action_de_grace", "ACTIONS DE GRACE": "Action_de_grace",
+    "REMERCIEMENT": "Action_de_grace", "REMERCIEMENTS": "Action_de_grace", "POST COMMUNION": "Action_de_grace",
+    "SORTIE": "Sortie", "SORTIES": "Sortie", "CHANTS DE SORTIE": "Sortie", "CHANT DE SORTIE": "Sortie",
+    "ENVOI": "Sortie", "ENVOIS": "Sortie", "CHANT D ENVOI": "Sortie", "CHANTS D ENVOI": "Sortie",
+    "ENVOI ET MISSION": "Sortie", "CHANT FINAL": "Sortie",
+    "MARIAL": "Marial", "MARIAUX": "Marial", "CHANTS MARIAUX": "Marial", "CHANT MARIAL": "Marial",
+    "MARIE": "Marial", "VIERGE MARIE": "Marial", "SAINTE VIERGE": "Marial", "CHANTS A MARIE": "Marial",
+    "AVENT": "Avent", "TEMPS DE L AVENT": "Avent",
+    "NOEL": "Noel", "TEMPS DE NOEL": "Noel",
+    "CAREME": "Careme", "TEMPS DU CAREME": "Careme", "PASSION": "Careme", "SEMAINE SAINTE": "Careme",
+    "PAQUES": "Paques", "TEMPS PASCAL": "Paques", "RESURRECTION": "Paques",
+    "MARIAGE": "Mariage", "MARIAGES": "Mariage",
+    "DEFUNTS": "Defunts", "OBSEQUES": "Defunts",
+    "BAPTEME": "Bapteme_Confirmation", "CONFIRMATION": "Bapteme_Confirmation", "BAPTEME ET CONFIRMATION": "Bapteme_Confirmation",
 }
+SECTION_KEYWORDS = set(_SECTION_MOMENTS_MAP.keys())
 
 # Gros carnets multi-catégories (souvent des PDF) qui préfixent chaque chant
 # d'un code "CATEGORIE[numéro] : Titre" (ex. "ENTREE2 : DANS LA PAIX...",
@@ -86,32 +131,9 @@ CODED_TITLE_RE = re.compile(
 # Clés déjà passées par normaliser()+upper() (sans accents) puisque la
 # recherche ci-dessous normalise systématiquement le mot capté.
 _CODED_TITLE_CATEGORIES = {
-    "ENTREE": "Entree",
-    "KYRIE": "Kyrie",
-    "GLORIA": "Gloria",
-    "PSAUME": "Psaume",
-    "ACCLAMATION": "Acclamation",
-    "ACCLAMTION": "Acclamation", # gestion de la coquille dans le docx
-    "ALLELUIA": "Acclamation",
-    "CREDO": "Credo",
-    "PRIERE UNIVERSELLE": "Priere_universelle",
-    "PU": "Priere_universelle", "PRIERE": "Priere_universelle",
-    "OFFERTOIRE": "Offertoire",
-    "SANCTUS": "Sanctus",
-    "ANAMNESE": "Anamnese",
-    "NOTRE PERE": "Notre_Pere", "PATER": "Notre_Pere",
-    "AGNUS": "Agnus",
-    "COMMUNION": "Communion",
-    "ACTION DE GRACE": "Action_de_grace",
-    "SORTIE": "Sortie",
-    "ENVOI": "Sortie",
-    "NOEL": "Noel",
-    "CAREME": "Careme",
-    "AVENT": "Avent",
-    "PAQUES": "Paques",
-    "MARIAGE": "Mariage",
-    "DEFUNTS": "Defunts",
-    "BAPTEME": "Bapteme_Confirmation",
+    **_SECTION_MOMENTS_MAP,
+    "ACCLAMTION": "Acclamation",
+    "PRIERE": "Priere_universelle",
 }
 
 
@@ -227,7 +249,7 @@ def _eclater_marqueurs_internes(paragraphs: list[str]) -> list[str]:
     paragraphe Word, sans le moindre saut de ligne entre eux."""
     lignes: list[str] = []
     for p in paragraphs:
-        if _match_coded_title(p):
+        if _match_section_header(p) or _match_coded_title(p):
             lignes.append(p)
             continue
         for morceau in _INLINE_MARKER_SPLIT_RE.split(p):
@@ -246,16 +268,46 @@ def _extract_code_reference(titre: str) -> tuple[Optional[str], str]:
     return None, titre
 
 
+def _norm_sec(s: str) -> str:
+    s = normaliser(s).upper()
+    s = re.sub(r"['’`´]", " ", s)
+    return re.sub(r"\s+", " ", s).strip()
+
+_PREFIX_DECO_RE = re.compile(r"^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[\.\-\)–—:]\s*|^[=\-\*#_\[\]]{2,}\s*|\s*[=\-\*#_\[\]]{2,}$")
+
+
+def _match_section_header(ligne: str) -> Optional[str]:
+    raw = ligne.strip()
+    if not raw or len(raw) > 55:
+        return None
+    has_decorations = bool(_PREFIX_DECO_RE.search(raw))
+    cleaned = raw.strip("=*-#_[]:()").strip()
+    had_prefix = bool(re.match(r"^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[\.\-\)–—:]\s*", cleaned))
+    cleaned = re.sub(r"^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[\.\-\)–—:]\s*", "", cleaned).strip()
+    norm = _norm_sec(cleaned)
+
+    # 1. Correspondance exacte dans la table
+    if norm in _SECTION_MOMENTS_MAP:
+        if norm in {"PRENDS PITIE", "ALLELUIA", "SAINT", "MARIE"} and not (had_prefix or has_decorations or raw.isupper()):
+            return None
+        return _SECTION_MOMENTS_MAP[norm]
+
+    # 2. Correspondance préfixée UNIQUEMENT pour les lignes qui sont de réels en-têtes
+    # (majuscules, numérotation, décorations, ou mots-clés "Chants de...") pour ne jamais
+    # confondre une phrase de chant ordinaire avec un en-tête de section.
+    is_heading = had_prefix or has_decorations or raw.isupper() or norm.startswith(("CHANTS D ", "CHANTS DE ", "CHANT D ", "CHANT DE ", "TEMPS DE ", "TEMPS DU "))
+    if is_heading:
+        for k, cat in _SECTION_MOMENTS_MAP.items():
+            if norm.startswith(f"{k} ") and k not in {"PRENDS PITIE", "ALLELUIA", "SAINT", "MARIE"}:
+                return cat
+            if norm.endswith(f" {k}"):
+                return cat
+
+    return None
+
+
 def _est_ligne_section(ligne: str) -> bool:
-    cleaned = ligne.strip().upper().rstrip(":.")
-    if cleaned in SECTION_KEYWORDS:
-        return True
-    m = _SECTION_HEAD_RE.match(cleaned)
-    if m:
-        val = m.group(1).strip()
-        if val in SECTION_KEYWORDS or val.replace(" ", "") in SECTION_KEYWORDS:
-            return True
-    return False
+    return _match_section_header(ligne) is not None
 
 
 # --- Classification ligne par ligne -------------------------------------
@@ -263,14 +315,15 @@ def _est_ligne_section(ligne: str) -> bool:
 @dataclass
 class _Ligne:
     texte: str
-    type: str  # "ref" | "verset" | "dialogue" | "puce" | "texte"
-    marqueur: Optional[str] = None  # numéro/préfixe capturé (verset/ref)
+    type: str  # "section" | "ref" | "verset" | "dialogue" | "puce" | "texte"
+    marqueur: Optional[str] = None  # numéro/préfixe capturé (verset/ref/section)
     contenu: str = ""  # texte après le marqueur
 
 
 def _classer_ligne(ligne: str) -> _Ligne:
-    if _est_ligne_section(ligne):
-        return _Ligne(ligne, "texte", None, ligne)
+    sec_cat = _match_section_header(ligne)
+    if sec_cat:
+        return _Ligne(ligne, "section", sec_cat, ligne)
         
     ref_m = REF_RE.match(ligne)
     if ref_m:
@@ -351,6 +404,7 @@ def segment_paragraphs_docx_clean(paragraphs: list[str]) -> list[RawChant]:
     chants: list[RawChant] = []
     
     titre_courant: Optional[str] = None
+    categorie_section: Optional[str] = None
     categorie_courante: Optional[str] = None
     
     blocks = []
@@ -366,7 +420,8 @@ def segment_paragraphs_docx_clean(paragraphs: list[str]) -> list[RawChant]:
         if titre_courant is None and not blocks:
             return
             
-        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=categorie_courante)
+        cat_finale = categorie_courante or categorie_section
+        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=cat_finale)
         
         ref_parts = []
         couplets = []
@@ -375,31 +430,45 @@ def segment_paragraphs_docx_clean(paragraphs: list[str]) -> list[RawChant]:
             if b["type"] == "ref":
                 ref_parts.append(text)
             else:
-                if b["num"]:
+                if b.get("num"):
                     couplets.append(f"{b['num']}- {text}")
                 else:
                     couplets.append(text)
                     
+        ref_confiance = 1.0
         if ref_parts:
             chant.refrain = " / ".join(ref_parts)
+        elif blocks:
+            candidats = [b["lines"][0] for b in blocks if b["type"] != "ref" and not b.get("num")]
+            tous = [" / ".join(b["lines"]) for b in blocks]
+            ref_impl, conf_impl = _detecter_refrain_implicite(candidats, tous)
+            if ref_impl:
+                chant.refrain = ref_impl
+                ref_confiance = conf_impl
+                couplets = [c for c in couplets if ref_impl not in c]
             
         chant.couplets = couplets
-        chant.confiance = _calculer_confiance(chant, 1.0, any(b["type"] == "couplet" and b["num"] for b in blocks))
+        chant.confiance = _calculer_confiance(chant, ref_confiance, any(b["type"] == "couplet" and b.get("num") for b in blocks))
         chants.append(_finalize(chant))
         
         titre_courant = None
-        categorie_courante = None
+        categorie_courante = categorie_section
         blocks = []
         block_finished = False
 
-    for p in paragraphs:
+    paragraphs_eclates = _eclater_marqueurs_internes(paragraphs)
+
+    for p in paragraphs_eclates:
         p_clean = p.strip()
         if not p_clean:
             block_finished = True
             continue
             
-        if _est_ligne_section(p_clean):
+        sec_cat = _match_section_header(p_clean)
+        if sec_cat:
             flush_song()
+            categorie_section = sec_cat
+            categorie_courante = sec_cat
             continue
             
         coded = _match_coded_title(p_clean)
@@ -472,7 +541,6 @@ def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False)
     if is_clean_paragraphs:
         return segment_paragraphs_docx_clean(paragraphs)
     paragraphs = [p.strip() for p in paragraphs if p and p.strip()]
-    paragraphs = [p for p in paragraphs if not _est_ligne_section(p)]
     prefix = _detect_consistent_prefix(paragraphs)
     lignes_brutes = _eclater_marqueurs_internes(paragraphs)
     lignes = [_classer_ligne(l) for l in lignes_brutes]
@@ -485,6 +553,7 @@ def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False)
     blocs_versets: list[tuple[str, str]] = []  # (marqueur, texte)
     blocs_pre_versets: list[str] = []  # texte libre vu avant le 1er couplet
     titre_courant: Optional[str] = None
+    categorie_section: Optional[str] = None
     categorie_courante: Optional[str] = None
     dernier_type: Optional[str] = None
     # Vrai dès qu'un Réf/verset/puce a été vu pour le chant en cours — une
@@ -499,7 +568,8 @@ def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False)
         nonlocal titre_courant, categorie_courante, blocs_refrain_explicite, blocs_versets, blocs_pre_versets, dernier_type, a_vu_marqueur
         if titre_courant is None and not a_du_contenu():
             return
-        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=categorie_courante)
+        cat_finale = categorie_courante or categorie_section
+        chant = RawChant(titre=titre_courant or "(sans titre)", categorie_detectee=cat_finale)
         refrain_confiance = 1.0
         if blocs_refrain_explicite:
             chant.refrain = " / ".join(blocs_refrain_explicite)
@@ -524,7 +594,7 @@ def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False)
         chants.append(_finalize(chant))
 
         titre_courant = None
-        categorie_courante = None
+        categorie_courante = categorie_section
         blocs_refrain_explicite = []
         blocs_versets = []
         blocs_pre_versets = []
@@ -532,6 +602,14 @@ def segment_paragraphs(paragraphs: list[str], is_clean_paragraphs: bool = False)
         a_vu_marqueur = False
 
     for ligne in lignes:
+        sec_cat = _match_section_header(ligne.texte)
+        if sec_cat:
+            flush()
+            categorie_section = sec_cat
+            categorie_courante = sec_cat
+            dernier_type = "section"
+            continue
+
         coded = _match_coded_title(ligne.texte)
         if coded:
             flush()

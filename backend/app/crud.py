@@ -103,7 +103,14 @@ def create_chant(
             ),
         )
         row = conn.execute("SELECT * FROM chants WHERE id = ?", (new_id,)).fetchone()
-        return _row_to_chant(row)
+        created = _row_to_chant(row)
+        if created.categorie and created.categorie != "Autre":
+            try:
+                from .ml.classifier import apprendre_chant
+                apprendre_chant(created.titre, created.refrain, created.couplets, created.categorie, poids=2)
+            except Exception:
+                pass
+        return created
 
 
 _MASQUE_CLAUSE = (
@@ -622,7 +629,20 @@ def update_chant(chant_id: int, patch: schemas.ChantUpdate, mark_reviewed: bool 
                 chant_id,
             ),
         )
-    return get_chant(chant_id)
+    updated = get_chant(chant_id)
+    if updated and updated.categorie and updated.categorie != "Autre":
+        try:
+            from .ml.classifier import apprendre_correction
+            apprendre_correction(
+                updated.titre,
+                updated.refrain,
+                updated.couplets,
+                existing.categorie if existing else None,
+                updated.categorie,
+            )
+        except Exception:
+            pass
+    return updated
 
 
 def proposer_validation_chant(chant_id: int, chorale_id: int) -> Optional[schemas.Chant]:
@@ -647,7 +667,14 @@ def valider_chant(chant_id: int) -> Optional[schemas.Chant]:
         cur = conn.execute("UPDATE chants SET valide_manuellement = 1 WHERE id = ?", (chant_id,))
         if cur.rowcount == 0:
             return None
-    return get_chant(chant_id)
+    valide = get_chant(chant_id)
+    if valide and valide.categorie and valide.categorie != "Autre":
+        try:
+            from .ml.classifier import apprendre_chant
+            apprendre_chant(valide.titre, valide.refrain, valide.couplets, valide.categorie, poids=3)
+        except Exception:
+            pass
+    return valide
 
 
 def retirer_validation_chant(chant_id: int) -> Optional[schemas.Chant]:
@@ -806,7 +833,32 @@ def bulk_import_chants(
                 replaced += 1
             else:
                 ignored += 1
-                
+
+    # Apprentissage automatique continu sur les chants importés/remplacés
+    for op in ops:
+        if not op:
+            continue
+        op_type = op.get("type")
+        if op_type == "save":
+            chant = op.get("chant")
+            if chant and chant.categorie and chant.categorie != "Autre":
+                try:
+                    from .ml.classifier import apprendre_chant
+                    apprendre_chant(chant.titre, chant.refrain, chant.couplets, chant.categorie, poids=2)
+                except Exception:
+                    pass
+        elif op_type == "replace":
+            patch = op.get("patch")
+            if patch:
+                champs = patch.model_dump(exclude_unset=True)
+                cat = champs.get("categorie")
+                if cat and cat != "Autre":
+                    try:
+                        from .ml.classifier import apprendre_chant
+                        apprendre_chant(champs.get("titre", ""), champs.get("refrain"), champs.get("couplets", []), cat, poids=3)
+                    except Exception:
+                        pass
+
     return saved, replaced, ignored
 
 
