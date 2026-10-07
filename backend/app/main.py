@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -20,27 +20,13 @@ app.add_middleware(
     allow_origins=["*"],
     allow_methods=["*"],
     allow_headers=["*"],
-    # Explicite plutôt qu'implicite : la combinaison origines="*" +
-    # credentials=True est ce que les navigateurs bloquent de toute façon
-    # (et ce qui rendrait le cookie de session lisible cross-origin) --
-    # fixé à False ici pour qu'un futur changement ne l'active jamais par
-    # inadvertance en même temps qu'un allow_origins encore large.
     allow_credentials=False,
 )
 
-# Chemins accessibles sans authentification : uniquement ce qu'il faut pour
-# afficher la page de connexion elle-même (login.html est autonome, sans
-# dépendance vers app.js/style.css qui restent, eux, protégés) — plus les
-# fichiers d'installation de l'appli (manifest, icônes, service worker) :
-# le navigateur doit pouvoir les récupérer AVANT toute connexion (prompt
-# d'installation depuis login.html) ; ils ne contiennent aucune donnée, donc
-# aucun risque à les laisser publics.
 _CHEMINS_PUBLICS = {
-    "/auth/login", "/auth/status", "/health", "/login.html", "/favicon.ico",
+    "/auth/login", "/auth/status", "/health", "/login.html", "/favicon.ico", "/favicon.svg",
     "/manifest.json", "/sw.js", "/icon-192.png", "/icon-512.png",
-    # Activation/vérification de licence mobile : appelées par l'app React
-    # Native AVANT tout login (voir app/licences.py) -- protégées par leur
-    # propre throttling anti brute-force, pas par la session web.
+    "/splash_saint_esprit.svg", "/colombe_heraldry.svg",
     "/licences/activer", "/licences/verifier", "/parametres/contact-admin",
 }
 # Accessibles dès qu'on est authentifié, même si le mot de passe par défaut
@@ -80,52 +66,61 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Effacer les chorales expirées
-        from . import db
-        db.nettoyer_chorales_supprimees()
+        try:
+            from . import db
+            db.nettoyer_chorales_supprimees()
+        except Exception as e:
+            print("nettoyer_chorales_supprimees error:", e)
 
-        # Carve-out Messagerie : un appareil chorale (licence 100% hors-ligne,
-        # voir app/licence_signature.py) n'a plus jamais de session/Bearer
-        # classique -- il prouve son identité par possession du `seed` de sa
-        # licence (voir app/messages_auth.py). Volontairement restreint à
-        # /messages/* hors /messages/chorales (boîte de réception admin, qui
-        # garde le chemin session/cookie normal ci-dessous, inchangé) et
-        # déclenché UNIQUEMENT par la présence de l'en-tête dédié -- toute
-        # requête sans cet en-tête (web, ou mobile super-admin) retombe sur
-        # la résolution identite_depuis_requete normale, sans aucun impact.
+        # Carve-out Messagerie
         if (path.startswith("/messages") and path != "/messages/chorales" or path == "/licences/synchroniser-usage") and "x-chorale-proof" in request.headers:
-            from . import messages_auth
-            identite_chorale = messages_auth.identite_depuis_preuve_chorale(request)
-            if not identite_chorale:
+            try:
+                from . import messages_auth
+                identite_chorale = messages_auth.identite_depuis_preuve_chorale(request)
+                if not identite_chorale:
+                    return self._refuser(request)
+                request.state.identite = identite_chorale
+                return await call_next(request)
+            except Exception as e:
+                print("messages_auth error:", e)
                 return self._refuser(request)
-            request.state.identite = identite_chorale
-            return await call_next(request)
 
-        identite = auth.identite_depuis_requete(request)
+        try:
+            identite = auth.identite_depuis_requete(request)
+        except Exception as e:
+            print("identite_depuis_requete error:", e)
+            identite = None
+
         if not identite:
             return self._refuser(request)
         request.state.identite = identite
 
-        # Les chorales et le super-admin ont désormais un accès complet et unifié
-        # à la fois sur le web et sur le mobile (sessions alignées).
-
         if path in _CHEMINS_CHANGEMENT_MDP:
             return await call_next(request)
 
-        if identite.type == "super":
-            compte = auth.get_account()
-        else:
-            compte = auth.get_chorale(identite.compte_id)
+        try:
+            if identite.type == "super":
+                compte = auth.get_account()
+            else:
+                compte = auth.get_chorale(identite.compte_id)
+        except Exception as e:
+            print("get_account/get_chorale error:", e)
+            compte = None
+
         if not compte:
             return self._refuser(request)
-        if compte and compte["must_change_password"]:
+        if compte and compte.get("must_change_password"):
             return self._refuser(request)
 
-        token = request.cookies.get(auth.COOKIE_NAME)
-        if not token:
-            entete = request.headers.get("authorization", "")
-            if entete.lower().startswith("bearer "):
-                token = entete[7:].strip()
-        auth.touch_session(token)
+        try:
+            token = request.cookies.get(auth.COOKIE_NAME)
+            if not token:
+                entete = request.headers.get("authorization", "")
+                if entete.lower().startswith("bearer "):
+                    token = entete[7:].strip()
+            auth.touch_session(token)
+        except Exception as e:
+            print("touch_session error:", e)
 
         return await call_next(request)
 
@@ -281,6 +276,24 @@ def ajouter_categorie(payload: schemas.CategoriePersonnalisee, identite: auth.Id
 
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+
+@app.get("/", include_in_schema=False)
+def serve_index():
+    index_path = STATIC_DIR / "index.html"
+    if index_path.exists():
+        return FileResponse(index_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="index.html introuvable")
+
+
+@app.get("/login.html", include_in_schema=False)
+def serve_login_html():
+    login_path = STATIC_DIR / "login.html"
+    if login_path.exists():
+        return FileResponse(login_path, media_type="text/html")
+    raise HTTPException(status_code=404, detail="login.html introuvable")
+
+
 if STATIC_DIR.exists() and STATIC_DIR.is_dir():
     app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
 else:
@@ -289,4 +302,5 @@ else:
         app.mount("/", StaticFiles(directory=STATIC_DIR, html=True), name="static")
     except Exception as e:
         print("Warning: Impossible de monter STATIC_DIR:", e)
+
 

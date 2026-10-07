@@ -828,13 +828,24 @@ def init_db(force: bool = False) -> None:
     global _INITIALIZED
     if _INITIALIZED and not force:
         return
-    if BACKEND == "postgres":
-        _init_postgres()
-    else:
-        _init_sqlite()
+    try:
+        if BACKEND == "postgres":
+            _init_postgres()
+        else:
+            _init_sqlite()
+    except Exception as e:
+        print("Warning: init_db failed on primary backend, fallback to sqlite:", e)
+        try:
+            _init_sqlite()
+        except Exception as e2:
+            print("Error: SQLite fallback also failed:", e2)
 
-    from . import auth  # import différé : auth.py importe get_connection depuis ce module
-    auth.ensure_default_account()
+    try:
+        from . import auth  # import différé : auth.py importe get_connection depuis ce module
+        auth.ensure_default_account()
+    except Exception as e:
+        print("ensure_default_account error:", e)
+
     _INITIALIZED = True
 
 
@@ -1104,26 +1115,30 @@ def _init_postgres() -> None:
 def get_connection():
     if BACKEND == "postgres":
         import time
-        max_retries = 5
-        delay = 1.0
+        max_retries = 3
+        delay = 0.5
+        conn = None
         for attempt in range(max_retries):
             try:
-                conn = psycopg2.connect(DATABASE_URL)
+                conn = psycopg2.connect(DATABASE_URL, connect_timeout=4)
                 break
-            except psycopg2.OperationalError as e:
+            except Exception as e:
                 if attempt == max_retries - 1:
-                    raise e
+                    print(f"Warning: Connexion Postgres échouée ({e}), repli automatique sur SQLite.")
+                    break
                 time.sleep(delay)
-                delay *= 2
-        wrapped = _PgConnWrapper(conn)
-        try:
-            yield wrapped
-            wrapped.commit()
-        finally:
-            wrapped.close()
-        return
+                delay *= 1.5
 
-    conn = sqlite3.connect(DB_PATH)
+        if conn is not None:
+            wrapped = _PgConnWrapper(conn)
+            try:
+                yield wrapped
+                wrapped.commit()
+            finally:
+                wrapped.close()
+            return
+
+    conn = sqlite3.connect(DB_PATH, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
     try:
