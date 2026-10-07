@@ -82,7 +82,8 @@ CODE_REFERENCE_RE = re.compile(r"^([A-Z]{1,2}\s?\d{1,3}\s?[a-z]?)\s+(.+)$")
 CATEGORY_PREFIX_RE = re.compile(r"^([A-ZÉÈÀÂÎÔÛÇÏ][A-ZÉÈÀÂÎÔÛÇÏ \-]{2,25}?)\s*:\s*(.+)$")
 
 _SECTION_MOMENTS_MAP = {
-    "ENTREE": "Entree", "ENTREE DE LA MESSE": "Entree", "OUVERTURE": "Entree",
+    "ENTREE": "Entree", "ENTRER": "Entree", "ENTREES": "Entree",
+    "ENTREE DE LA MESSE": "Entree", "ENTREE TEMPS ORDINAIRE": "Entree", "OUVERTURE": "Entree",
     "CHANT D ENTREE": "Entree", "CHANTS D ENTREE": "Entree", "CHANTS D OUVERTURE": "Entree",
     "KYRIE": "Kyrie", "KYRIE ELEISON": "Kyrie", "ACTE PENITENTIEL": "Kyrie",
     "PRENDS PITIE": "Kyrie", "PENITENCE": "Kyrie",
@@ -111,8 +112,10 @@ _SECTION_MOMENTS_MAP = {
     "AVENT": "Avent", "TEMPS DE L AVENT": "Avent",
     "NOEL": "Noel", "TEMPS DE NOEL": "Noel",
     "CAREME": "Careme", "TEMPS DU CAREME": "Careme", "PASSION": "Careme", "SEMAINE SAINTE": "Careme",
-    "PAQUES": "Paques", "TEMPS PASCAL": "Paques", "RESURRECTION": "Paques",
-    "MARIAGE": "Mariage", "MARIAGES": "Mariage",
+    "PAQUES": "Paques", "PAQUE": "Paques", "TEMPS PASCAL": "Paques", "RESURRECTION": "Paques",
+    "CHANTS DE PAQUES": "Paques", "CHANT DE PAQUES": "Paques",
+    "MARIAGE": "Mariage", "MARIAGES": "Mariage", "CHANT DE MARIAGE": "Mariage",
+    "CHANTS DE MARIAGE": "Mariage", "MARIAGE ET ANIMATION": "Mariage",
     "DEFUNTS": "Defunts", "OBSEQUES": "Defunts",
     "BAPTEME": "Bapteme_Confirmation", "CONFIRMATION": "Bapteme_Confirmation", "BAPTEME ET CONFIRMATION": "Bapteme_Confirmation",
 }
@@ -279,6 +282,8 @@ _PREFIX_DECO_RE = re.compile(r"^(?:[0-9]+|[IVXivx]+|[A-Za-z])\s*[\.\-\)–—:]\
 def _match_section_header(ligne: str) -> Optional[str]:
     raw = ligne.strip()
     if not raw or len(raw) > 55:
+        return None
+    if VERSE_RE.match(raw) and not raw.isupper():
         return None
     has_decorations = bool(_PREFIX_DECO_RE.search(raw))
     cleaned = raw.strip("=*-#_[]:()").strip()

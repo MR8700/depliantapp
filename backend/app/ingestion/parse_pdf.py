@@ -5,7 +5,11 @@ from typing import Optional
 
 import fitz
 
-from .common import RawChant, VERSE_RE, finalize, normaliser, segment_paragraphs, split_inline_verses, SECTION_KEYWORDS
+from .common import (
+    RawChant, VERSE_RE, REF_RE, DIALOGUE_RE, BULLET_RE,
+    finalize, normaliser, segment_paragraphs, split_inline_verses,
+    SECTION_KEYWORDS, _match_section_header, _SECTION_MOMENTS_MAP
+)
 
 _NUMERO_PAGE_RE = re.compile(r"^\d{1,4}$")
 # Ligne de sommaire à points de suite ("ENTREE.......................... 02")
@@ -184,19 +188,70 @@ def segment_pdf_paragraphs(path: Path) -> list[tuple[str, RawChant]]:
 
 
 def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str, RawChant]]:
-    """Segmentation pour les carnets sans numérotation ni en-tête de catégorie
-    (ex. CHANT CHORALE.pdf), où seule la mise en forme distingue titre / refrain / couplet :
-    titre = grande taille, refrain = gras, couplet = texte normal (numéroté ou non)."""
+    """Segmentation intelligente des carnets PDF par hiérarchie typographique
+    (titre = grande taille/gras, refrain = gras, couplet = texte normal numéroté ou non),
+    avec prise en compte des sections liturgiques (Entrée, Kyrie, Gloria, etc.).
+    """
     doc = fitz.open(path)
     try:
+        # 1. Analyse préalable de la distribution des tailles de police pour calibrer le seuil
+        sizes_counter: Counter[float] = Counter()
+        for p_idx in range(min(len(doc), 30)):
+            for block in doc[p_idx].get_text("dict")["blocks"]:
+                for line in block.get("lines", []):
+                    for s in line.get("spans", []):
+                        t = s.get("text", "").strip()
+                        if t and len(t) > 2:
+                            sizes_counter[round(s.get("size", 0.0), 1)] += 1
+
+        body_size = 14.0
+        if sizes_counter:
+            body_size = sizes_counter.most_common(1)[0][0]
+
+        # Détermination dynamique du seuil de titre
+        if body_size <= 12.0:
+            title_threshold = body_size + 2.0
+        elif body_size <= 15.0:
+            title_threshold = 19.0
+        else:
+            title_threshold = max(19.5, body_size + 1.5)
+
         results: list[tuple[str, RawChant]] = []
         current: Optional[RawChant] = None
         active: Optional[str] = None
+        current_section: str = "Autre"
+
+        def is_title_line(size: float, is_bold: bool, text: str) -> bool:
+            if VERSE_RE.match(text):
+                return False
+            if REF_RE.match(text):
+                return False
+            if DIALOGUE_RE.match(text):
+                return False
+            if BULLET_RE.match(text):
+                return False
+            if re.search(r"\(\s*(?:bis|ter|\d+\s*fois)\s*\)\s*$", text, re.I):
+                return False
+            if re.search(r"\.{3,}", text):
+                return False
+            if len(text) > 90:
+                return False
+            if size >= title_threshold and is_bold:
+                return True
+            if size >= max(21.5, title_threshold + 1.0):
+                return True
+            return False
 
         def flush():
             nonlocal current
             if current is not None:
-                results.append(("Autre", finalize(current)))
+                has_content = bool(current.refrain or current.couplets)
+                if has_content or (current.titre and current.titre not in ("(sans titre)", "Sans titre")):
+                    final = finalize(current)
+                    cat = final.categorie_detectee or current_section
+                    if not final.categorie_detectee and current_section != "Autre":
+                        final.categorie_detectee = current_section
+                    results.append((cat, final))
             current = None
 
         for page in doc:
@@ -206,23 +261,47 @@ def segment_by_font(path: Path, title_min_size: float = 17.0) -> list[tuple[str,
                     text = "".join(s["text"] for s in spans).strip()
                     if not text:
                         continue
-                    max_size = max((s["size"] for s in spans), default=0)
-                    is_bold = any(s["flags"] & 16 or "Bold" in s.get("font", "") for s in spans)
+                    if _NUMERO_PAGE_RE.match(text) or _LIGNE_SOMMAIRE_RE.search(text):
+                        continue
 
-                    if max_size >= title_min_size:
-                        flush()
-                        current = RawChant(titre=text)
+                    max_size = max((s["size"] for s in spans), default=0)
+                    is_bold = any(s.get("flags", 0) & 16 or "Bold" in s.get("font", "") for s in spans)
+
+                    # 1. Vérification si la ligne est un en-tête de section liturgique
+                    sec = _match_section_header(text)
+                    if sec and (max_size >= title_threshold or (is_bold and len(text) < 30) or max_size >= 18.0):
+                        if current and not current.refrain and not current.couplets:
+                            current = None
+                        else:
+                            flush()
+                        current_section = sec
+                        current = RawChant(titre=text.capitalize(), categorie_detectee=sec)
+                        active = "titre"
+                        continue
+
+                    # 2. Vérification si c'est un titre de chant
+                    if is_title_line(max_size, is_bold, text):
+                        if current and not current.refrain and not current.couplets:
+                            current.titre = f"{current.titre} {text}".strip()
+                        else:
+                            flush()
+                            current = RawChant(titre=text, categorie_detectee=current_section)
                         active = "titre"
                         continue
 
                     if current is None:
-                        current = RawChant(titre="(sans titre)")
+                        current = RawChant(titre="(sans titre)", categorie_detectee=current_section)
 
-                    if is_bold:
-                        current.refrain = f"{current.refrain} {text}".strip() if current.refrain else text
+                    # 3. Refrain explicite ou en gras
+                    ref_m = REF_RE.match(text)
+                    if is_bold or ref_m:
+                        ref_text = ref_m.group(2).strip() if ref_m and ref_m.group(2) else text
+                        if ref_text:
+                            current.refrain = f"{current.refrain} {ref_text}".strip() if current.refrain else ref_text
                         active = "refrain"
                         continue
 
+                    # 4. Couplets / versets
                     verse_m = VERSE_RE.match(text)
                     if verse_m or active != "couplet" or not current.couplets:
                         current.couplets.extend(split_inline_verses(text))

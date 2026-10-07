@@ -130,8 +130,48 @@ def test_segmentation_carnet_avec_sections_et_refrains():
     assert len(chants[5].couplets) == 2
 
 
+def test_category_protection_against_overrides():
+    # 1. Anamnèse avec alléluia ne doit pas devenir une Acclamation
+    anam_titre = "Mystère de la foi"
+    anam_ref = "Il est grand le mystère de la foi"
+    anam_couplets = ["Nous proclamons ta mort Seigneur Jésus, nous célébrons ta résurrection, alléluia"]
+    cats = suggest_categorie(anam_titre, anam_ref, anam_couplets, top_n=2)
+    assert cats[0][0] == "Anamnese", f"Devrait être Anamnese mais obtenu {cats[0][0]}"
+
+    # 2. Entrée avec victoire ne doit pas devenir Pâques
+    entree_titre = "Peuple en marche"
+    entree_ref = "Peuple de Dieu en marche, chantons au Seigneur notre Dieu"
+    entree_couplets = ["À toi la victoire et la gloire dans les siècles des siècles"]
+    cats_e = suggest_categorie(entree_titre, entree_ref, entree_couplets, top_n=2)
+    assert cats_e[0][0] == "Entree", f"Devrait être Entree mais obtenu {cats_e[0][0]}"
+
+
+def test_chant_chorale_pdf_no_explosion():
+    from pathlib import Path
+    from backend.app.ingestion.generic import parse_and_segment
+
+    pdf_path = Path(r"C:\Users\Richard\Documents\DépliantChorale\CHORALE\CHANT CHORALE-1.pdf")
+    if not pdf_path.exists():
+        return
+
+    resultats = parse_and_segment(pdf_path)
+    # Vérifier que le PDF ne produit pas 2193 mini-fragments
+    assert 400 <= len(resultats) <= 750, f"Nombre anormal de chants: {len(resultats)}"
+
+    # Vérifier qu'il n'y a pas d'explosion d'échecs (< 0.40)
+    echecs = [c for cat, c in resultats if c.confiance < 0.4]
+    assert len(echecs) == 0, f"Il ne devrait y avoir aucun échec (< 40%), trouvé {len(echecs)}"
+
+    # Vérifier la présence des sections liturgiques majeures
+    categories_presentes = {cat for cat, c in resultats}
+    for moment in ["Entree", "Kyrie", "Gloria", "Sanctus", "Anamnese", "Communion", "Sortie"]:
+        assert moment in categories_presentes, f"Moment liturgique {moment} manquant dans les chants extraits"
+
+
 if __name__ == "__main__":
     test_detecter_langue()
     test_detecter_moments_liturgiques_suggest()
     test_segmentation_carnet_avec_sections_et_refrains()
+    test_category_protection_against_overrides()
+    test_chant_chorale_pdf_no_explosion()
     print("Tous les tests d'analyse et d'importation ont réussi avec succès !")

@@ -132,16 +132,22 @@ async def upload_carnet(
         if id_connu is not None and not any(d["id"] == id_connu for d in doublons):
             doublons = [{"id": id_connu, "titre": titres_par_id[id_connu], "similarite": 1.0}] + doublons
 
-        # Détection automatique de la catégorie liturgique si non spécifiée ou par défaut
+        # Détection de la catégorie liturgique :
+        # Priorité 1 : Catégorie explicitement détectée sur le chant (ex. en-tête de section du carnet, titre codé)
+        # Priorité 2 : Catégorie déduite du nom du fichier ou spécifiée à l'import (si spécifique et non 'Autre')
+        # Priorité 3 : Suggestion IA par le classifieur liturgique (uniquement si aucune catégorie spécifique n'est établie)
         categorie_finale = raw.categorie_detectee or categorie
-        if not categorie_finale or categorie_finale in ("Autre", categorie_defaut):
-            suggestions = suggest_categorie(raw.titre or "", raw.refrain, raw.couplets)
-            if suggestions:
-                top_cat, top_score = suggestions[0]
-                if top_score >= 0.25 and top_cat != "Autre":
-                    categorie_finale = top_cat
+        if not categorie_finale or categorie_finale == "Autre":
+            if categorie_defaut and categorie_defaut != "Autre":
+                categorie_finale = categorie_defaut
+            else:
+                suggestions = suggest_categorie(raw.titre or "", raw.refrain, raw.couplets)
+                if suggestions:
+                    top_cat, top_score = suggestions[0]
+                    if top_score >= 0.40 and top_cat != "Autre":
+                        categorie_finale = top_cat
         if not categorie_finale:
-            categorie_finale = categorie_defaut or "Autre"
+            categorie_finale = "Autre"
 
         # Détection automatique de la langue de chaque chant (latin, mooré, dioula, lingala, etc.)
         langue_chant = detecter_langue(raw.titre or "", raw.refrain, raw.couplets, langue_defaut=langue or "fr")

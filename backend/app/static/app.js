@@ -4927,7 +4927,13 @@ function afficherDetailsChantModification() {
       importWorkspaceChants[idx] = {
         ...importWorkspaceChants[idx],
         ...modifications,
+        confiance: 1.0,
+        statut: "Importé",
+        verifie: true,
       };
+      if (importWorkspaceChants[idx].action === "ignore") {
+        importWorkspaceChants[idx].action = "save";
+      }
       currentDetailChant = importWorkspaceChants[idx];
       afficherImportWorkspace(importWorkspaceChants);
       afficherDetailsChantLecture();
@@ -5107,6 +5113,9 @@ document.getElementById("chant-editor-form").addEventListener("submit", async (e
 
       const item = importWorkspaceChants[editImportIndex];
       Object.assign(item, payload);
+      item.confiance = 1.0;
+      item.statut = "Importé";
+      item.verifie = true;
       item.action = chosenAction;
       item.replace_id = chosenReplaceId;
 
@@ -5408,7 +5417,14 @@ function afficherImportWorkspace(chants) {
   let tableRowsHtml = chants.map((c, index) => {
     const isDuplicate = c.doublons && c.doublons.length > 0;
     const isIgnored = c.action === "ignore";
-    const badge = isDuplicate ? `<span class="status-badge status-warning" style="margin-left: 6px;">Doublon</span>` : "";
+    let badge = "";
+    if (isDuplicate) {
+      badge = `<button type="button" class="btn-comparer-doublon status-badge status-warning" data-index="${index}" style="margin-left: 6px; cursor: pointer; border: 1px solid #f59e0b; background: #fef3c7; color: #92400e; font-weight: 700; padding: 2px 6px; border-radius: 4px; display: inline-flex; align-items: center; gap: 4px;" title="Cliquez pour comparer avec le chant en bibliothèque">⚠️ Doublon 🔍</button>`;
+    } else if (c.action === "replace") {
+      badge = `<span class="status-badge" style="margin-left: 6px; background: #fed7aa; color: #9a3412;">Remplacera existant</span>`;
+    } else if (c.action === "save" && c.is_non_doublon) {
+      badge = `<span class="status-badge status-success" style="margin-left: 6px;">Validé unique</span>`;
+    }
 
     const pct = Math.round((c.confiance ?? 1) * 100);
     let confClass = "low";
@@ -5515,6 +5531,14 @@ function afficherImportWorkspace(chants) {
     row.querySelector(".iw-click-target").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, false));
     row.querySelector(".btn-edit-iw").addEventListener("click", () => ouvrirDetailsChantDynamique(c, "import", idx, true));
 
+    const btnDoublon = row.querySelector(".btn-comparer-doublon");
+    if (btnDoublon) {
+      btnDoublon.addEventListener("click", (e) => {
+        e.stopPropagation();
+        ouvrirModalComparerDoublon(idx);
+      });
+    }
+
     row.querySelector(".iw-row-checkbox").addEventListener("change", (e) => {
       c.action = e.target.checked ? null : "ignore";
       row.style.opacity = e.target.checked ? "1" : "0.5";
@@ -5532,6 +5556,110 @@ function afficherImportWorkspace(chants) {
       e.stopPropagation();
       ouvrirDetailsChantDynamique(c, "import", idx, false);
     });
+  });
+}
+
+let currentComparerDoublonIndex = null;
+
+async function ouvrirModalComparerDoublon(index) {
+  const chantImport = importWorkspaceChants[index];
+  if (!chantImport || !chantImport.doublons || chantImport.doublons.length === 0) return;
+  currentComparerDoublonIndex = index;
+
+  const doublonInfo = chantImport.doublons[0];
+  const modal = document.getElementById("modal-comparer-doublon");
+  if (!modal) return;
+
+  document.getElementById("mcd-import-titre").textContent = chantImport.titre || "(sans titre)";
+  document.getElementById("mcd-import-cat").textContent = categorieLabel(chantImport.categorie);
+  document.getElementById("mcd-import-lang").textContent = (chantImport.langue || "fr").toUpperCase();
+  document.getElementById("mcd-import-confiance").textContent = `${Math.round((chantImport.confiance ?? 1) * 100)}%`;
+  document.getElementById("mcd-import-refrain").textContent = chantImport.refrain || "(aucun refrain)";
+  document.getElementById("mcd-import-couplets").textContent = (chantImport.couplets && chantImport.couplets.length > 0)
+    ? chantImport.couplets.map((c, i) => `${i + 1}. ${c}`).join("\n\n")
+    : "(aucun couplet)";
+
+  document.getElementById("mcd-exist-id").textContent = `ID: ${doublonInfo.id}`;
+  document.getElementById("mcd-exist-titre").textContent = doublonInfo.titre || "(sans titre)";
+  document.getElementById("mcd-exist-cat").textContent = "...";
+  document.getElementById("mcd-exist-lang").textContent = "...";
+  document.getElementById("mcd-exist-refrain").textContent = "Chargement en cours...";
+  document.getElementById("mcd-exist-couplets").textContent = "Chargement en cours...";
+
+  ouvrirModale("modal-comparer-doublon");
+
+  try {
+    let existant = null;
+    if (window.listChantsCache) {
+      existant = window.listChantsCache.find(c => c.id === doublonInfo.id);
+    }
+    if (!existant) {
+      existant = await api(`/chants/${doublonInfo.id}`);
+    }
+
+    if (existant) {
+      document.getElementById("mcd-exist-titre").textContent = existant.titre || "(sans titre)";
+      document.getElementById("mcd-exist-cat").textContent = categorieLabel(existant.categorie);
+      document.getElementById("mcd-exist-lang").textContent = (existant.langue || "fr").toUpperCase();
+      document.getElementById("mcd-exist-refrain").textContent = existant.refrain || "(aucun refrain)";
+      let coupletsExist = existant.couplets;
+      if (typeof coupletsExist === "string") {
+        try { coupletsExist = JSON.parse(coupletsExist); } catch(e) {}
+      }
+      document.getElementById("mcd-exist-couplets").textContent = (coupletsExist && coupletsExist.length > 0)
+        ? coupletsExist.map((c, i) => `${i + 1}. ${c}`).join("\n\n")
+        : "(aucun couplet)";
+    }
+  } catch (err) {
+    document.getElementById("mcd-exist-refrain").textContent = "(erreur chargement chant)";
+    document.getElementById("mcd-exist-couplets").textContent = err.message;
+  }
+}
+
+// Configuration des boutons de la modale de comparaison de doublon
+const btnConserverDoublon = document.getElementById("mcd-btn-conserver");
+if (btnConserverDoublon) {
+  btnConserverDoublon.addEventListener("click", () => {
+    if (currentComparerDoublonIndex === null) return;
+    const item = importWorkspaceChants[currentComparerDoublonIndex];
+    if (item) {
+      item.doublons = [];
+      item.action = "save";
+      item.is_non_doublon = true;
+      item.confiance = 1.0;
+      item.statut = "Importé";
+    }
+    fermerModale("modal-comparer-doublon");
+    afficherImportWorkspace(importWorkspaceChants);
+  });
+}
+
+const btnRemplacerDoublon = document.getElementById("mcd-btn-remplacer");
+if (btnRemplacerDoublon) {
+  btnRemplacerDoublon.addEventListener("click", () => {
+    if (currentComparerDoublonIndex === null) return;
+    const item = importWorkspaceChants[currentComparerDoublonIndex];
+    if (item && item.doublons && item.doublons.length > 0) {
+      item.action = "replace";
+      item.replace_id = item.doublons[0].id;
+      item.confiance = 1.0;
+      item.statut = "Importé";
+    }
+    fermerModale("modal-comparer-doublon");
+    afficherImportWorkspace(importWorkspaceChants);
+  });
+}
+
+const btnIgnorerDoublon = document.getElementById("mcd-btn-ignorer");
+if (btnIgnorerDoublon) {
+  btnIgnorerDoublon.addEventListener("click", () => {
+    if (currentComparerDoublonIndex === null) return;
+    const item = importWorkspaceChants[currentComparerDoublonIndex];
+    if (item) {
+      item.action = "ignore";
+    }
+    fermerModale("modal-comparer-doublon");
+    afficherImportWorkspace(importWorkspaceChants);
   });
 }
 
@@ -5554,15 +5682,15 @@ async function confirmerImportWorkspace() {
     const row = document.querySelector(`#iw-table-body tr[data-index="${index}"]`);
     const isChecked = row ? row.querySelector(".iw-row-checkbox").checked : true;
 
-    // Action overrides: if unchecked, ignore!
-    let finalAction = item.action || (item.doublons && item.doublons.length > 0 ? "replace" : "save");
+    // Action : Par défaut "save", jamais d'exclusion ou de remplacement automatique non désiré
+    let finalAction = item.action || "save";
     if (!isChecked) {
       finalAction = "ignore";
     }
 
     return {
       action: finalAction,
-      replace_id: item.replace_id || null,
+      replace_id: (finalAction === "replace") ? (item.replace_id || (item.doublons && item.doublons[0] ? item.doublons[0].id : null)) : null,
       titre: item.titre,
       refrain: item.refrain || null,
       couplets: item.couplets || [],

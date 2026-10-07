@@ -90,12 +90,14 @@ LEXIQUES = {
         "calicem", "redemptor", "patris", "verbum", "caro", "factum", "resurrexit"
     },
     "moore": {
-        "wennam", "wend", "yeso", "kiristo", "barka", "nooma", "pugla", "kamba",
-        "zoodo", "duniya", "waodo", "tenga", "songo", "roogo", "yiila", "puge",
-        "woto", "ti", "yaa", "neda", "biig", "arzene", "lagem", "leb", "veuge",
-        "maana", "mam", "foo", "damba", "yembre", "yemb", "tend", "naaba",
+        "wennam", "wend", "yeso", "kiristo", "barka", "bark", "nooma", "pugla", "kamba",
+        "zoodo", "duniya", "waodo", "tenga", "songo", "song", "roogo", "yiila", "puge",
+        "woto", "ti", "yaa", "neda", "biig", "arzene", "arzan", "arzana", "lagem", "leb", "veuge",
+        "maana", "mam", "foo", "fo", "damba", "yembre", "yemb", "tend", "naaba",
         "soala", "pebila", "zoe", "sid", "sida", "kelg", "gomde", "nonglem",
-        "baaba", "biiga", "ninbuiida", "wende", "zo-y", "faag", "sugri"
+        "baaba", "biiga", "ninbuiida", "wende", "zo-y", "faag", "sugri", "tond", "yamb",
+        "paam", "pegre", "pegr", "zaore", "balemda", "kilisda", "kasma", "krist", "krista",
+        "zezi", "anduni", "puusda", "kosgo", "ye"
     },
     "dioula": {
         "ala", "allabato", "barika", "matigi", "masake", "here", "sankolo",
@@ -109,7 +111,8 @@ LEXIQUES = {
         "mosantu", "nzembo", "likolo", "nse", "lelo", "ndeko", "bosembo", "esengo",
         "beto", "lola", "motema", "mawa", "bikamwa", "loba", "lisekwa", "eyano",
         "tanga", "yoka", "koyemba", "toye", "toyembela", "kumisa", "tokumisa",
-        "yonde", "malamu", "mabe", "bomoyi", "biso", "bolingo", "nalingi", "hozana"
+        "yonde", "malamu", "mabe", "bomoyi", "biso", "bolingo", "nalingi", "hozana",
+        "mokili"
     },
     "en": {
         "the", "lord", "praise", "holy", "spirit", "love", "grace", "our",
@@ -128,11 +131,11 @@ LEXIQUES = {
     },
     "bissa": {
         "semegnan", "yaada", "zuuba", "huusu", "gaole", "dun", "gyer", "zelgue",
-        "medi", "foua", "kre", "pen"
+        "medi", "foua", "kre", "pen", "barke"
     },
     "dagara": {
         "naawmin", "nyee", "nye", "faafu", "biir", "yeru", "yel-migna", "krista",
-        "za", "sir"
+        "za", "sir", "cinu", "cebal", "nono", "soob", "sob", "yir", "subri", "sono", "guarmo"
     },
     "fr": {
         "seigneur", "dieu", "notre", "pere", "jesus", "sainte", "saint", "esprit",

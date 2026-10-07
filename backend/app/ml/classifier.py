@@ -459,10 +459,18 @@ def suggest_categorie(titre: str, refrain: Optional[str], couplets: list[str], t
     # 1. Scores des règles expertes
     rule_scores: dict[str, float] = defaultdict(float)
     rule_hit = False
+    clean_titre_ref = normaliser_texte(f"{titre or ''} {refrain or ''}")
+
     for pattern, categorie, weight in LITURGICAL_RULES:
-        if pattern.search(clean_text):
-            rule_scores[categorie] += weight
-            rule_hit = True
+        if categorie == "Acclamation":
+            # Pour l'acclamation : alléluia/acclamation doit figurer dans le titre, le refrain ou le chant doit être bref
+            if pattern.search(clean_titre_ref) or (pattern.search(clean_text) and len(couplets) <= 2):
+                rule_scores[categorie] += weight
+                rule_hit = True
+        else:
+            if pattern.search(clean_text):
+                rule_scores[categorie] += weight
+                rule_hit = True
 
     # 2. Scores Naive Bayes (enrichi de seed_data/chants.db et apprentissages continus)
     bayes_scores = _model.predict(text)
