@@ -2,7 +2,7 @@ from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -241,6 +241,24 @@ def on_startup():
 @app.get("/health")
 def health():
     return {"status": "ok"}
+
+
+@app.exception_handler(Exception)
+async def unhandled_exception_handler(request, exc):
+    import traceback
+    err_tb = traceback.format_exc()
+    print("Unhandled exception on", request.url.path, ":", err_tb)
+    est_page = request.url.path == "/" or request.url.path.endswith(".html")
+    if est_page:
+        return HTMLResponse(
+            f"<!DOCTYPE html><html><head><meta charset='utf-8'><title>Erreur 500 - DepliantApp</title>"
+            f"<style>body{{font-family:system-ui,sans-serif;padding:2rem;background:#0f172a;color:#f8fafc}}"
+            f"h1{{color:#f43f5e}}pre{{background:#1e293b;color:#e2e8f0;padding:1.25rem;border-radius:8px;overflow:auto}}"
+            f"</style></head><body><h1>Erreur serveur</h1><p>{exc}</p><pre>{err_tb}</pre></body></html>",
+            status_code=500
+        )
+    return JSONResponse(status_code=500, content={"detail": str(exc), "traceback": err_tb})
+
 
 
 from typing import Optional
